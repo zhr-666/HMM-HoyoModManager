@@ -1,0 +1,1 @@
+`WithComment.rar` is a 288-byte test fixture from [node-unrar.js](https://github.com/YuJianrong/node-unrar.js/blob/master/testFiles/WithComment.rar), copyright Yu Jianrong, MIT license. It contains two empty text files, including one Chinese filename. It is used only by tests and is not included in the desktop distribution.

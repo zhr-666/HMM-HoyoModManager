@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://*.gamebanana.com; script-src 'self'; style-src 'self'">
+  <title>HoYoMod</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">H</span><div><strong>HoYoMod</strong><small>原神模组管理</small></div></div>
+      <nav aria-label="主导航">
+        <button class="nav-item active" data-page="workshop"><span>✦</span>角色工坊</button>
+        <button class="nav-item" data-page="library"><span>▦</span>我的模组</button>
+        <button class="nav-item" data-page="presets"><span>◫</span>搭配方案</button>
+        <button class="nav-item" data-page="settings"><span>⚙</span>设置</button>
+      </nav>
+      <div class="sidebar-foot"><span class="status-dot"></span><span id="platform-label">正在连接本地服务…</span></div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div><h1 id="page-title">角色工坊</h1><p id="page-subtitle">从 GameBanana 浏览并安装角色模组</p></div>
+        <div class="top-actions"><button class="button secondary" id="refresh-button">刷新</button><button class="button primary" id="launch-button">启动原神</button></div>
+      </header>
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <div id="progress" class="progress" aria-live="polite" hidden><div><span id="progress-label">处理中…</span><span id="progress-value"></span></div><progress id="progress-bar"></progress></div>
+
+      <section id="page-workshop" class="page active" data-testid="workshop-page">
+        <div class="toolbar">
+          <label class="search"><span>⌕</span><input id="search-input" type="search" placeholder="搜索模组或作者" aria-label="搜索模组"></label>
+          <button class="button secondary" id="search-button">搜索</button>
+        </div>
+        <div class="character-head"><strong>选择角色</strong><label class="mini-search"><span>⌕</span><input id="character-search" type="search" placeholder="查找角色" aria-label="查找角色"></label></div>
+        <div id="category-list" class="category-list" aria-label="角色分类"></div>
+        <div id="browse-grid" class="card-grid"></div>
+        <div id="browse-empty" class="empty" hidden></div>
+        <div class="pager"><button class="button secondary" id="prev-page">上一页</button><span id="page-info">第 1 页</span><button class="button secondary" id="next-page">下一页</button></div>
+      </section>
+
+      <section id="page-library" class="page" data-testid="library-page">
+        <div class="section-head"><div><h2>本机模组</h2><p>每个角色同时只启用一个模组</p></div><div class="row-actions"><button class="button secondary" id="check-updates-library">检查更新</button><button class="button secondary" id="disable-all-library">全部停用</button><button class="button primary" id="import-button">导入本地模组</button></div></div>
+        <div id="library-grid" class="list-grid"></div><div id="library-empty" class="empty" hidden></div>
+      </section>
+
+      <section id="page-presets" class="page" data-testid="presets-page">
+        <div class="section-head"><div><h2>搭配方案</h2><p>保存当前启用组合，一次切换所有角色</p></div><button class="button primary" id="save-preset-button">保存当前搭配</button></div>
+        <div id="preset-grid" class="preset-grid"></div><div id="preset-empty" class="empty" hidden></div>
+      </section>
+
+      <section id="page-settings" class="page" data-testid="settings-page">
+        <div id="onboarding" class="onboarding"><div><span>1</span><strong>获取 XXMI</strong><small>下载官方组件，或选择已有程序</small></div><i></i><div><span>2</span><strong>初始化 GIMI</strong><small>打开 XXMI 完成游戏与 GIMI 配置</small></div><i></i><div><span>3</span><strong>连接 Mods</strong><small>自动查找或选择 Mods 文件夹</small></div></div>
+        <div class="settings-card">
+          <div class="setting-row"><div><strong>XXMI Launcher</strong><p id="xxmi-path">尚未选择</p></div><div class="row-actions"><button class="button secondary" id="choose-xxmi">选择已有程序</button><button class="button primary" id="setup-xxmi">下载官方组件</button></div></div>
+          <div class="setting-row"><div><strong>GIMI Mods 文件夹</strong><p id="mods-path">尚未选择</p></div><div class="row-actions"><button class="button secondary" id="detect-mods">自动查找</button><button class="button secondary" id="choose-mods">选择文件夹</button></div></div>
+          <div class="setting-row"><div><strong>下载后自动启用</strong><p>安装完成后立即切换该角色使用此模组</p></div><label class="switch"><input id="auto-enable" type="checkbox" aria-label="下载后自动启用"><span></span></label></div>
+          <div class="setting-row"><div><strong>自动更新模组</strong><p>仅自动更新此前选择过的同名文件</p></div><label class="switch"><input id="auto-update" type="checkbox" aria-label="自动更新模组"><span></span></label></div>
+        </div>
+        <div class="settings-card compact"><div class="setting-row"><div><strong>维护与诊断</strong><p id="data-root">数据位置加载中…</p></div><div class="row-actions"><button class="button secondary" id="disable-all-settings">全部停用</button><button class="button secondary" id="configure-xxmi">打开 XXMI 配置</button><button class="button secondary" id="open-data">打开数据目录</button><button class="button secondary" id="check-updates">检查更新</button></div></div></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="modal"><form method="dialog"><div class="dialog-head"><div><h2 id="modal-title"></h2><p id="modal-subtitle"></p></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><div id="modal-body" class="dialog-body"></div><div id="modal-actions" class="dialog-actions"></div></form></dialog>
+  <script src="app.js"></script>
+</body>
+</html>
