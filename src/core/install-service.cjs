@@ -1,0 +1,60 @@
+const fs=require('node:fs/promises');
+const {createReadStream}=require('node:fs');
+const {createHash,randomUUID}=require('node:crypto');
+const path=require('node:path');
+async function hash(file,algorithm='sha256'){const h=createHash(algorithm);for await(const chunk of createReadStream(file))h.update(chunk);return h.digest('hex');}
+class InstallService{
+  constructor(root,{lib,api,download,extract,progress=()=>{},refresh=async()=>{},validate=async()=>{}}){Object.assign(this,{root,lib,api,download,extract,progress,refresh,validate});this.running=new Set();}
+  folder(key){if(!/^\d+-\d+$/.test(String(key)))throw new Error('无效的下载记录。');return path.join(this.root,'downloads',String(key));}
+  async save(job){const file=path.join(this.folder(job.key),'record.json');await fs.writeFile(file+'.tmp',JSON.stringify(job,null,2));await fs.rename(file+'.tmp',file);}
+  async history(){
+    const entries=await fs.readdir(path.join(this.root,'downloads')).catch(()=>[]),rows=[],mods=this.lib.snapshot().mods;
+    for(const key of entries){if(!/^\d+-\d+$/.test(key))continue;try{
+      const job=JSON.parse(await fs.readFile(path.join(this.folder(key),'record.json'),'utf8'));
+      const cached=!!job.archive&&await fs.stat(path.join(this.folder(key),path.basename(job.archive))).then(s=>s.isFile(),()=>false);
+      if(!this.running.has(key)){
+        const installed=job.receipt&&mods.find(m=>m.downloadReceipt===job.receipt);
+        if(installed){job.status='installed';job.installedId=installed.id;delete job.error;}
+        else if(['downloading','downloaded'].includes(job.status)){job.status='failed';job.error='上次任务已中断，可重试。';}
+      }
+      rows.push({...job,key,cached});
+    }catch{}}
+    return rows.sort((a,b)=>b.changedAt-a.changedAt);
+  }
+  async retry(key){const job=JSON.parse(await fs.readFile(path.join(this.folder(key),'record.json'),'utf8'));const old=this.lib.snapshot().mods.find(m=>m.id===(job.modId||job.installedId)||(job.receipt&&m.downloadReceipt===job.receipt));if(job.modId&&!old)throw new Error('原模组已移除，请从工坊重新安装。');return this.install({sourceId:job.sourceId,fileId:job.sourceFileId,characterId:job.characterId,characterName:job.characterName},old);}
+  async install(p,old){
+    await this.validate();
+    const sourceId=old?.sourceId||p.sourceId;if(!/^\d+$/.test(String(sourceId)))throw new Error('无效的来源编号。');
+    const detail=await this.api.detail(Number(sourceId)),file=detail.files.find(f=>String(f.id)===String(p.fileId));
+    if(!file)throw new Error('下载文件已变化，请重新打开详情选择。');
+    const ext=path.extname(file.name).toLowerCase();if(!['.zip','.7z','.rar'].includes(ext))throw new Error('请选择 ZIP、7Z 或 RAR 文件。');
+    const target=old||(detail.characterId&&detail.characterName?{...p,characterId:String(detail.characterId),characterName:detail.characterName}:p);if(typeof target.characterId!=='string'||!target.characterId.trim()||!target.characterName?.trim())throw new Error('请先选择角色。');
+    const key=`${sourceId}-${file.id}`,dir=this.folder(key);await fs.mkdir(dir,{recursive:true});
+    const previous=await fs.readFile(path.join(dir,'record.json'),'utf8').then(JSON.parse,()=>({}));
+    const job={key,receipt:randomUUID(),name:detail.name,sourceId:Number(sourceId),sourceUrl:detail.url||`https://gamebanana.com/mods/${sourceId}`,sourceUploadedAt:detail.uploadedAt,sourceFileId:file.id,sourceFileName:file.name,sourceFileUploadedAt:file.uploadedAt,sourceChecksum:file.checksum,queueId:p.queueId,rootCategoryId:String(detail.rootCategoryId||target.rootCategoryId||'17510'),rootCategoryName:detail.rootCategoryName||target.rootCategoryName||'Skins',nsfw:!!detail.nsfw,characterId:target.characterId,characterName:target.characterName,modId:old?.id,archive:'package'+ext,status:'downloading',changedAt:Date.now()};
+    const archive=path.join(dir,job.archive),unpacked=path.join(dir,'unpacked');this.running.add(key);
+    try{
+      await this.save(job);
+      this.progress({label:'准备下载 '+detail.name,name:detail.name,sourceFileName:file.name,key,stage:'downloading',received:0,total:file.size||0});
+      const cached=previous.sha256&&previous.sourceChecksum===job.sourceChecksum&&previous.sourceFileUploadedAt===job.sourceFileUploadedAt&&await hash(archive).then(h=>h===previous.sha256,()=>false);
+      if(!cached){await fs.rm(archive,{force:true});await this.download(file.url,archive,v=>this.progress({label:v.message||'下载 '+detail.name,...v,speed:v.bytesPerSecond}),undefined,{expectedSize:file.size||undefined});}
+      if(file.checksum){const md5=String(file.checksum).replace(/^md5:/i,'');if(/^[a-f0-9]{32}$/i.test(md5)&&(await hash(archive,'md5')).toLowerCase()!==md5.toLowerCase()){await fs.rm(archive,{force:true});throw new Error('文件 MD5 校验失败，请重试下载。');}}
+      job.sha256=await hash(archive);job.status='downloaded';await this.save(job);
+      this.progress({label:'检查并安装 '+detail.name,received:0,total:0});
+      await fs.rm(unpacked,{recursive:true,force:true});await this.extract(archive,unpacked);
+      await this.validate();
+      const mod=await this.lib.install(unpacked,{...job,downloadReceipt:job.receipt,downloadQueueId:p.queueId,...(old?{id:old.id,expectedFolder:old.folder}:{}),updatedAt:detail.updatedAt,preview:detail.preview,author:detail.author});
+      job.installedId=mod.id;job.status='installed';
+      let message='模组已安装。';
+      try{await this.save(job);}catch(e){message='模组已安装，但下载记录保存失败：'+e.message;}
+      try{if(!old&&this.lib.snapshot().settings.autoEnable)await this.lib.enable(mod.id);if(this.lib.snapshot().mods.find(m=>m.id===mod.id)?.active)await this.refresh();}
+      catch(e){message+=' 启用或刷新未完成：'+e.message;}
+      return {message,modId:mod.id};
+    }catch(e){
+      job.status='failed';job.error=e.message;job.changedAt=Date.now();let saved=true;
+      try{await this.save(job);}catch{saved=false;}
+      throw new Error(e.message+(saved?'（下载记录已保留，可在“下载列表”重试。）':'（下载记录也未能保存，请检查磁盘空间和目录权限。）'));
+    }finally{this.running.delete(key);await fs.rm(unpacked,{recursive:true,force:true}).catch(()=>{});this.progress({label:'',received:0,total:0});}
+  }
+}
+module.exports={InstallService};

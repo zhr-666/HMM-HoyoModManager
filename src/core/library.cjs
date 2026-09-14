@@ -1,14 +1,22 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const {scanHotkeys}=require('./hotkeys.cjs');
+const hashReplace=require('./hash-replace.cjs');
 
 const DEFAULT_STATE = Object.freeze({
-  settings: { autoEnable: false, autoUpdate: false, xxmiPath: '', modsPath: '' },
+  settings: { autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
   mods: [],
   presets: [],
 });
 const MARKER = '.hoyo-managed';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function categoryFolder(name,id) {
+  const label=String(name||'未分类').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/^[ .]+|[ .]+$/g,'').slice(0,45)||'未分类';
+  const key=require('node:crypto').createHash('sha256').update(String(id)).digest('hex').slice(0,10);
+  return label+'-'+key;
+}
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -55,27 +63,58 @@ class Library {
       try {
         const saved = JSON.parse(await fs.readFile(this.stateFile, 'utf8'));
         this.state = {
-          settings: { ...DEFAULT_STATE.settings, ...(saved.settings || {}) },
+          settings: { ...DEFAULT_STATE.settings, ...(saved.settings || {}),autoUpdate:false,autoCheckUpdates:saved.settings?.autoCheckUpdates ?? !!saved.settings?.autoUpdate },
           mods: Array.isArray(saved.mods) ? saved.mods.map((mod) => this._rebaseMod(mod)) : [],
           presets: Array.isArray(saved.presets) ? saved.presets : [],
+          ...(Array.isArray(saved.hashBatches)?{hashBatches:saved.hashBatches}:{}),
         };
       } catch (error) {
         if (error.code !== 'ENOENT') throw error;
         await this._writeState(this.state);
       }
+      let scanned=false;
+      for(const mod of this.state.mods){if(!mod.hotkeys){mod.hotkeys=await scanHotkeys(mod.folder);scanned=true;}}
+      if(scanned)await this._writeState(this.state);
       return this.snapshot();
     });
   }
 
   snapshot() { return clone(this.state); }
 
+  previewHash(oldHash,newHash,progress) {return this._enqueue(()=>hashReplace.preview(this,oldHash,newHash,progress));}
+  applyHash(preview,progress) {return this._enqueue(()=>hashReplace.apply(this,preview,progress));}
+  rollbackHash(id,progress) {return this._enqueue(()=>hashReplace.rollback(this,id,progress));}
+
+  rescanHotkeys(id) {
+    return this._enqueue(async()=>{
+      const next=clone(this.state),mod=this._find(next.mods,id,'mod');
+      mod.hotkeys=await scanHotkeys(mod.folder);
+      await this._writeState(next);this.state=next;return clone(mod.hotkeys);
+    });
+  }
+
+  updateMetadata(id,patch) {
+    return this._enqueue(async()=>{
+      const allowed=new Set(['sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','updateStatus']);
+      if(!patch||typeof patch!=='object'||Object.keys(patch).some(k=>!allowed.has(k)))throw new Error('不支持的 Mod 元数据字段');
+      const next=clone(this.state),mod=this._find(next.mods,id,'mod');
+      Object.assign(mod,clone(patch));
+      await this._writeState(next);this.state=next;return this.snapshot();
+    });
+  }
+
   install(folder, metadata) {
     return this._enqueue(async () => {
       await this._validateInstall(folder, metadata);
       const old = metadata.id ? this.state.mods.find((mod) => mod.id === metadata.id) : undefined;
+      if(old&&metadata.expectedFolder&&old.folder!==metadata.expectedFolder)throw new Error('下载期间此模组已被更新或批量修改，请从下载列表重试。');
       if (metadata.id && !old) throw new Error('更新 ID 必须对应现有 Mod');
       const id = old?.id || randomUUID();
-      const destination = path.join(this.libraryRoot, `${id}-${randomUUID()}`);
+      const classification={...old,...metadata};
+      const parent=classification.rootCategoryId&&classification.rootCategoryName
+        ?path.join(this.libraryRoot,categoryFolder(classification.rootCategoryName,classification.rootCategoryId),categoryFolder(old?.characterName||metadata.characterName,old?.characterId||metadata.characterId)):this.libraryRoot;
+      await fs.mkdir(parent,{recursive:true});
+      const destination = path.join(parent, `${id}-${randomUUID()}`);
       await fs.cp(path.resolve(folder), destination, { recursive: true, errorOnExist: true, force: false });
       const mod = {
         id,
@@ -84,8 +123,10 @@ class Library {
         characterName: old?.characterName || metadata.characterName.trim(),
         active: old?.active || false,
         folder: destination,
+        libraryPath:path.relative(this.libraryRoot,destination).split(path.sep).join('/'),
+        hotkeys: await scanHotkeys(destination),
       };
-      for (const field of ['sourceId', 'sourceFileName', 'updatedAt', 'preview', 'author']) {
+      for (const field of ['rootCategoryId','rootCategoryName','sourceId', 'sourceFileName', 'updatedAt', 'preview', 'author','sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','downloadReceipt','downloadQueueId']) {
         if (metadata[field] !== undefined) mod[field] = metadata[field];
         else if (old?.[field] !== undefined) mod[field] = old[field];
       }
@@ -94,7 +135,8 @@ class Library {
       if (index < 0) next.mods.push(mod); else next.mods[index] = mod;
       let committed = false;
       try {
-        await this._commit(next);
+        if(old?.active)await this._commit(next);
+        else {await this._writeState(next);this.state=next;}
         committed = true;
         if (old) await fs.rm(old.folder, { recursive: true, force: true }).catch(() => {});
         return clone(mod);
@@ -114,6 +156,8 @@ class Library {
   }
 
   disable(id) { return this._change((next) => { this._find(next.mods, id, 'mod').active = false; }); }
+
+  sync() { return this._change(() => {}); }
 
   disableAll() { return this._change((next) => { for (const mod of next.mods) mod.active = false; }); }
 
@@ -161,15 +205,21 @@ class Library {
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('设置内容不能为空');
       const allowed = new Set(Object.keys(DEFAULT_STATE.settings));
       for (const key of Object.keys(patch)) if (!allowed.has(key)) throw new Error(`未知设置项：${key}`);
+      if('theme' in patch&&!['light','dark','system'].includes(patch.theme))throw Error('主题选项无效。');
+      if('material' in patch&&!['mica','acrylic'].includes(patch.material))throw Error('窗口材质选项无效。');
+      if('proxyMode' in patch&&!['system','manual'].includes(patch.proxyMode))throw Error('代理模式无效。');
+      if('proxyUrl' in patch&&(typeof patch.proxyUrl!=='string'||patch.proxyUrl.length>300))throw Error('代理地址无效。');
+      require('./preferences.cjs').proxyConfig({...this.state.settings,...patch});
       if ('modsPath' in patch) await this._validateModsPath(patch.modsPath);
       if ('xxmiPath' in patch && patch.xxmiPath && !path.isAbsolute(patch.xxmiPath)) throw new Error('XXMI 路径必须是绝对路径');
-      for (const key of ['autoEnable', 'autoUpdate']) if (key in patch && typeof patch[key] !== 'boolean') throw new Error(`${key} 必须是布尔值`);
+      for (const key of ['autoEnable', 'autoUpdate','autoCheckUpdates','blurNsfw']) if (key in patch && typeof patch[key] !== 'boolean') throw new Error(`${key} 必须是布尔值`);
       if ('modsPath' in patch && patch.modsPath !== this.state.settings.modsPath && this.state.mods.some((mod) => mod.active)) {
         throw new Error('更改 Mod 路径前请先禁用全部 Mod');
       }
       const next = clone(this.state);
       Object.assign(next.settings, patch);
-      await this._commit(next);
+      if('modsPath' in patch)await this._commit(next);
+      else {await this._writeState(next);this.state=next;}
       return this.snapshot();
     });
   }
@@ -201,7 +251,10 @@ class Library {
     const version = folderName.slice(mod.id.length + 1);
     const validFolder = folderName === mod.id || (folderName.startsWith(`${mod.id}-`) && UUID_RE.test(version));
     if (!validFolder) throw new Error(`Mod ${mod.id} 的资源目录无效`);
-    return { ...mod, folder: path.join(this.libraryRoot, folderName) };
+    const relative=mod.libraryPath??folderName;
+    const pieces=typeof relative==='string'?relative.split('/'):[];
+    if(![1,3].includes(pieces.length)||pieces.at(-1)!==folderName||pieces.some(piece=>!piece||piece==='.'||piece==='..'||/[<>:"\\|?*\x00-\x1f]/.test(piece)||/[ .]$/.test(piece)))throw new Error(`Mod ${mod.id} 的资源目录无效`);
+    return { ...mod, folder: path.join(this.libraryRoot,...pieces) };
   }
 
   async _validateInstall(folder, metadata) {

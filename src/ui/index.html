@@ -8,21 +8,22 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div class="window-titlebar"><span>HoYoMod</span></div>
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">H</span><div><strong>HoYoMod</strong><small>原神模组管理</small></div></div>
       <nav aria-label="主导航">
-        <button class="nav-item active" data-page="workshop"><span>✦</span>角色工坊</button>
+        <button class="nav-item active" data-page="workshop"><span>✦</span>模组工坊</button>
         <button class="nav-item" data-page="library"><span>▦</span>我的模组</button>
         <button class="nav-item" data-page="presets"><span>◫</span>搭配方案</button>
-        <button class="nav-item" data-page="settings"><span>⚙</span>设置</button>
+        <button class="nav-item" data-page="downloads"><span>↓</span>下载列表</button>
       </nav>
-      <div class="sidebar-foot"><span class="status-dot"></span><span id="platform-label">正在连接本地服务…</span></div>
+      <button class="nav-item settings-nav" data-page="settings"><span>⚙</span>设置</button>
     </aside>
 
     <main>
       <header class="topbar">
-        <div><h1 id="page-title">角色工坊</h1><p id="page-subtitle">从 GameBanana 浏览并安装角色模组</p></div>
+        <div><h1 id="page-title">模组工坊</h1><p id="page-subtitle">从 GameBanana 浏览并安装各类模组</p></div>
         <div class="top-actions"><button class="button secondary" id="refresh-button">刷新</button><button class="button primary" id="launch-button">启动原神</button></div>
       </header>
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -30,19 +31,32 @@
 
       <section id="page-workshop" class="page active" data-testid="workshop-page">
         <div class="toolbar">
+          <select id="root-category-select" aria-label="模组大类"></select>
           <label class="search"><span>⌕</span><input id="search-input" type="search" placeholder="搜索模组或作者" aria-label="搜索模组"></label>
           <button class="button secondary" id="search-button">搜索</button>
         </div>
-        <div class="character-head"><strong>选择角色</strong><label class="mini-search"><span>⌕</span><input id="character-search" type="search" placeholder="查找角色" aria-label="查找角色"></label></div>
-        <div id="category-list" class="category-list" aria-label="角色分类"></div>
+        <div class="browse-filters" aria-label="浏览筛选">
+          <label>排序<select id="sort-select" aria-label="模组排序"><option value="downloads">下载最多</option><option value="uploaded">最新发布</option><option value="updated">最近更新</option></select></label>
+          <label class="check-filter"><input id="sfw-filter" type="checkbox" checked> SFW</label>
+          <label class="check-filter"><input id="nsfw-filter" type="checkbox" checked> NSFW</label>
+        </div>
+        <div class="character-head"><strong>选择子分类</strong><label class="mini-search"><span>⌕</span><input id="character-search" type="search" placeholder="查找分类" aria-label="查找分类"></label></div>
+        <div id="category-list" class="category-list" aria-label="模组分类"></div>
         <div id="browse-grid" class="card-grid"></div>
         <div id="browse-empty" class="empty" hidden></div>
         <div class="pager"><button class="button secondary" id="prev-page">上一页</button><span id="page-info">第 1 页</span><button class="button secondary" id="next-page">下一页</button></div>
       </section>
 
       <section id="page-library" class="page" data-testid="library-page">
-        <div class="section-head"><div><h2>本机模组</h2><p>每个角色同时只启用一个模组</p></div><div class="row-actions"><button class="button secondary" id="check-updates-library">检查更新</button><button class="button secondary" id="disable-all-library">全部停用</button><button class="button primary" id="import-button">导入本地模组</button></div></div>
+        <div class="section-head"><div><h2>本机模组</h2><p>按大类与角色 / 子分类浏览；同一归属同时启用一个模组</p></div><div class="row-actions"><button class="button secondary" id="replace-hash">批量替换 Hash</button><button class="button secondary" id="hash-history">替换记录</button><button class="button secondary" id="check-updates-library">检查更新</button><button class="button secondary" id="disable-all-library">全部停用</button><button class="button primary" id="import-button">导入本地模组</button></div></div>
+        <nav id="library-breadcrumb" class="library-breadcrumb" aria-label="模组文件夹路径"></nav><div id="library-folders" class="folder-grid"></div>
         <div id="library-grid" class="list-grid"></div><div id="library-empty" class="empty" hidden></div>
+      </section>
+
+      <section id="page-downloads" class="page" data-testid="downloads-page">
+        <div class="section-head"><div><h2>下载</h2><p>清理记录不会删除已安装模组；排队、下载与安装中的任务会保留</p></div><button class="button secondary" id="clear-downloads" title="清除已结束的记录，保留进行中的任务">清空全部记录</button></div>
+        <p id="download-error" class="notice error" hidden></p>
+        <div id="download-list" class="list-grid"></div><div id="download-empty" class="empty"><strong>还没有下载任务</strong>在模组工坊选择文件后，任务会出现在这里。</div>
       </section>
 
       <section id="page-presets" class="page" data-testid="presets-page">
@@ -56,7 +70,15 @@
           <div class="setting-row"><div><strong>XXMI Launcher</strong><p id="xxmi-path">尚未选择</p></div><div class="row-actions"><button class="button secondary" id="choose-xxmi">选择已有程序</button><button class="button primary" id="setup-xxmi">下载官方组件</button></div></div>
           <div class="setting-row"><div><strong>GIMI Mods 文件夹</strong><p id="mods-path">尚未选择</p></div><div class="row-actions"><button class="button secondary" id="detect-mods">自动查找</button><button class="button secondary" id="choose-mods">选择文件夹</button></div></div>
           <div class="setting-row"><div><strong>下载后自动启用</strong><p>安装完成后立即切换该角色使用此模组</p></div><label class="switch"><input id="auto-enable" type="checkbox" aria-label="下载后自动启用"><span></span></label></div>
-          <div class="setting-row"><div><strong>自动更新模组</strong><p>仅自动更新此前选择过的同名文件</p></div><label class="switch"><input id="auto-update" type="checkbox" aria-label="自动更新模组"><span></span></label></div>
+          <div class="setting-row"><div><strong>自动检查更新</strong><p>启动时检查更新；安装哪个文件仍由你决定</p></div><label class="switch"><input id="auto-check-updates" type="checkbox" aria-label="自动检查更新"><span></span></label></div>
+          <div class="setting-row"><div><strong>模糊 NSFW 预览</strong><p>仅作用于模组工坊与详情；本机模组预览始终清晰</p></div><label class="switch"><input id="blur-nsfw" type="checkbox" aria-label="模糊 NSFW 预览"><span></span></label></div>
+        </div>
+        <div class="settings-card">
+          <div class="setting-row"><div><strong>外观主题</strong><p>选择浅色、深色或跟随系统</p></div><select id="theme-select" aria-label="外观主题"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+          <div class="setting-row"><div><strong>窗口材质</strong><p id="material-note">使用 Windows 原生窗口背景材质</p></div><select id="material-select" aria-label="窗口材质"><option value="mica">云母 Mica</option><option value="acrylic">亚克力 Acrylic</option></select></div>
+          <div class="setting-row"><div><strong>网络代理</strong><p>系统代理自动跟随系统设置，也可指定代理地址</p></div><select id="proxy-mode" aria-label="网络代理"><option value="system">系统代理</option><option value="manual">手动代理</option></select></div>
+          <div class="setting-row" id="proxy-url-row" hidden><label for="proxy-url">代理地址</label><div class="row-actions"><input id="proxy-url" type="url" placeholder="http://127.0.0.1:7890" aria-label="代理地址"><button class="button secondary" id="save-proxy">保存</button></div></div>
+          <div class="setting-row"><p id="proxy-result" role="status">测试当前网络连接与代理路由</p><button class="button secondary" id="test-proxy">测试连接</button></div>
         </div>
         <div class="settings-card compact"><div class="setting-row"><div><strong>维护与诊断</strong><p id="data-root">数据位置加载中…</p></div><div class="row-actions"><button class="button secondary" id="disable-all-settings">全部停用</button><button class="button secondary" id="configure-xxmi">打开 XXMI 配置</button><button class="button secondary" id="open-data">打开数据目录</button><button class="button secondary" id="check-updates">检查更新</button></div></div></div>
       </section>

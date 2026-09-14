@@ -10,7 +10,7 @@ const assert=require('node:assert/strict');
   const pe=exe.readUInt32LE(0x3c);
   assert.equal(exe.readUInt16LE(pe+4),0x8664,'Windows x64 PE executable');
   const asar=path.join(appRoot,'resources','app.asar');
-  for(const file of ['src/main.cjs','src/preload.cjs','src/ui/app.js','src/ui/index.html','src/ui/style.css','src/core/archive.cjs','src/core/rar-worker.cjs','src/core/library.cjs','src/core/launcher.cjs','src/core/gamebanana.cjs']){
+  for(const file of ['src/main.cjs','src/preload.cjs','src/ui/app.js','src/ui/index.html','src/ui/style.css','src/core/archive.cjs','src/core/rar-worker.cjs','src/core/library.cjs','src/core/launcher.cjs','src/core/gamebanana.cjs','src/core/network.cjs','src/core/install-service.cjs','src/core/updates.cjs','src/core/electron-fetch.cjs','src/core/hotkeys.cjs','src/core/hash-replace.cjs','src/core/download-queue.cjs','src/core/preferences.cjs']){
     assert.deepEqual(await fs.readFile(path.join(asar,file)),await fs.readFile(path.resolve(__dirname,'..',file)),file+' must match current source');
   }
   await fs.access(path.join(appRoot,'resources','app.asar.unpacked','node_modules','7zip-bin','win','x64','7za.exe'));

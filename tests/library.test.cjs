@@ -29,9 +29,33 @@ const meta = (name, characterId = name) => ({ name, characterId, characterName: 
 test('initializes defaults and snapshot is a deep clone', async (t) => {
   const { library } = await fixture(t);
   const snapshot = library.snapshot();
-  assert.deepEqual(snapshot, { settings: { autoEnable: false, autoUpdate: false, xxmiPath: '', modsPath: '' }, mods: [], presets: [] });
+  assert.deepEqual(snapshot, { settings: { autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], presets: [] });
   snapshot.settings.autoEnable = true;
   assert.equal(library.snapshot().settings.autoEnable, false);
+});
+
+test('inactive installs do not fail because the game deployment path has old mods',async t=>{
+  const {library,modsPath,modFolder}=await fixture(t);
+  await library.settings({modsPath});
+  await fs.writeFile(path.join(modsPath,'legacy.ini'),'[legacy]');
+  const mod=await library.install(await modFolder('downloaded'),{...meta('downloaded'),sourceUrl:'https://gamebanana.com/mods/55',sourceFileId:88,sourceFileUploadedAt:123});
+  assert.equal(mod.active,false);
+  assert.equal(mod.sourceFileUploadedAt,123);
+  assert.equal(mod.sourceUrl,'https://gamebanana.com/mods/55');
+  await assert.rejects(library.enable(mod.id),/旧版/);
+});
+
+test('update markers persist without redeploying active files or changing mod identity',async t=>{
+  const {library,modsPath,modFolder}=await fixture(t);
+  await library.settings({modsPath});
+  const m=await library.install(await modFolder('mark'),meta('mark'));
+  await library.enable(m.id);
+  await fs.writeFile(path.join(modsPath,'foreign.ini'),'[foreign]');
+  await library.updateMetadata(m.id,{sourceFileUploadedAt:100,updateStatus:{status:'update',latestAt:200}});
+  const again=new Library(library.root);await again.init();
+  assert.equal(again.snapshot().mods[0].updateStatus.latestAt,200);
+  assert.equal(again.snapshot().mods[0].active,true);
+  await assert.rejects(library.updateMetadata(m.id,{folder:'/tmp/other'}));
 });
 
 test('install validates ini content and character metadata', async (t) => {
@@ -242,4 +266,27 @@ test('remove updates presets and init recovers an interrupted deployment journal
   await recovered.init();
   assert.equal(await fs.readFile(path.join(managed, '.hoyo-managed'), 'utf8'), 'managed\n');
   await assert.rejects(fs.access(path.join(data, 'deployment-journal.json')));
+});
+
+test('categorized downloads use two safe folders and remain portable through hash rollback', async t=>{
+ const {library,root,modFolder}=await fixture(t);
+ const m=await library.install(await modFolder('categorized','[TextureOverride]\nhash = aabbccdd'),{...meta('Test','19513'),characterName:'Xingqiu',rootCategoryId:'17510',rootCategoryName:'Skins'});
+ const relative=path.relative(library.libraryRoot,m.folder).split(path.sep);
+ assert.equal(relative.length,3);assert.match(relative[0],/^Skins/);assert.match(relative[1],/^Xingqiu/);
+ assert.equal(m.rootCategoryId,'17510');
+ const batch=await library.applyHash(await library.previewHash('aabbccdd','11223344'));
+ assert.equal(path.dirname(library.snapshot().mods[0].folder),path.dirname(m.folder));
+ const moved=path.join(root,'moved-categorized');await fs.rename(library.root,moved);
+ const again=new Library(moved);await again.init();await again.rollbackHash(batch.id);
+ assert.match(await fs.readFile(path.join(again.snapshot().mods[0].folder,'categorized.ini'),'utf8'),/aabbccdd/);
+});
+test('category names cannot escape the library or collide after Windows sanitization',async t=>{
+ const {library,modFolder}=await fixture(t),folder=await modFolder('safe');
+ const a=await library.install(folder,{...meta('A','55'),characterName:'../CON',rootCategoryId:'10',rootCategoryName:'../../Skins'});
+ const b=await library.install(folder,{...meta('B','56'),characterName:'..\\CON',rootCategoryId:'11',rootCategoryName:'..\\..\\Skins'});
+ assert.equal(path.relative(library.libraryRoot,a.folder).split(path.sep).length,3);
+ assert.notEqual(path.dirname(a.folder),path.dirname(b.folder));
+ await fs.access(a.folder);
+ const state=library.snapshot();state.mods[0].libraryPath='../escape/'+path.basename(a.folder);await fs.writeFile(library.stateFile,JSON.stringify(state));
+ await assert.rejects(new Library(library.root).init(),/目录/);
 });

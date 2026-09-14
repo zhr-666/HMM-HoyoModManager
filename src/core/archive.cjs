@@ -16,7 +16,9 @@ function validateEntries(entries, { component = false } = {}) {
     if (!component && /\.(exe|dll|com|bat|cmd|ps1|psm1|psd1|vbs|vbe|js|jse|msi|msp|scr|lnk|url|hta|reg|sys|py|pyw|pyc|sh|bash|zsh|ahk|wsf|wsh|jar|cpl|chm|appx|msix)$/i.test(name)) throw new Error('Mod 包含程序或脚本，不能自动安装：'+name);
     if (seen.has(name.toLowerCase())) throw new Error('压缩包包含重名文件：'+name);
     seen.add(name.toLowerCase());
-    total += Number(e.size || 0);
+    const size=Number(e.size ?? 0);
+    if(!Number.isSafeInteger(size)||size<0)throw new Error('压缩包文件大小无效：'+name);
+    total += size;
     if (!Number.isFinite(total) || total > 4 * 1024 ** 3) throw new Error('解压后超过 4 GB 限制。');
   }
 }
@@ -39,15 +41,24 @@ async function extract(archive, destination, options = {}) {
 }
 async function extractRar(archive,destination) {
   const {Worker}=require('node:worker_threads');
-  if((await fs.stat(archive)).size>256*1024**2)throw new Error('RAR 包超过 256 MB，请先解压并重新打包为 ZIP 或 7Z。');
+  if((await fs.stat(archive)).size>2*1024**3)throw new Error('RAR 包超过 2 GB 限制。');
   try {await fs.access(destination);throw new Error('解压目标已存在。');}catch(e){if(e.code!=='ENOENT')throw e;}
   try{
     await new Promise((resolve,reject)=>{
       const worker=new Worker(path.join(__dirname,'rar-worker.cjs'),{workerData:{archive,destination}});
-      const timer=setTimeout(()=>{worker.terminate();reject(new Error('RAR 解压超时。'));},180000);
-      worker.once('message',message=>{clearTimeout(timer);if(message.error)reject(new Error(message.error));else resolve();});
-      worker.once('error',e=>{clearTimeout(timer);reject(e);});
-      worker.once('exit',code=>{clearTimeout(timer);if(code)reject(new Error('RAR 解压失败。'));});
+      let settled=false;
+      const finish=async error=>{
+        if(settled)return;
+        settled=true;
+        clearTimeout(timer);
+        // Wait for handles to close before failure cleanup (especially Windows).
+        try{await worker.terminate();}catch(e){error=error||e;}
+        if(error)reject(error);else resolve();
+      };
+      const timer=setTimeout(()=>finish(new Error('RAR 解压超时。')),180000);
+      worker.once('message',message=>finish(message?.ok===true?null:new Error(message?.error||'RAR 解压失败。')));
+      worker.once('error',finish);
+      worker.once('exit',()=>finish(new Error('RAR 解压工作线程未返回结果。')));
     });
   }catch(e){await fs.rm(destination,{recursive:true,force:true});throw e;}
 }

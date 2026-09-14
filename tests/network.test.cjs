@@ -1,0 +1,116 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+const crypto = require('node:crypto');
+const network = require('../src/core/network.cjs');
+
+async function temp(t) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'hoyo-network-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  return path.join(root, 'file.zip');
+}
+
+function broken(prefix, message = '断线') {
+  let sent = false;
+  return new ReadableStream({
+    async pull(controller) {
+      if (!sent) { sent = true; controller.enqueue(Buffer.from(prefix)); return; }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      controller.error(new Error(message));
+    },
+  });
+}
+
+test('setFetch injects the transport used by JSON requests', async (t) => {
+  t.after(() => network.setFetch(globalThis.fetch));
+  let called = false;
+  network.setFetch(async (url, options) => {
+    called = true;
+    assert.equal(url, 'https://api.github.com/value');
+    assert.equal(options.redirect, 'manual');
+    return new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } });
+  });
+  assert.deepEqual(await network.json('https://api.github.com/value'), { ok: true });
+  assert.equal(called, true);
+});
+
+test('download resumes a transient disconnect only with byte ranges and a validator', async (t) => {
+  t.after(() => network.setFetch(globalThis.fetch));
+  const destination = await temp(t);
+  const calls = [];
+  network.setFetch(async (_url, options) => {
+    calls.push({ ...options.headers });
+    if (calls.length === 1) return new Response(broken('abc'), { headers: {
+      'content-length': '6', etag: '"version-1"', 'accept-ranges': 'bytes',
+    }});
+    assert.equal(options.headers.Range, 'bytes=3-');
+    assert.equal(options.headers['If-Range'], '"version-1"');
+    return new Response('def', { status: 206, headers: {
+      'content-length': '3', 'content-range': 'bytes 3-5/6', etag: '"version-1"', 'accept-ranges': 'bytes',
+    }});
+  });
+  const progress = [];
+  await network.download('https://gamebanana.com/file.zip', destination, (value) => progress.push(value), undefined, { expectedSize: 6 });
+  assert.equal(await fs.readFile(destination, 'utf8'), 'abcdef');
+  assert.equal(calls.length, 2);
+  assert.equal(progress.at(-1).received, 6);
+  assert.equal(typeof progress.at(-1).bytesPerSecond, 'number');
+});
+
+test('download safely restarts when the failed response cannot be resumed', async (t) => {
+  t.after(() => network.setFetch(globalThis.fetch));
+  const destination = await temp(t);
+  let calls = 0;
+  network.setFetch(async (_url, options) => {
+    calls++;
+    assert.equal(options.headers.Range, undefined);
+    if (calls === 1) return new Response(broken('bad'));
+    return new Response('whole', { headers: { 'content-length': '5' } });
+  });
+  await network.download('https://gamebanana.com/file.zip', destination);
+  assert.equal(await fs.readFile(destination, 'utf8'), 'whole');
+  assert.equal(calls, 2);
+});
+
+test('bad length and checksum never publish destination and preserve partial data', async (t) => {
+  t.after(() => network.setFetch(globalThis.fetch));
+  const destination = await temp(t);
+  let calls = 0;
+  network.setFetch(async () => { calls++; return new Response('abc', { headers: { 'content-length': '5' } }); });
+  await assert.rejects(network.download('https://gamebanana.com/file.zip', destination), /不完整/);
+  assert.equal(calls, 3);
+  await assert.rejects(fs.access(destination));
+  assert.equal(await fs.readFile(`${destination}.part`, 'utf8'), 'abc');
+
+  await fs.rm(`${destination}.part`);
+  network.setFetch(async () => new Response('abc'));
+  const wrong = `sha256:${crypto.createHash('sha256').update('different').digest('hex')}`;
+  await assert.rejects(network.download('https://gamebanana.com/file.zip', destination, undefined, undefined, { checksum: wrong }), /校验/);
+  await assert.rejects(fs.access(destination));
+  assert.equal(await fs.readFile(`${destination}.part`, 'utf8'), 'abc');
+});
+
+test('redirects are revalidated and reject an untrusted destination', async (t) => {
+  t.after(() => network.setFetch(globalThis.fetch));
+  const destination = await temp(t);
+  network.setFetch(async () => new Response(null, { status: 302, headers: { location: 'https://evil.example/file.zip' } }));
+  await assert.rejects(network.download('https://gamebanana.com/redirect', destination), /可信来源/);
+  await assert.rejects(fs.access(destination));
+});
+test('Chromium content length mismatch resumes safely and is retried',async t=>{
+ t.after(()=>network.setFetch(globalThis.fetch));const dest=await temp(t);let calls=0;
+ network.setFetch(async(u,o)=>{calls++;if(calls===1)return new Response(broken('abc','net::ERR_CONTENT_LENGTH_MISMATCH'),{headers:{'content-length':'6','etag':'"v1"','accept-ranges':'bytes'}});assert.equal(o.headers.Range,'bytes=3-');return new Response('def',{status:206,headers:{'content-length':'3','content-range':'bytes 3-5/6','etag':'"v1"','accept-ranges':'bytes'}});});
+ await network.download('https://gamebanana.com/file.zip',dest);assert.equal(await fs.readFile(dest,'utf8'),'abcdef');assert.equal(calls,2);
+});
+test('verified partial downloads can resume on a later invocation',async t=>{
+ t.after(()=>network.setFetch(globalThis.fetch));const dest=await temp(t);let phase=0;
+ network.setFetch(async(u,o)=>{if(phase===0)return new Response(broken('abc','net::ERR_CONTENT_LENGTH_MISMATCH'),{headers:{'content-length':'6','etag':'"v1"','accept-ranges':'bytes'}});assert.equal(o.headers.Range,'bytes=3-');return new Response('def',{status:206,headers:{'content-length':'3','content-range':'bytes 3-5/6','etag':'"v1"','accept-ranges':'bytes'}});});
+ await assert.rejects(network.download('https://gamebanana.com/file.zip',dest,undefined,undefined,{maxAttempts:1}));phase=1;await network.download('https://gamebanana.com/file.zip',dest);assert.equal(await fs.readFile(dest,'utf8'),'abcdef');
+});
+test('unsolicited partial response never becomes a resumable prefix',async t=>{
+ t.after(()=>network.setFetch(globalThis.fetch));const dest=await temp(t);
+ network.setFetch(async()=>new Response('def',{status:206,headers:{'content-length':'3','content-range':'bytes 3-5/6',etag:'"v1"','accept-ranges':'bytes'}}));
+ await assert.rejects(network.download('https://gamebanana.com/file.zip',dest,undefined,undefined,{expectedSize:6,retryDelayMs:0}),/分段/);await assert.rejects(fs.access(dest));
+});
