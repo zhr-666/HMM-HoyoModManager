@@ -3,12 +3,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-test('archive preflight rejects traversal, Windows alternate streams, links and runnable files', () => {
+test('archive preflight rejects traversal, Windows alternate streams, links', () => {
   const { validateEntries } = require('../src/core/archive.cjs');
-  for (const entry of [{name:'../escape.ini'}, {name:'C:/evil.ini'}, {name:'mod/a.ini:evil'}, {name:'mod/x.exe'}, {name:'mod/x.ps1'}, {name:'mod/x.py'}, {name:'mod/x.sh'}, {name:'mod/x.ahk'}, {name:'mod/x.cpl'}, {name:'mod/x.wsf'}, {name:'mod/x',link:true}, {name:'mod/CON.ini'}]) {
+  for (const entry of [{name:'../escape.ini'}, {name:'C:/evil.ini'}, {name:'mod/a.ini:evil'}, {name:'mod/x',link:true}, {name:'mod/CON.ini'}]) {
     assert.throws(() => validateEntries([entry]), undefined, JSON.stringify(entry));
   }
   assert.doesNotThrow(() => validateEntries([{name:'Amber/body.ini',size:100},{name:'Amber/body.dds',size:200}]));
+});
+test('archive preflight accepts executable and script files as installable data', () => {
+  const {validateEntries}=require('../src/core/archive.cjs');
+  for(const ext of ['exe','dll','com','bat','cmd','ps1','psm1','psd1','vbs','vbe','js','jse','msi','msp','scr','lnk','url','hta','reg','sys','py','pyw','pyc','sh','bash','zsh','ahk','wsf','wsh','jar','cpl','chm','appx','msix']){
+    assert.doesNotThrow(()=>validateEntries([{name:'mod/required.'+ext,size:4}]),ext);
+  }
 });
 test('archive preflight rejects invalid sizes that would bypass the extraction budget',()=>{
   const {validateEntries}=require('../src/core/archive.cjs');
@@ -105,7 +111,6 @@ test('disk RAR extraction handles nested and empty directories and rejects unsaf
     [{name:'mod\\..\\escape.ini',data:'escape'}],
     [{name:'C:/escape.ini'}],
     [{name:'mod/a.ini:stream'}],
-    [{name:'mod/run.exe'}],
     [{name:'mod/CON.ini'}],
     [{name:'a.ini'},{name:'A.ini'}],
     [{name:'secret.ini',encrypted:true}]
@@ -146,4 +151,16 @@ test('RAR timeout stops the worker before removing partial files',async t=>{
   }:require(id)});
   await assert.rejects(module.exports.extract(path.join(__dirname,'fixtures','WithComment.rar'),out),/超时/);
   await assert.rejects(fs.stat(out),{code:'ENOENT'});
+});
+
+test('RAR installs bundled executable and Python files unchanged without running them',async t=>{
+ const {extract}=require('../src/core/archive.cjs');const {Library}=require('../src/core/library.cjs');
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-rar-programs-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const marker=path.join(root,'SCRIPT_EXECUTED');
+ const entries=[{name:'mod.ini',data:'[Constants]\n'},{name:'required.py',data:`from pathlib import Path\nPath(${JSON.stringify(marker)}).touch()\n`},{name:'tool.exe',data:'MZ-bundled-program'},{name:'tool.dll',data:'MZ-bundled-library'}];
+ const archive=path.join(root,'mod.rar'),out=path.join(root,'out');await fs.writeFile(archive,storedRar(entries));
+ await extract(archive,out);const lib=new Library(path.join(root,'data'));await lib.init();
+ const mod=await lib.install(out,{name:'RAR program files',characterId:'1',characterName:'Amber'});
+ for(const entry of entries)assert.equal(await fs.readFile(path.join(mod.folder,entry.name),'utf8'),entry.data);
+ await assert.rejects(fs.access(marker),{code:'ENOENT'});
 });

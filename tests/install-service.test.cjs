@@ -49,3 +49,25 @@ test('download classification comes from GameBanana detail even outside known ch
  const mod=lib.snapshot().mods[0];assert.equal(mod.characterId,'33221');assert.equal(mod.characterName,'Icons');assert.equal(mod.rootCategoryName,'UI');assert.equal(mod.rootCategoryId,'22474');
  assert.equal(path.relative(lib.libraryRoot,mod.folder).split(path.sep).length,3);
 });
+
+test('real ZIP and 7Z installation preserves bundled programs and scripts without executing them',async t=>{
+ const {InstallService}=require('../src/core/install-service.cjs');
+ const {extract,archiver}=require('../src/core/archive.cjs');
+ const exec=require('node:util').promisify(require('node:child_process').execFile);
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-passive-install-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const input=path.join(root,'input');await fs.mkdir(input);
+ const marker=path.join(root,'SCRIPT_EXECUTED');
+ const files={'mod.ini':'[Constants]\n','required.py':`from pathlib import Path\nPath(${JSON.stringify(marker)}).touch()\n`,'setup.js':`require('fs').writeFileSync(${JSON.stringify(marker)},'executed');`,'required.exe':'MZ-bundled-program','required.dll':'MZ-bundled-library','setup.sh':`#!/bin/sh\ntouch '${marker}'\n`};
+ for(const [name,contents] of Object.entries(files))await fs.writeFile(path.join(input,name),contents);
+ if(process.platform!=='win32')await fs.chmod(archiver(),0o755);
+ for(const ext of ['zip','7z']){
+  const archive=path.join(root,'mod.'+ext);await exec(archiver(),['a',archive,...Object.keys(files)],{cwd:input});
+  const lib=new Library(path.join(root,ext));await lib.init();
+  const service=new InstallService(path.join(root,ext),{lib,extract,api:{detail:async()=>({id:2,name:'Required tools',characterId:1,characterName:'Amber',files:[{id:3,name:'mod.'+ext,size:(await fs.stat(archive)).size}]})},download:async(u,p)=>fs.copyFile(archive,p)});
+  await service.install({sourceId:2,fileId:3});
+  const installed=lib.snapshot().mods[0];
+  for(const [name,contents] of Object.entries(files))assert.equal(await fs.readFile(path.join(installed.folder,name),'utf8'),contents);
+  assert.equal((await service.history())[0].status,'installed');
+  await assert.rejects(fs.access(marker),{code:'ENOENT'});
+ }
+});

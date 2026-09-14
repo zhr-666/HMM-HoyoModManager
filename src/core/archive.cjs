@@ -5,7 +5,7 @@ const exec = promisify(require('node:child_process').execFile);
 function archiver() {
   return require('7zip-bin').path7za.replace('app.asar'+path.sep, 'app.asar.unpacked'+path.sep);
 }
-function validateEntries(entries, { component = false } = {}) {
+function validateEntries(entries) {
   let total = 0;
   if (!entries.length || entries.length > 25000) throw new Error('压缩包为空或文件数量过多。');
   const seen = new Set();
@@ -13,7 +13,6 @@ function validateEntries(entries, { component = false } = {}) {
     const name = e.name.replaceAll('\\','/');
     const parts = name.split('/');
     if (!name || name.startsWith('/') || /[:\x00-\x1f]/.test(name) || parts.some(p => p === '..' || p === '.' || /[. ]$/.test(p) || /^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(p)) || e.link) throw new Error('压缩包含不安全路径或链接：'+name);
-    if (!component && /\.(exe|dll|com|bat|cmd|ps1|psm1|psd1|vbs|vbe|js|jse|msi|msp|scr|lnk|url|hta|reg|sys|py|pyw|pyc|sh|bash|zsh|ahk|wsf|wsh|jar|cpl|chm|appx|msix)$/i.test(name)) throw new Error('Mod 包含程序或脚本，不能自动安装：'+name);
     if (seen.has(name.toLowerCase())) throw new Error('压缩包包含重名文件：'+name);
     seen.add(name.toLowerCase());
     const size=Number(e.size ?? 0);

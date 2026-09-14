@@ -186,7 +186,7 @@ if(lock)app.whenReady().then(async()=>{
   protocol.handle('hoyo',request=>{
     const url=new URL(request.url);
     const name=url.pathname==='/'?'index.html':decodeURIComponent(url.pathname.slice(1));
-    if(url.hostname!=='app'||!['index.html','app.js','style.css'].includes(name))return new Response('Not found',{status:404});
+    if(url.hostname!=='app'||!['index.html','app.js','library-categories.js','style.css'].includes(name))return new Response('Not found',{status:404});
     return net.fetch(pathToFileURL(path.join(__dirname,'ui',name)).href);
   });
   win=new BrowserWindow({width:1260,height:860,minWidth:980,minHeight:650,title:'HoYoMod · 原神模组管理',backgroundColor:'#f5f7fa',autoHideMenuBar:true,...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{color:'#00000000',symbolColor:'#202733',height:40}}:{}),webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});

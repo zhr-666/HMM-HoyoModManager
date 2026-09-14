@@ -146,3 +146,18 @@ html[data-platform="win32"] .sidebar{top:40px}
 .file-option:hover{background:var(--hover);border-color:var(--blue)}.file-option:has(input:checked){border-color:var(--blue);background:var(--blue-soft);box-shadow:inset 3px 0 0 var(--blue)}.file-option:has(input:focus-visible){outline:2px solid var(--blue);outline-offset:2px}
 .file-option input[type="radio"],.field .file-option input[type="radio"]{flex:0 0 18px;width:18px;height:18px;margin:0;padding:0;accent-color:var(--blue)}.file-option>span{flex:1;min-width:0}.file-option strong{display:block;font-size:15px;line-height:1.5;font-weight:650;overflow-wrap:anywhere}.file-option small{display:block;font-size:12px;line-height:1.6;font-weight:400;color:var(--muted);margin-top:5px}.update-window-note{line-height:1.7;margin:0 0 18px}
 #page-downloads .section-head{gap:20px}#page-downloads .section-head>.button{flex-shrink:0}
+
+.category-breadcrumb{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:4px 0 14px;color:var(--muted)}
+.category-breadcrumb [aria-current="page"]{color:var(--text);font-weight:600}
+.category-arrow{margin-left:auto;flex-shrink:0;color:var(--muted)}
+#category-head[hidden],#category-list[hidden]{display:none}
+
+.download-toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:100;padding:13px 22px;max-width:calc(100vw - 40px);border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);box-shadow:0 6px 24px #0003;font-size:14px;font-weight:600;pointer-events:none;-webkit-app-region:no-drag}
+html[data-platform="win32"] .download-toast{top:54px}
+.library-navigation{display:flex;align-items:center;gap:18px;margin-bottom:18px}
+.library-navigation .library-breadcrumb{margin:0;min-width:0}
+.library-breadcrumb [aria-current="page"]{color:var(--text);font-weight:600}
+.library-back{flex-shrink:0;min-height:42px;border-color:var(--blue);color:var(--blue);font-weight:600;display:flex;align-items:center;gap:8px}
+.library-back>span{font-size:22px;line-height:1}
+.folder-icon{width:36px;height:36px;flex:0 0 36px;display:grid;place-items:center}
+.folder-icon img{width:36px;height:36px;object-fit:contain}

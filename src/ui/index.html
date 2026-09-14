@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div id="download-toast" class="download-toast" role="status" aria-live="polite" hidden></div>
   <div class="window-titlebar"><span>HoYoMod</span></div>
   <div class="app-shell">
     <aside class="sidebar">
@@ -31,7 +32,6 @@
 
       <section id="page-workshop" class="page active" data-testid="workshop-page">
         <div class="toolbar">
-          <select id="root-category-select" aria-label="模组大类"></select>
           <label class="search"><span>⌕</span><input id="search-input" type="search" placeholder="搜索模组或作者" aria-label="搜索模组"></label>
           <button class="button secondary" id="search-button">搜索</button>
         </div>
@@ -40,16 +40,18 @@
           <label class="check-filter"><input id="sfw-filter" type="checkbox" checked> SFW</label>
           <label class="check-filter"><input id="nsfw-filter" type="checkbox" checked> NSFW</label>
         </div>
-        <div class="character-head"><strong>选择子分类</strong><label class="mini-search"><span>⌕</span><input id="character-search" type="search" placeholder="查找分类" aria-label="查找分类"></label></div>
+        <nav id="category-breadcrumb" class="category-breadcrumb" aria-label="模组分类路径"></nav>
+        <div id="category-head" class="character-head"><strong id="category-heading">选择大分类</strong><label class="mini-search"><span>⌕</span><input id="character-search" type="search" placeholder="查找当前层级分类" aria-label="查找当前层级分类"></label></div>
         <div id="category-list" class="category-list" aria-label="模组分类"></div>
+        <p id="category-empty" class="meta" hidden>当前层级没有匹配的分类。</p>
         <div id="browse-grid" class="card-grid"></div>
         <div id="browse-empty" class="empty" hidden></div>
         <div class="pager"><button class="button secondary" id="prev-page">上一页</button><span id="page-info">第 1 页</span><button class="button secondary" id="next-page">下一页</button></div>
       </section>
 
       <section id="page-library" class="page" data-testid="library-page">
-        <div class="section-head"><div><h2>本机模组</h2><p>按大类与角色 / 子分类浏览；同一归属同时启用一个模组</p></div><div class="row-actions"><button class="button secondary" id="replace-hash">批量替换 Hash</button><button class="button secondary" id="hash-history">替换记录</button><button class="button secondary" id="check-updates-library">检查更新</button><button class="button secondary" id="disable-all-library">全部停用</button><button class="button primary" id="import-button">导入本地模组</button></div></div>
-        <nav id="library-breadcrumb" class="library-breadcrumb" aria-label="模组文件夹路径"></nav><div id="library-folders" class="folder-grid"></div>
+        <div class="section-head"><div><h2>本机模组</h2><p>按 GameBanana 分类逐层浏览；同一归属同时启用一个模组</p></div><div class="row-actions"><button class="button secondary" id="replace-hash">批量替换 Hash</button><button class="button secondary" id="hash-history">替换记录</button><button class="button secondary" id="check-updates-library">检查更新</button><button class="button secondary" id="disable-all-library">全部停用</button><button class="button primary" id="import-button">导入本地模组</button></div></div>
+        <div class="library-navigation"><button type="button" id="library-back" class="button secondary library-back" aria-label="返回上一级分类" disabled><span aria-hidden="true">←</span> 返回上一级</button><nav id="library-breadcrumb" class="library-breadcrumb" aria-label="模组分类路径"></nav></div><div id="library-folders" class="folder-grid"></div>
         <div id="library-grid" class="list-grid"></div><div id="library-empty" class="empty" hidden></div>
       </section>
 
@@ -86,6 +88,7 @@
   </div>
 
   <dialog id="modal"><form method="dialog"><div class="dialog-head"><div><h2 id="modal-title"></h2><p id="modal-subtitle"></p></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><div id="modal-body" class="dialog-body"></div><div id="modal-actions" class="dialog-actions"></div></form></dialog>
+  <script src="library-categories.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

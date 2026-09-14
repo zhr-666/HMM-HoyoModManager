@@ -23,8 +23,8 @@ const {Library}=require('../src/core/library.cjs');
     await assert.rejects(page.evaluate(()=>window.hoyo.call('install',{sourceId:710045,fileId:1798090,characterId:'19498',characterName:'Raiden'})),/GIMI/);
     assert.deepEqual(snap.mods[0].hotkeys.bindings[0].keys,['H']);
     await page.locator('[data-page="library"]').click();
-    await page.locator('.folder-card').filter({hasText:'Skins'}).click();
-    await page.locator('.folder-card').filter({hasText:'Mona'}).click();
+    // Root view includes all installed mods while online taxonomy loads.
+    await page.locator('#library-grid .hotkeys').first().waitFor();
     await page.locator('.hotkeys').first().click({timeout:40000});
     await page.locator('.hotkey-entry').waitFor();
     assert.match(await page.locator('#modal-body').textContent(),/KeyHat/);
