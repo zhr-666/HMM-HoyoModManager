@@ -53,7 +53,7 @@ async function dependencyReminder(detail,active=false,mods=lib.snapshot().mods){
  const missing=dependencies.missing(detail.requirements||[],inventory,active);
  if(!missing.length&&detail.requirementsKnown!==false)return true;
  if(!win||win.isDestroyed())return false;
- return dependencyPrompts.ask({name:detail.name||'',missing,active,unknown:detail.requirementsKnown===false});
+ return dependencyPrompts.ask({name:detail.name||'',missing,active,unknown:detail.requirementsKnown===false,retry:operationContext.getStore()||null});
 }
 function enableState(mod){return lib.snapshot().mods.map(m=>({...m,active:m.characterId===mod.characterId?m.id===mod.id:m.active}));}
 async function modDependencies(mod,active=true,mods){
@@ -84,9 +84,10 @@ async function checkUpdates(automatic=false){
   if(automatic&&result.updates.length)notify(`${result.updates.length} 个 Mod 有更新，请在“我的模组”检查并手动选择更新。`);
   return result;
 }
+const operationContext=new (require('node:async_hooks').AsyncLocalStorage)();
 const actions={
   answerDependency:p=>{if(!['continue','cancel'].includes(p.decision))throw Error('无效的前置操作。');dependencyPrompts.answer(p.token,p.decision==='continue');return {};},
-  openDependency:async p=>{const target=dependencyPrompts.link(p.token,p.index);if(target.sourceId)dependencyPrompts.answer(p.token,false);else await shell.openExternal(target.url);return target;},
+  openDependency:async p=>{const target=dependencyPrompts.link(p.token,p.index);if(target.sourceId){if(dependencyPrompts.isPending(p.token))dependencyPrompts.answer(p.token,false);}else await shell.openExternal(target.url);return target;},
   appUpdateState:()=>appUpdater.snapshot(),
   checkAppUpdate:()=>appUpdater.check(),
   downloadAppUpdate:()=>{if(updateHandoff)throw Error('正在重启更新');return appUpdater.prepare();},
@@ -186,6 +187,7 @@ const actions={
     if(!r.canceled){const st=await fs.stat(r.filePaths[0]);if(st.size>32*1024**2)throw Error('背景图片请控制在 32 MB 以内。');let img=nativeImage.createFromPath(r.filePaths[0]);if(img.isEmpty())throw Error('无法读取该图片。');if(img.getSize().width>3840)img=img.resize({width:3840});await fs.writeFile(path.join(root,'home-background.jpg'),img.toJPEG(90));await lib.settings({backgroundVersion:require('node:crypto').randomUUID()});}return snapshot();
   }),
   resetBackground:()=>exclusive(()=>lib.settings({backgroundVersion:''})),
+  openManagedMods:async()=>{await requireMods(lib.snapshot().settings);const folder=path.join(lib.snapshot().settings.modsPath,'HoYoModManaged');if(!await fs.stat(folder).then(s=>s.isDirectory(),()=>false))throw Error('受管理模组文件夹尚未创建，请先启用一个模组。');const error=await shell.openPath(folder);if(error)throw Error(error);},
   openMods:async()=>{await requireMods(lib.snapshot().settings);const error=await shell.openPath(lib.snapshot().settings.modsPath);if(error)throw Error(error);},
   setupXXMI:()=>downloadQueue.add({kind:'component',name:'XXMI 官方便携组件'}),
   configureXXMI:()=>launcher.launch(lib.snapshot().settings,true),
@@ -220,7 +222,7 @@ const actions={
 if(lock)app.whenReady().then(async()=>{
   lib=new Library(root);await lib.init();api=new GameBanana();network.setFetch(require('./core/electron-fetch.cjs').electronFetch(net));
   await session.defaultSession.setProxy(proxyConfig(lib.snapshot().settings));applyAppearance();
-  installer=new InstallService(root,{lib,api,download:network.download,extract,progress:v=>downloadQueue?.progress(v),validate:()=>requireMods(lib.snapshot().settings),refresh:async()=>{},confirmEnable:(mod,detail)=>dependencyReminder(detail,true,enableState(mod))});
+  installer=new InstallService(root,{lib,api,download:network.download,extract,progress:v=>downloadQueue?.progress(v),validate:()=>requireMods(lib.snapshot().settings),refresh:async()=>{},confirmEnable:(mod,detail,retry)=>operationContext.run(retry||{action:'enable',payload:{id:mod.id}},()=>dependencyReminder(detail,true,enableState(mod)))});
   downloadQueue=new DownloadQueue(root,{validate:p=>p.kind==='component'?Promise.resolve():requireMods(lib.snapshot().settings),onChange:()=>{const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key),...downloadQueue.hiddenKeysSnapshot()]);send('downloads',[...rows,...legacyDownloads.filter(r=>!keys.has(r.key))]);},run:async row=>{
     const p=row.payload;
     try{
@@ -240,7 +242,7 @@ if(lock)app.whenReady().then(async()=>{
     const url=new URL(request.url);
     const name=url.pathname==='/'?'index.html':decodeURIComponent(url.pathname.slice(1));
     if(url.hostname==='app'&&name==='custom-background')return net.fetch(pathToFileURL(path.join(root,'home-background.jpg')).href);
-    if(url.hostname!=='app'||!['home-background.jpg','index.html','app.js','library-categories.js','style.css'].includes(name))return new Response('Not found',{status:404});
+    if(url.hostname!=='app'||!['home-background.jpg','index.html','app.js','library-categories.js','dialog-stack.js','style.css'].includes(name))return new Response('Not found',{status:404});
     return net.fetch(pathToFileURL(path.join(__dirname,'ui',name)).href);
   });
   win=new BrowserWindow({width:1260,height:860,minWidth:980,minHeight:650,title:'HoYoMod · 原神模组管理',backgroundColor:'#f5f7fa',autoHideMenuBar:true,...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{color:'#00000000',symbolColor:'#202733',height:40}}:{}),webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
@@ -255,7 +257,7 @@ if(lock)app.whenReady().then(async()=>{
       if(event.sender!==win.webContents||event.senderFrame!==win.webContents.mainFrame||!event.senderFrame.url.startsWith('hoyo://app/'))throw new Error('不允许的调用来源。');
       if(updateHandoff&&action!=='state'&&action!=='appUpdateState')throw Error('软件正在准备重启更新，请稍候。');
       if(!Object.hasOwn(actions,action)||!payload||typeof payload!=='object'||Array.isArray(payload))throw new Error('不支持的操作。');
-      pendingActions++;try{return {ok:true,value:await actions[action](payload)};}finally{pendingActions--;}
+      pendingActions++;try{return {ok:true,value:await operationContext.run({action,payload},()=>actions[action](payload))};}finally{pendingActions--;}
     }catch(e){return {ok:false,error:e.message||'操作失败，请重试。'};}
   });
   await win.loadURL('hoyo://app/index.html');downloadQueue.start();

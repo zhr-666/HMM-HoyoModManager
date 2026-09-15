@@ -5,7 +5,15 @@ function baseRuntime(row){
  if(/^(?:3d\s*migoto|gimi|genshin\s+impact\s+model\s+importer)(?:\s*(?:\((?:3d\s*migoto|gimi|genshin\s+impact\s+model\s+importer)\)|v?\d+(?:\.\d+)*(?:\s*\+)?))*$/i.test(name))return true;
  try{const u=new URL(row.url);return u.protocol==='https:'&&u.hostname==='github.com'&&/^\/(?:bo3b\/3dmigoto|silentnightsound\/gi-model-importer)(?:\/(?:releases(?:\/.*)?|tree\/[^/]+))?\/?$/i.test(u.pathname);}catch{return false;}
 }
-function missing(rows,mods,active=false){return rows.filter(r=>!baseRuntime(r)&&!mods.some(m=>(!active||m.active)&&(r.sourceId?Number(m.sourceId)===r.sourceId:(m.provides||[]).some(n=>n.toLowerCase()===r.name.toLowerCase()))));}
+function filenameMatches(name,provided){
+ const text=String(name||'').toLowerCase(),stem=String(provided||'').toLowerCase();if(!stem)return false;
+ let at=text.indexOf(stem);
+ while(at!==-1){const before=[...text.slice(0,at)].at(-1)||'',after=[...text.slice(at+stem.length)][0]||'';
+  if(!/[\p{L}\p{N}_]/u.test(before)&&!/[\p{L}\p{N}_]/u.test(after))return true;
+  at=text.indexOf(stem,at+1);
+ }return false;
+}
+function missing(rows,mods,active=false){return rows.filter(r=>!baseRuntime(r)&&!mods.some(m=>(!active||m.active)&&((r.sourceId&&Number(m.sourceId)===r.sourceId)||(m.provides||[]).some(n=>filenameMatches(r.name,n)))));}
 async function inspect(folder,active=false,excluded=[]){
  const exclude=new Set(excluded.map(p=>path.resolve(p)));
  const provided=new Set(),references=new Map();let count=0,bytes=0;
@@ -23,14 +31,31 @@ async function inspect(folder,active=false,excluded=[]){
 }
 async function scanLocal(folder){return (await inspect(folder)).requirements;}
 async function providers(folder,active=false,excluded=[]){return (await inspect(folder,active,excluded)).provides;}
-async function inventory(mods,gimi,{active=false,managedMods=mods}={}){
- const rows=[];
- for(const mod of mods.filter(m=>!active||m.active)){
-  if(!await fs.stat(mod.folder).then(s=>s.isDirectory(),()=>false))continue;
-  let names=[];try{names=await providers(mod.folder,active);}catch{}
-  rows.push({...mod,provides:names});
+async function inventory(mods,gimi,{active=false}={}){
+ // Source identity is metadata only: never inspect the library's source folders.
+ const rows=mods.filter(m=>!active||m.active).map(m=>({...m,provides:[]}));
+ if(!gimi)return rows;
+ const names=new Set();let count=0;
+ const maxEntries=25000,maxDepth=32;
+ async function directoryWithoutLinks(dir){const stat=await fs.lstat(dir);return stat.isDirectory()&&!stat.isSymbolicLink();}
+ async function walk(dir,depth){
+  if(depth>maxDepth||count>=maxEntries)return;
+  const entries=await fs.opendir(dir);
+  for await(const entry of entries){
+   if(++count>maxEntries)break;
+   if(entry.isSymbolicLink()||(active&&/^DISABLED/i.test(entry.name)))continue;
+   const file=path.join(dir,entry.name);
+   if(entry.isDirectory())await walk(file,depth+1);
+   else if(entry.isFile()){const stem=path.parse(entry.name).name;if(stem)names.add(stem);}
+  }
  }
- if(gimi){const modsPath=path.join(gimi,'Mods'),excluded=[path.join(modsPath,'HoYoModManaged'),...managedMods.filter(m=>m.deploymentRelative!==undefined).map(m=>path.join(modsPath,m.deploymentRelative,m.id))];try{rows.push({active:true,provides:await providers(gimi,active,excluded)});}catch{}}
- return rows;
+ for(const parts of [['Mods','HoYoModManaged','BufferValues'],['Mods','HoYoModManaged','Other','Misc']]){
+  try{
+   let folder=path.resolve(gimi),valid=await directoryWithoutLinks(folder);
+   for(const part of parts){if(!valid)break;folder=path.join(folder,part);valid=await directoryWithoutLinks(folder);}
+   if(valid)await walk(folder,0);
+  }catch(error){if(!['ENOENT','ENOTDIR','EACCES','EPERM'].includes(error.code))throw error;}
+ }
+ rows.push({active:true,provides:[...names]});return rows;
 }
 module.exports={requirements,missing,scanLocal,providers,inventory};

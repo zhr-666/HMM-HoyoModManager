@@ -76,6 +76,6 @@ test('automatic activation asks dependency gate and cancellation keeps downloade
  const result=await service.install({sourceId:2,fileId:3,characterId:'1',characterName:'Amber'});assert.equal(checked,1);assert.equal(lib.snapshot().mods[0].active,false);assert.match(result.message,/取消自动启用/);
 });
 test('active update cancellation at dependency gate preserves prior files',async t=>{
- const {lib,service}=await stableFixture(t);await service.install({sourceId:2,fileId:3,characterId:'1',characterName:'Amber'});const old=lib.snapshot().mods[0];await lib.enable(old.id);service.confirmEnable=async()=>false;
- await assert.rejects(service.install({sourceId:2,fileId:3},lib.snapshot().mods[0]),/取消更新/);assert.equal(lib.snapshot().mods[0].folder,old.folder);assert.equal(lib.snapshot().mods[0].active,true);
+ const {lib,service}=await stableFixture(t);await service.install({sourceId:2,fileId:3,characterId:'1',characterName:'Amber'});const old=lib.snapshot().mods[0];await lib.enable(old.id);let retry;service.confirmEnable=async(_mod,_detail,context)=>{retry=context;return false;};
+ await assert.rejects(service.install({sourceId:2,fileId:3,queueId:'update-task'},lib.snapshot().mods[0]),/取消更新/);assert.equal(lib.snapshot().mods[0].folder,old.folder);assert.equal(lib.snapshot().mods[0].active,true);assert.deepEqual(retry,{action:'retryDownload',payload:{id:'update-task'}});
 });

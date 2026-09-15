@@ -16,19 +16,19 @@
   <div class="app-shell">
     <aside class="sidebar">
       <nav aria-label="主导航">
-        <button class="nav-item active" data-page="home"><span>⌂</span>首页</button>
-        <button class="nav-item" data-page="workshop"><span>✦</span>模组工坊</button>
-        <button class="nav-item" data-page="library"><span>▦</span>我的模组</button>
-        <button class="nav-item" data-page="presets"><span>◫</span>搭配方案</button>
-        <button class="nav-item" data-page="downloads"><span>↓</span>下载列表</button>
+        <button class="nav-item active" data-page="home" title="首页" aria-label="首页"><span aria-hidden="true">⌂</span></button>
+        <button class="nav-item" data-page="workshop" title="模组工坊" aria-label="模组工坊"><span aria-hidden="true">✦</span></button>
+        <button class="nav-item" data-page="library" title="我的模组" aria-label="我的模组"><span aria-hidden="true">▦</span></button>
+        <button class="nav-item" data-page="presets" title="搭配方案" aria-label="搭配方案"><span aria-hidden="true">◫</span></button>
+        <button class="nav-item" data-page="downloads" title="下载列表" aria-label="下载列表"><span aria-hidden="true">↓</span></button>
       </nav>
-      <button class="nav-item settings-nav" data-page="settings"><span>⚙</span>设置</button>
+      <button class="nav-item settings-nav" data-page="settings" title="设置" aria-label="设置"><span aria-hidden="true">⚙</span></button>
     </aside>
 
     <main>
       <header class="topbar">
         <div><h1 id="page-title">首页</h1><p id="page-subtitle">准备好下一次冒险</p></div>
-        <div class="top-actions"><button class="button secondary" id="open-mods-button" hidden>打开 Mods 文件夹</button></div>
+        <div class="top-actions"><button class="button secondary" id="open-managed-mods-button" hidden>打开受管理模组文件夹</button><button class="button secondary" id="open-mods-button" hidden>打开 Mods 文件夹</button></div>
       </header>
 <div id="app-update-banner" class="notice app-update-banner" hidden><span id="app-update-banner-text"></span><button class="link-button" id="view-app-update">查看更新</button></div>
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -111,8 +111,9 @@
   </div>
 
   <dialog id="modal"><form method="dialog"><div class="dialog-head"><div><h2 id="modal-title"></h2><p id="modal-subtitle"></p></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><div id="modal-body" class="dialog-body"></div><div id="modal-actions" class="dialog-actions"></div></form></dialog>
-  <dialog id="dependency-modal" aria-labelledby="dependency-title"><div class="dialog-head"><div><h2 id="dependency-title">前置模组提醒</h2><span class="help-note" tabindex="0" role="button">作者可能未列出全部依赖；手动安装的前置可能无法按来源编号识别。点击 GameBanana 前置会取消本次操作，打开详情后可下载；其他网址由浏览器打开，需手动安装。</span></div><button type="button" class="icon-button" id="dependency-close" aria-label="关闭">×</button></div><div class="dialog-body"><p id="dependency-name"></p><p id="dependency-status"></p><div id="dependency-list"></div><p id="dependency-error" class="notice error" role="status" hidden></p></div><div class="dialog-actions"><button type="button" class="button secondary" id="dependency-cancel">取消</button><button type="button" class="button primary" id="dependency-continue">仍然继续</button></div></dialog>
+  <dialog id="dependency-modal" aria-labelledby="dependency-title"><div class="dialog-head"><div><h2 id="dependency-title">前置模组提醒</h2><span class="help-note" tabindex="0" role="button">作者可能未列出全部依赖；手动安装的前置可能无法按来源编号识别。查看 GameBanana 前置时保留当前窗口；返回后可重新检查。其他网址由浏览器打开，需手动安装。</span></div><button type="button" class="icon-button" id="dependency-close" aria-label="关闭">×</button></div><div class="dialog-body"><p id="dependency-name"></p><p id="dependency-status"></p><div id="dependency-list"></div><p id="dependency-error" class="notice error" role="status" hidden></p></div><div class="dialog-actions"><button type="button" class="button secondary" id="dependency-cancel">取消</button><button type="button" class="button primary" id="dependency-continue">仍然继续</button></div></dialog>
   <script src="library-categories.js"></script>
+  <script src="dialog-stack.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

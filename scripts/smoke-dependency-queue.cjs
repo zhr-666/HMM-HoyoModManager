@@ -16,11 +16,11 @@ const {_electron}=require(process.env.PLAYWRIGHT_MODULE||'playwright'),assert=re
   await page.evaluate(()=>emitDependency({token:'A',name:'Mod A',missing:[{name:'TexFx',sourceId:485763}]}));
   await page.locator('.dependency-link').click();await page.waitForFunction(()=>window.detailStarted);
   await page.evaluate(()=>emitDependency({token:'B',name:'Mod B',missing:[{name:'Another dependency'}]}));
-  assert.equal(await page.locator('#dependency-modal').isVisible(),false,'new reminder waits until detail navigation completes');
+  assert.equal(await page.locator('dialog[open]').count(),2,'previous reminder and loading detail stay open while new reminder waits');
   await page.evaluate(()=>finishDetail());await page.locator('#dependency-modal').waitFor({state:'visible'});
   assert.equal(await page.locator('#modal-title').textContent(),'TexFx');assert.equal(await page.locator('#dependency-name').textContent(),'Mod B');
   assert.equal(await page.locator('#dependency-cancel').evaluate(b=>{const r=b.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===b;}),true,'pending reminder must be topmost and clickable');
-  await page.locator('#dependency-cancel').click();await page.locator('#dependency-modal').waitFor({state:'hidden'});assert.equal(await page.locator('#modal').isVisible(),true);
+  await page.locator('#dependency-cancel').click();await page.waitForFunction(()=>document.querySelectorAll('dialog[open]').length===2);assert.equal(await page.locator('#modal').isVisible(),true);
   assert.deepEqual(errors,[]);console.log('Dependency queue passed: delayed detail navigation, concurrent reminder, topmost controls and cancellation.');
  }finally{await app.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

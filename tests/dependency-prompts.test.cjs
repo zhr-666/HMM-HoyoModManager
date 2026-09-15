@@ -16,3 +16,7 @@ test('dependency links come from current reminder and reject executable protocol
  assert.throws(()=>p.link(token,2));assert.throws(()=>p.link(token,99));
  p.cancelAll();assert.equal(await pending,false);
 });
+test('history permits revisiting links but cannot reuse an answered confirmation',async()=>{
+ const events=[],p=new DependencyPrompts(v=>events.push(v));const result=p.ask({missing:[{sourceId:123,name:'Dependency'}]});const token=events[0].token;
+ p.answer(token,false);assert.equal(await result,false);assert.equal(p.isPending(token),false);assert.deepEqual(p.link(token,0),{sourceId:123});assert.throws(()=>p.answer(token,true));
+});

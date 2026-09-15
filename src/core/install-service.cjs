@@ -43,7 +43,7 @@ class InstallService{
       this.progress({label:'检查并安装 '+detail.name,received:0,total:0});
       await fs.rm(unpacked,{recursive:true,force:true});await this.extract(archive,unpacked);
       await this.validate();
-      if(old?.active&&!await this.confirmEnable(old,detail))throw Error('已取消更新，原模组保持不变。');
+      if(old?.active&&!await this.confirmEnable(old,detail,{action:'retryDownload',payload:p.queueId?{id:p.queueId}:{key}}))throw Error('已取消更新，原模组保持不变。');
       const mod=await this.lib.install(unpacked,{...job,downloadReceipt:job.receipt,downloadQueueId:p.queueId,...(old?{id:old.id,expectedFolder:old.folder}:{}),updatedAt:detail.updatedAt,preview:detail.preview,author:detail.author});
       job.installedId=mod.id;job.status='installed';
       let message='模组已安装。';
