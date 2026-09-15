@@ -1,4 +1,12 @@
 const test=require('node:test'),assert=require('node:assert/strict');
+test('base GIMI and 3DMigoto requirements are ignored without hiding add-on mods',()=>{
+ const {missing}=require('../src/core/dependencies.cjs');
+ const base=['3DMigoto','3dmigoto v1.3.16','GIMI','3DMigoto (GIMI)','Genshin Impact Model Importer'].map(name=>({name}));
+ base.push({name:'加载器',url:'https://github.com/SilentNightSound/GI-Model-Importer/releases'});
+ const addons=[{name:'TexFx',sourceId:485763},{name:'GIMI Addon'},{name:'3DMigoto Fix'}];
+ assert.deepEqual(missing([...base,...addons],[]),addons);
+ assert.deepEqual(missing([...base,...addons],[],true),addons);
+});
 test('GameBanana official requirement tuples retain name and source identity',()=>{
  const {requirements}=require('../src/core/dependencies.cjs');
  assert.deepEqual(requirements([['TexFx','https://gamebanana.com/mods/485763'],['External','https://example.com/tool']]),[{name:'TexFx',url:'https://gamebanana.com/mods/485763',sourceId:485763},{name:'External',url:'https://example.com/tool',sourceId:null}]);

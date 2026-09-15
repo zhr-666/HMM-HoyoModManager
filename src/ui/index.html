@@ -67,19 +67,19 @@
       </section>
 
       <section id="page-library" class="page" data-testid="library-page">
-        <div class="section-head"><div><h2>本机模组</h2><p>按 GameBanana 分类逐层浏览；同一归属同时启用一个模组</p></div><div class="row-actions"><button class="button secondary" id="replace-hash">批量替换 Hash</button><button class="button secondary" id="hash-history">替换记录</button><button class="button secondary" id="check-updates-library">检查更新</button><button class="button secondary" id="disable-all-library">全部停用</button><button class="button primary" id="import-button">导入本地模组</button></div></div>
+        <div class="section-head"><div class="row-actions"><button class="button secondary" id="replace-hash">批量替换 Hash</button><button class="button secondary" id="hash-history">替换记录</button><button class="button secondary" id="check-updates-library">检查更新</button><button class="button secondary" id="disable-all-library">全部停用</button><button class="button primary" id="import-button">导入本地模组</button></div></div>
         <div class="library-navigation"><button type="button" id="library-back" class="button secondary library-back" aria-label="返回上一级分类" disabled><span aria-hidden="true">←</span> 返回</button><nav id="library-breadcrumb" class="library-breadcrumb" aria-label="模组分类路径"></nav><div class="library-view-switch" role="group" aria-label="模组显示方式"><button type="button" id="library-view-list" aria-pressed="true" title="横向列表"><span aria-hidden="true">☰</span> 列表</button><button type="button" id="library-view-grid" aria-pressed="false" title="大图网格"><span aria-hidden="true">▦</span> 网格</button></div></div><div id="library-folders" class="folder-grid"></div>
         <div id="library-grid" class="list-grid"></div><div id="library-empty" class="empty" hidden></div>
       </section>
 
       <section id="page-downloads" class="page" data-testid="downloads-page">
-        <div class="section-head"><div><h2>下载</h2><p>清理记录不会删除已安装模组；排队、下载与安装中的任务会保留</p></div><button class="button secondary" id="clear-downloads" title="清除已结束的记录，保留进行中的任务">清空全部记录</button></div>
+        <div class="section-head"><div><h2>下载</h2></div><button class="button secondary" id="clear-downloads" title="清除已结束的记录，保留进行中的任务">清空全部记录</button></div>
         <p id="download-error" class="notice error" hidden></p>
         <div id="download-list" class="list-grid"></div><div id="download-empty" class="empty"><strong>还没有下载任务</strong>在模组工坊选择文件后，任务会出现在这里。</div>
       </section>
 
       <section id="page-presets" class="page" data-testid="presets-page">
-        <div class="section-head"><div><h2>搭配方案</h2><p>保存当前启用组合，一次切换所有角色</p></div><button class="button primary" id="save-preset-button">保存当前搭配</button></div>
+        <div class="section-head"><button class="button primary" id="save-preset-button">保存当前搭配</button></div>
         <div id="preset-grid" class="preset-grid"></div><div id="preset-empty" class="empty" hidden></div>
       </section>
 
@@ -111,6 +111,7 @@
   </div>
 
   <dialog id="modal"><form method="dialog"><div class="dialog-head"><div><h2 id="modal-title"></h2><p id="modal-subtitle"></p></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><div id="modal-body" class="dialog-body"></div><div id="modal-actions" class="dialog-actions"></div></form></dialog>
+  <dialog id="dependency-modal" aria-labelledby="dependency-title"><div class="dialog-head"><div><h2 id="dependency-title">前置模组提醒</h2><span class="help-note" tabindex="0" role="button">作者可能未列出全部依赖；手动安装的前置可能无法按来源编号识别。点击 GameBanana 前置会取消本次操作，打开详情后可下载；其他网址由浏览器打开，需手动安装。</span></div><button type="button" class="icon-button" id="dependency-close" aria-label="关闭">×</button></div><div class="dialog-body"><p id="dependency-name"></p><p id="dependency-status"></p><div id="dependency-list"></div><p id="dependency-error" class="notice error" role="status" hidden></p></div><div class="dialog-actions"><button type="button" class="button secondary" id="dependency-cancel">取消</button><button type="button" class="button primary" id="dependency-continue">仍然继续</button></div></dialog>
   <script src="library-categories.js"></script>
   <script src="app.js"></script>
 </body>

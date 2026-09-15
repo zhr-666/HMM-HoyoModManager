@@ -1,6 +1,11 @@
 const fs=require('node:fs/promises'),path=require('node:path');
 function requirements(rows){return (Array.isArray(rows)?rows:[]).filter(r=>Array.isArray(r)&&typeof r[0]==='string').map(([name,url])=>{let safe='';try{const u=new URL(url);if(['http:','https:'].includes(u.protocol)&&!u.username&&!u.password)safe=u.href;}catch{}return {name:name.slice(0,300),url:safe,sourceId:Number(safe.match(/^https:\/\/(?:www\.)?gamebanana\.com\/mods\/(\d+)(?:[/?#]|$)/i)?.[1])||null};});}
-function missing(rows,mods,active=false){return rows.filter(r=>!mods.some(m=>(!active||m.active)&&(r.sourceId?Number(m.sourceId)===r.sourceId:(m.provides||[]).some(n=>n.toLowerCase()===r.name.toLowerCase()))));}
+function baseRuntime(row){
+ const name=String(row.name||'').trim();
+ if(/^(?:3d\s*migoto|gimi|genshin\s+impact\s+model\s+importer)(?:\s*(?:\((?:3d\s*migoto|gimi|genshin\s+impact\s+model\s+importer)\)|v?\d+(?:\.\d+)*(?:\s*\+)?))*$/i.test(name))return true;
+ try{const u=new URL(row.url);return u.protocol==='https:'&&u.hostname==='github.com'&&/^\/(?:bo3b\/3dmigoto|silentnightsound\/gi-model-importer)(?:\/(?:releases(?:\/.*)?|tree\/[^/]+))?\/?$/i.test(u.pathname);}catch{return false;}
+}
+function missing(rows,mods,active=false){return rows.filter(r=>!baseRuntime(r)&&!mods.some(m=>(!active||m.active)&&(r.sourceId?Number(m.sourceId)===r.sourceId:(m.provides||[]).some(n=>n.toLowerCase()===r.name.toLowerCase()))));}
 async function inspect(folder,active=false,excluded=[]){
  const exclude=new Set(excluded.map(p=>path.resolve(p)));
  const provided=new Set(),references=new Map();let count=0,bytes=0;

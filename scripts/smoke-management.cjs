@@ -10,20 +10,29 @@ const {Library}=require('../src/core/library.cjs');
   const archive=path.join(root,'local.zip');await require('node:util').promisify(require('node:child_process').execFile)(require('../src/core/archive.cjs').archiver(),['a',archive,'.'],{cwd:input});
   const lib=new Library(path.join(root,'data'));await lib.init();const dependent=await lib.install(input,{name:'Needs TexFx',characterId:'1',characterName:'Test',sourceId:595315});
   app=await _electron.launch({executablePath:require('electron'),args:[project],env:{...process.env,HOYOMOD_DATA:lib.root}});console.log('launched');const page=await app.firstWindow();console.log('window');const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.waitForFunction(()=>!!window.hoyo);console.log('ipc-ready');
-  console.log('install-dialog-mocks');await app.evaluate(({dialog},{project})=>{
-   globalThis.testDialogs=[];globalThis.testPicks=[];globalThis.testResponse=0;
+  console.log('install-dialog-mocks');await app.evaluate(({dialog,shell},{project})=>{
+   globalThis.testDialogs=[];globalThis.testPicks=[];globalThis.testResponse=0;globalThis.testExternal=[];globalThis.testRequirements=[{name:'3DMigoto',url:'https://github.com/bo3b/3Dmigoto'},{name:'TexFx',sourceId:485763,url:'https://gamebanana.com/mods/485763'},{name:'GitHub Addon',url:'https://github.com/example/addon'}];shell.openExternal=async url=>{testExternal.push(url)};
    dialog.showOpenDialog=async()=>({canceled:!testPicks.length,filePaths:testPicks.length?[testPicks.shift()]:[]});
    dialog.showMessageBox=async(_win,options)=>{testDialogs.push(options);return {response:testResponse};};
-   process.getBuiltinModule('module').createRequire(project+'/package.json')(project+'/src/core/gamebanana.cjs').GameBanana.prototype.detail=async id=>({id,name:'Needs TexFx',requirementsKnown:true,requirements:[{name:'TexFx',sourceId:485763,url:'https://gamebanana.com/mods/485763'}],files:[]});
+   process.getBuiltinModule('module').createRequire(project+'/package.json')(project+'/src/core/gamebanana.cjs').GameBanana.prototype.detail=async id=>({id,name:id===485763?'TexFx':'Needs TexFx',characterId:'1',characterName:'Test',requirementsKnown:true,requirements:testRequirements,files:[{id:1,name:'test.zip',size:100}]});
   },{project});
   console.log('mocks-ready');await app.evaluate((_e,p)=>testPicks.push(p),gimi);console.log('gimi-pick');await page.evaluate(()=>window.hoyo.call('chooseMods'));
   assert.equal((await page.evaluate(()=>window.hoyo.call('state'))).settings.modsPath,mods);
   await page.evaluate(id=>window.hoyo.call('rename',{id,name:'自定义标题'}),dependent.id);
   assert.equal((await page.evaluate(()=>window.hoyo.call('state'))).mods[0].name,'自定义标题');
-  let r=await page.evaluate(()=>window.hoyo.call('install',{sourceId:595315,fileId:1,characterId:'1',characterName:'Test'}));assert.equal(r.cancelled,true);assert.equal((await page.evaluate(()=>window.hoyo.call('downloads'))).length,0);
-  await page.evaluate(id=>window.hoyo.call('enable',{id}),dependent.id);assert.equal((await page.evaluate(()=>window.hoyo.call('state'))).mods[0].active,false);
-  await app.evaluate(()=>testResponse=1);await page.evaluate(id=>window.hoyo.call('enable',{id}),dependent.id);assert.equal((await page.evaluate(()=>window.hoyo.call('state'))).mods[0].active,true);
-  assert.ok((await app.evaluate(()=>testDialogs)).every(d=>d.buttons.includes('仍然继续')));
+  async function startAction(action,payload){await page.evaluate(({action,payload})=>{window.actionResult=null;window.pendingAction=window.call(action,payload).then(r=>{window.actionResult=r;return r;});},{action,payload});await page.locator('#dependency-modal').waitFor({state:'visible'});}
+  await startAction('install',{sourceId:595315,fileId:1,characterId:'1',characterName:'Test'});
+  assert.equal(await page.locator('.dependency-row').count(),2);assert.ok(!(await page.locator('#dependency-list').textContent()).includes('3DMigoto'));
+  await page.locator('#dependency-cancel').click();assert.equal((await page.evaluate(()=>pendingAction)).cancelled,true);assert.equal((await page.evaluate(()=>window.hoyo.call('downloads'))).length,0);
+  await startAction('enable',{id:dependent.id});await page.keyboard.press('Escape');await page.evaluate(()=>pendingAction);assert.equal((await page.evaluate(()=>window.hoyo.call('state'))).mods[0].active,false);
+  await startAction('enable',{id:dependent.id});await page.locator('.dependency-row').filter({hasText:'GitHub Addon'}).getByRole('button').click();assert.deepEqual(await app.evaluate(()=>testExternal),['https://github.com/example/addon']);assert.equal(await page.locator('#dependency-modal').isVisible(),true);
+  await fs.mkdir(path.join(project,'test-results'),{recursive:true});await page.screenshot({path:path.join(project,'test-results/dependencies-light.png')});
+  await page.locator('.dependency-row').filter({hasText:'TexFx'}).getByRole('button').click();await page.waitForFunction(()=>document.querySelector('#modal-title').textContent==='TexFx',{},{timeout:10000}).catch(async e=>{console.log(await page.evaluate(()=>({notice:document.querySelector('#notice').textContent,dependency:document.querySelector('#dependency-error').textContent,title:document.querySelector('#modal-title').textContent})));throw e;});await page.evaluate(()=>pendingAction);
+  assert.equal((await page.evaluate(()=>window.hoyo.call('state'))).mods[0].active,false);assert.equal(await page.locator('#install-confirm').isEnabled(),true);await page.locator('#modal .icon-button').click();
+  await startAction('enable',{id:dependent.id});await page.locator('#dependency-continue').click();await page.evaluate(()=>pendingAction);assert.equal((await page.evaluate(()=>window.hoyo.call('state'))).mods[0].active,true);
+  assert.equal((await app.evaluate(()=>testDialogs)).length,0);
+  await page.evaluate(id=>window.hoyo.call('disable',{id}),dependent.id);await app.evaluate(()=>{testRequirements=[{name:'GIMI'},{name:'3DMigoto v1.3.16'}]});
+  await page.evaluate(id=>window.hoyo.call('enable',{id}),dependent.id);assert.equal((await page.evaluate(()=>window.hoyo.call('state'))).mods[0].active,true);assert.equal(await page.locator('#dependency-modal').isVisible(),false);
   await app.evaluate((_e,paths)=>testPicks.push(...paths),[archive,target]);await page.evaluate(()=>window.hoyo.call('import'));
   const imported=(await page.evaluate(()=>window.hoyo.call('state'))).mods.find(m=>!m.sourceId);assert.ok(imported.active);assert.equal(await fs.readFile(path.join(target,imported.id,'required.py'),'utf8'),'raise Exception("MUST NEVER EXECUTE")');
   await page.evaluate(id=>window.hoyo.call('disable',{id}),imported.id);await assert.rejects(fs.access(path.join(target,imported.id,'sample.ini')));
@@ -37,6 +46,12 @@ const {Library}=require('../src/core/library.cjs');
   await page.locator('[data-page="library"]').click();assert.equal(await page.locator('#open-mods-button').isVisible(),true);
   await page.locator('#page-title').click({button:'right'});await page.locator('#context-refresh').click();assert.equal(await page.locator('#context-menu').isVisible(),false);
   await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('#page-library').evaluate(el=>getComputedStyle(el).animationName),'none');
+  for(const name of ['home','library','presets','downloads']){await page.locator('[data-page="'+name+'"]').click();assert.equal(await page.locator('#page-subtitle').isVisible(),false);assert.equal(await page.locator('#page-'+name+' .section-head .help-note').count(),0);}
+  assert.equal(await page.locator('#page-library .section-head h2').count(),0);assert.equal(await page.locator('#page-presets .section-head h2').count(),0);
+  await page.locator('[data-page="workshop"]').click();assert.equal(await page.locator('#page-subtitle').isVisible(),true);assert.ok(!(await page.locator('#page-subtitle').getAttribute('class')||'').includes('help-note'));
+  const titleBox=await page.locator('#page-title').boundingBox(),subtitleBox=await page.locator('#page-subtitle').boundingBox();assert.ok(subtitleBox.y>=titleBox.y+titleBox.height);
+  await page.locator('[data-page="presets"]').click();await page.locator('#save-preset-button').click();const heading=await page.locator('#modal-title').boundingBox(),hint=await page.locator('#modal-subtitle').boundingBox();assert.ok(hint.x>=heading.x+heading.width);assert.ok(Math.abs(hint.y-heading.y)<10);await page.locator('#modal .icon-button').click();
+  await page.evaluate(()=>window.hoyo.call('settings',{theme:'dark'}));await app.evaluate(()=>{testRequirements=[{name:'TexFx',sourceId:485763,url:'https://gamebanana.com/mods/485763'}]});await startAction('enable',{id:dependent.id});await page.screenshot({path:path.join(project,'test-results/dependencies-dark.png')});await page.locator('#dependency-cancel').click();await page.evaluate(()=>pendingAction);
   assert.deepEqual(errors,[]);console.log('Management passed: native GIMI/EXE/background choices, dependency cancel/continue, local target deployment, passive scripts, rename, tooltips, context refresh.');
  }catch(error){console.error('Test failed:',error);throw error;}finally{if(app){await app.evaluate(({app})=>app.exit(0)).catch(()=>{});await app.close().catch(()=>{});}await fs.rm(root,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -20,6 +20,7 @@ if(!lock)app.quit();
 let appUpdater,updateHandoff=false,pendingActions=0;
 let win,lib,api,installer,busy=false,updateTimer,hashPreview,downloadQueue;let nativeMaterial=materialSupported(),legacyDownloads=[];
 function send(channel,data){if(win&&!win.isDestroyed())win.webContents.send('hoyo:'+channel,data);}
+const dependencyPrompts=new (require('./core/dependency-prompts.cjs').DependencyPrompts)(detail=>send('dependency',detail));
 function snapshot(){return {...lib.snapshot(),runtime:{version:app.getVersion(),platform:process.platform,dataRoot:root,dark:nativeTheme.shouldUseDarkColors,materialSupported:nativeMaterial}};}
 function notify(message){send('notice',message);}
 function id(value){if(!/^\d+$/.test(String(value)))throw new Error('无效的 GameBanana 编号。');return Number(value);}
@@ -51,9 +52,8 @@ async function dependencyReminder(detail,active=false,mods=lib.snapshot().mods){
  const inventory=await dependencies.inventory(mods,modsPath?path.dirname(modsPath):'',{active,managedMods:lib.snapshot().mods});
  const missing=dependencies.missing(detail.requirements||[],inventory,active);
  if(!missing.length&&detail.requirementsKnown!==false)return true;
- const lines=missing.map(r=>'• '+r.name+(r.url?' — '+r.url:''));
- const result=await dialog.showMessageBox(win,{type:'warning',title:'前置模组提醒',message:missing.length?'部分前置尚未找到'+(active?'或未启用':''):'暂时无法确认前置依赖',detail:[detail.name||'',...lines,detail.requirementsKnown===false?'依赖信息未能读取，请结合作者说明确认。':'作者可能未列出全部依赖；手动放入 GIMI 的前置可能无法按来源编号识别。'].join('\n'),buttons:['取消','仍然继续'],defaultId:0,cancelId:0,noLink:true});
- return result.response===1;
+ if(!win||win.isDestroyed())return false;
+ return dependencyPrompts.ask({name:detail.name||'',missing,active,unknown:detail.requirementsKnown===false});
 }
 function enableState(mod){return lib.snapshot().mods.map(m=>({...m,active:m.characterId===mod.characterId?m.id===mod.id:m.active}));}
 async function modDependencies(mod,active=true,mods){
@@ -85,6 +85,8 @@ async function checkUpdates(automatic=false){
   return result;
 }
 const actions={
+  answerDependency:p=>{if(!['continue','cancel'].includes(p.decision))throw Error('无效的前置操作。');dependencyPrompts.answer(p.token,p.decision==='continue');return {};},
+  openDependency:async p=>{const target=dependencyPrompts.link(p.token,p.index);if(target.sourceId)dependencyPrompts.answer(p.token,false);else await shell.openExternal(target.url);return target;},
   appUpdateState:()=>appUpdater.snapshot(),
   checkAppUpdate:()=>appUpdater.check(),
   downloadAppUpdate:()=>{if(updateHandoff)throw Error('正在重启更新');return appUpdater.prepare();},
@@ -245,6 +247,9 @@ if(lock)app.whenReady().then(async()=>{
   applyAppearance();nativeTheme.on('updated',()=>{applyAppearance();send('state',snapshot());});
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',(event,url)=>{if(url!=='hoyo://app/index.html')event.preventDefault();});
+  win.on('closed',()=>dependencyPrompts.cancelAll());
+  win.webContents.on('render-process-gone',()=>dependencyPrompts.cancelAll());
+  win.webContents.on('did-start-loading',()=>dependencyPrompts.cancelAll());
   ipcMain.handle('hoyo:call',async(event,action,payload)=>{
     try{
       if(event.sender!==win.webContents||event.senderFrame!==win.webContents.mainFrame||!event.senderFrame.url.startsWith('hoyo://app/'))throw new Error('不允许的调用来源。');

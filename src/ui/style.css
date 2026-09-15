@@ -237,5 +237,17 @@ html[data-page="home"] .topbar .help-note{color:#fff}
 @media(prefers-reduced-motion:reduce){.page.active,.context-menu{animation:none}}
 .hero-actions{flex-direction:row}.home-gamebar .section-kicker,.home-gamebar .game-selector{color:#fff;text-shadow:0 1px 6px #10203070}
 .topbar>div:first-child,.section-head>div:first-child{display:flex;align-items:center;gap:10px}
+html[data-page="workshop"] .topbar>div:first-child{display:block}
+html[data-page="workshop"] #page-subtitle{margin-top:7px}
+#page-subtitle[hidden],.help-note[hidden],.help-note:empty{display:none!important}
+dialog{background:var(--surface);color:var(--text)}
+.dialog-head h2{display:inline;vertical-align:middle}
+dialog .help-note{display:inline-flex;margin:0 0 0 7px!important;vertical-align:middle;flex-shrink:0}
+.dialog-head>div{min-width:0;line-height:1.6}
+.dialog-head .icon-button{flex-shrink:0}
+.dependency-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--line)}
+.dependency-row>div{min-width:0;overflow-wrap:anywhere}.dependency-row strong{font-size:14px}.dependency-row p{margin:5px 0 0;color:var(--muted);font-size:12px}.dependency-row button{flex-shrink:0}
+#dependency-name{font-weight:600;overflow-wrap:anywhere}#dependency-status{line-height:1.6}
+#page-library>.section-head,#page-presets>.section-head{justify-content:flex-end}
 
 .app-update-banner{display:flex;align-items:center;justify-content:space-between;gap:16px}.app-update-banner .link-button{color:inherit}#software-version{color:var(--muted);font-size:12px;margin-left:8px}#software-notes{padding:0 0 18px}#software-notes h3{font-size:13px}#software-notes pre{font-family:inherit;font-size:12px;max-height:220px;overflow:auto}#software-progress{display:flex;gap:14px;align-items:center;padding-bottom:14px;font-size:12px}#software-progress progress{flex:1;accent-color:var(--blue)}
