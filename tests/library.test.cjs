@@ -29,7 +29,7 @@ const meta = (name, characterId = name) => ({ name, characterId, characterName: 
 test('initializes defaults and snapshot is a deep clone', async (t) => {
   const { library } = await fixture(t);
   const snapshot = library.snapshot();
-  assert.deepEqual(snapshot, { settings: { autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], presets: [] });
+  assert.deepEqual(snapshot, { currentPresetId:null, settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], presets: [] });
   snapshot.settings.autoEnable = true;
   assert.equal(library.snapshot().settings.autoEnable, false);
 });
@@ -42,7 +42,7 @@ test('inactive installs do not fail because the game deployment path has old mod
   assert.equal(mod.active,false);
   assert.equal(mod.sourceFileUploadedAt,123);
   assert.equal(mod.sourceUrl,'https://gamebanana.com/mods/55');
-  await assert.rejects(library.enable(mod.id),/旧版/);
+  await library.enable(mod.id);assert.equal(await fs.readFile(path.join(modsPath,'legacy.ini'),'utf8'),'[legacy]');
 });
 
 test('update markers persist without redeploying active files or changing mod identity',async t=>{
@@ -110,13 +110,13 @@ test('updating keeps identity, active state and preset references', async (t) =>
   await assert.rejects(library.install(await modFolder('bad-id'), { ...meta('Bad'), id: 'unknown' }), /现有/);
 });
 
-test('rejects unsafe mods paths and foreign ini files', async (t) => {
+test('rejects unsafe mods paths while preserving foreign ini files', async (t) => {
   const { library, root, modsPath, modFolder } = await fixture(t);
   await assert.rejects(library.settings({ modsPath: 'relative' }), /绝对/);
   await assert.rejects(library.settings({ modsPath: path.join(root, 'data', 'library', 'nested') }), /交叉|重叠/);
   await library.settings({ modsPath: path.join(root, 'data', 'components', 'xxmi', 'GIMI', 'Mods') });
   await fs.writeFile(path.join(modsPath, 'foreign.ini'), '[foreign]');
-  await assert.rejects(library.settings({ modsPath }), /旧版|移出/);
+  await library.settings({ modsPath });
   await fs.mkdir(path.join(modsPath, 'DISABLED legacy'), { recursive: true });
   await fs.rename(path.join(modsPath, 'foreign.ini'), path.join(modsPath, 'DISABLED legacy', 'foreign.ini'));
   await library.settings({ modsPath });
@@ -238,8 +238,9 @@ test('failed active update preserves the prior source version and metadata', asy
   await library.settings({ modsPath });
   const old = await library.install(await modFolder('old-source', '[old]'), meta('Old', 'amber'));
   await library.enable(old.id);
-  await fs.writeFile(path.join(modsPath, 'foreign.ini'), '[foreign]');
+  const writeState=library._writeState;library._writeState=async()=>{throw Error('disk full')};
   await assert.rejects(library.install(await modFolder('new-source', '[new]'), { ...meta('New', 'amber'), id: old.id }));
+  library._writeState=writeState;
   const unchanged = library.snapshot().mods[0];
   assert.equal(unchanged.name, 'Old');
   assert.equal(await fs.readFile(path.join(unchanged.folder, 'old-source.ini'), 'utf8'), '[old]');
@@ -289,4 +290,89 @@ test('category names cannot escape the library or collide after Windows sanitiza
  await fs.access(a.folder);
  const state=library.snapshot();state.mods[0].libraryPath='../escape/'+path.basename(a.folder);await fs.writeFile(library.stateFile,JSON.stringify(state));
  await assert.rejects(new Library(library.root).init(),/目录/);
+});
+
+test('home statistics count installed bytes once, including inactive mods and excluding caches and deployment',async t=>{
+ const {library,root,modsPath,modFolder}=await fixture(t);
+ await library.settings({modsPath});
+ const input=await modFolder('size','[Constants]\n');
+ await fs.mkdir(path.join(input,'nested'));await fs.writeFile(path.join(input,'nested','texture.dds'),Buffer.alloc(1024));
+ const a=await library.install(input,meta('A','a'));await library.install(input,meta('B','b'));await library.enable(a.id);
+ await fs.mkdir(path.join(library.root,'downloads'));await fs.writeFile(path.join(library.root,'downloads','cached.zip'),Buffer.alloc(4096));
+ assert.deepEqual(await library.statistics(),{totalBytes:2072,modCount:2,activeCount:1,unavailableCount:0});
+ await fs.rm(a.folder,{recursive:true});
+ const partial=await library.statistics();assert.equal(partial.totalBytes,null);assert.equal(partial.unavailableCount,1);
+});
+test('current preset persists after restart and manual changes mark the arrangement custom',async t=>{
+ const {library,modFolder}=await fixture(t);
+ const mod=await library.install(await modFolder('preset'),meta('Preset'));
+ await library.enable(mod.id);await library.savePreset('日常');const id=library.snapshot().presets[0].id;
+ assert.equal(library.snapshot().currentPresetId,id);
+ const restarted=new Library(library.root);await restarted.init();assert.equal(restarted.snapshot().currentPresetId,id);
+ await restarted.disable(mod.id);assert.equal(restarted.snapshot().currentPresetId,null);
+ await restarted.applyPreset(id);assert.equal(restarted.snapshot().currentPresetId,id);
+ await restarted.disableAll();assert.equal(restarted.snapshot().currentPresetId,null);
+ await restarted.applyPreset(id);await restarted.remove(mod.id);assert.equal(restarted.snapshot().currentPresetId,null);
+});
+test('deleting current preset clears its identity; view mode persists and rejects unknown modes',async t=>{
+ const {library}=await fixture(t);await library.savePreset('空方案');const id=library.snapshot().presets[0].id;
+ await library.deletePreset(id);assert.equal(library.snapshot().currentPresetId,null);
+ await library.settings({libraryView:'grid'});const restarted=new Library(library.root);await restarted.init();assert.equal(restarted.snapshot().settings.libraryView,'grid');
+ await assert.rejects(library.settings({libraryView:'table'}),/视图/);
+});
+
+test('rename preserves identity files active state and custom name across updates',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const m=await library.install(await modFolder('rename'),meta('Original'));await library.enable(m.id);
+ const before=library.snapshot();await library.rename(m.id,'  自定义名称  ');
+ const after=library.snapshot();assert.deepEqual({...after.mods[0],name:before.mods[0].name,customName:undefined},{...before.mods[0],customName:undefined});
+ assert.equal(after.mods[0].name,'自定义名称');
+ const updated=await library.install(await modFolder('new-version'),{...meta('Source renamed'),id:m.id});assert.equal(updated.name,'自定义名称');
+ await assert.rejects(library.rename(m.id,'  '));
+});
+test('local import deploys to selected folder and disable/remove preserve neighboring files',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const target=path.join(modsPath,'我的收藏');await fs.mkdir(target);await fs.writeFile(path.join(target,'neighbor.txt'),'keep');
+ const m=await library.importLocal(await modFolder('local'),{name:'Local',target});
+ const deployed=path.join(target,m.id,'local.ini');assert.equal(await fs.readFile(deployed,'utf8'),'[TextureOverride]');
+ assert.equal(library.snapshot().mods[0].active,true);
+ await library.disable(m.id);await assert.rejects(fs.access(deployed));
+ await library.enable(m.id);await fs.access(deployed);
+ const again=new Library(library.root);await again.init();await again.remove(m.id);await assert.rejects(fs.access(deployed));
+ assert.equal(await fs.readFile(path.join(target,'neighbor.txt'),'utf8'),'keep');
+});
+test('local import rejects targets outside Mods or inside managed deployment',async t=>{
+ const {library,modsPath,modFolder,root}=await fixture(t);await library.settings({modsPath});const folder=await modFolder('bad');
+ await assert.rejects(library.importLocal(folder,{name:'bad',target:root}),/Mods/);
+ await assert.rejects(library.importLocal(folder,{name:'bad',target:path.join(modsPath,'HoYoModManaged')}),/管理/);
+});
+
+test('connecting an existing GIMI Mods directory leaves external mods untouched',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await fs.writeFile(path.join(modsPath,'outside.ini'),'[Existing]');
+ await library.settings({modsPath});const m=await library.install(await modFolder('owned'),meta('owned'));await library.enable(m.id);await library.remove(m.id);
+ assert.equal(await fs.readFile(path.join(modsPath,'outside.ini'),'utf8'),'[Existing]');
+});
+test('multi-folder deployment failure restores every previous deployment and state',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});const target=path.join(modsPath,'custom');await fs.mkdir(target);
+ const m=await library.importLocal(await modFolder('local-rollback'),{name:'Local',target});const before=library.snapshot();
+ const original=library._writeState;library._writeState=async()=>{throw Error('disk full')};
+ await assert.rejects(library.disable(m.id),/disk full/);library._writeState=original;
+ assert.deepEqual(library.snapshot(),before);await fs.access(path.join(target,m.id,'local-rollback.ini'));
+ const reopened=new Library(library.root);await reopened.init();assert.deepEqual(reopened.snapshot(),before);
+});
+test('multi-folder recovery rolls back interrupted local deployment and rejects unowned journal paths',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});const target=path.join(modsPath,'custom');await fs.mkdir(target);
+ const m=await library.importLocal(await modFolder('recover-local'),{name:'Local',target});
+ const managed=path.join(target,m.id),suffix=require('node:crypto').randomUUID(),staging=path.join(target,`DISABLED ${m.id}-staging-${suffix}`),backup=path.join(target,`DISABLED ${m.id}-backup-${suffix}`);
+ await fs.rename(managed,backup);await fs.mkdir(managed);await fs.writeFile(path.join(managed,'.hoyo-managed'),'managed\n');
+ const next=library.snapshot();next.mods[0].active=false;
+ await fs.writeFile(library.journalFile,JSON.stringify({version:2,entries:[{managed,staging,backup,hadManaged:true}],nextState:next}));
+ const reopened=new Library(library.root);await reopened.init();await fs.access(path.join(managed,'recover-local.ini'));assert.equal(reopened.snapshot().mods[0].active,true);
+ await fs.writeFile(library.journalFile,JSON.stringify({version:2,entries:[{managed:target,staging,backup,hadManaged:true}],nextState:next}));
+ await assert.rejects(new Library(library.root).init(),/日志路径/);await fs.access(path.join(managed,'recover-local.ini'));
+});
+test('missing local target can be removed and GIMI can change after disabling imports',async t=>{
+ const {library,modsPath,modFolder,root}=await fixture(t);await library.settings({modsPath});const target=path.join(modsPath,'missing');await fs.mkdir(target);
+ const m=await library.importLocal(await modFolder('gone'),{name:'Gone',target});await library.disableAll();await fs.rm(target,{recursive:true});await library.remove(m.id);
+ await fs.mkdir(target);const n=await library.importLocal(await modFolder('move'),{name:'Move',target});await library.disableAll();const other=path.join(root,'OtherMods');await library.settings({modsPath:other});await library.enable(n.id);await fs.access(path.join(other,'missing',n.id,'move.ini'));
 });

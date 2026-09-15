@@ -4,7 +4,7 @@ const {createHash,randomUUID}=require('node:crypto');
 const path=require('node:path');
 async function hash(file,algorithm='sha256'){const h=createHash(algorithm);for await(const chunk of createReadStream(file))h.update(chunk);return h.digest('hex');}
 class InstallService{
-  constructor(root,{lib,api,download,extract,progress=()=>{},refresh=async()=>{},validate=async()=>{}}){Object.assign(this,{root,lib,api,download,extract,progress,refresh,validate});this.running=new Set();}
+  constructor(root,{lib,api,download,extract,progress=()=>{},refresh=async()=>{},validate=async()=>{},confirmEnable=async()=>true}){Object.assign(this,{root,lib,api,download,extract,progress,refresh,validate,confirmEnable});this.running=new Set();}
   folder(key){if(!/^\d+-\d+$/.test(String(key)))throw new Error('无效的下载记录。');return path.join(this.root,'downloads',String(key));}
   async save(job){const file=path.join(this.folder(job.key),'record.json');await fs.writeFile(file+'.tmp',JSON.stringify(job,null,2));await fs.rename(file+'.tmp',file);}
   async history(){
@@ -31,7 +31,7 @@ class InstallService{
     const target=old||(detail.characterId&&detail.characterName?{...p,characterId:String(detail.characterId),characterName:detail.characterName}:p);if(typeof target.characterId!=='string'||!target.characterId.trim()||!target.characterName?.trim())throw new Error('请先选择角色。');
     const key=`${sourceId}-${file.id}`,dir=this.folder(key);await fs.mkdir(dir,{recursive:true});
     const previous=await fs.readFile(path.join(dir,'record.json'),'utf8').then(JSON.parse,()=>({}));
-    const job={key,receipt:randomUUID(),name:detail.name,sourceId:Number(sourceId),sourceUrl:detail.url||`https://gamebanana.com/mods/${sourceId}`,sourceUploadedAt:detail.uploadedAt,sourceFileId:file.id,sourceFileName:file.name,sourceFileUploadedAt:file.uploadedAt,sourceChecksum:file.checksum,queueId:p.queueId,rootCategoryId:String(detail.rootCategoryId||target.rootCategoryId||'17510'),rootCategoryName:detail.rootCategoryName||target.rootCategoryName||'Skins',nsfw:!!detail.nsfw,characterId:target.characterId,characterName:target.characterName,modId:old?.id,archive:'package'+ext,status:'downloading',changedAt:Date.now()};
+    const job={requirements:detail.requirements||[],requirementsKnown:detail.requirementsKnown===true,key,receipt:randomUUID(),name:detail.name,sourceId:Number(sourceId),sourceUrl:detail.url||`https://gamebanana.com/mods/${sourceId}`,sourceUploadedAt:detail.uploadedAt,sourceFileId:file.id,sourceFileName:file.name,sourceFileUploadedAt:file.uploadedAt,sourceChecksum:file.checksum,queueId:p.queueId,rootCategoryId:String(detail.rootCategoryId||target.rootCategoryId||'17510'),rootCategoryName:detail.rootCategoryName||target.rootCategoryName||'Skins',nsfw:!!detail.nsfw,characterId:target.characterId,characterName:target.characterName,modId:old?.id,archive:'package'+ext,status:'downloading',changedAt:Date.now()};
     const archive=path.join(dir,job.archive),unpacked=path.join(dir,'unpacked');this.running.add(key);
     try{
       await this.save(job);
@@ -43,11 +43,12 @@ class InstallService{
       this.progress({label:'检查并安装 '+detail.name,received:0,total:0});
       await fs.rm(unpacked,{recursive:true,force:true});await this.extract(archive,unpacked);
       await this.validate();
+      if(old?.active&&!await this.confirmEnable(old,detail))throw Error('已取消更新，原模组保持不变。');
       const mod=await this.lib.install(unpacked,{...job,downloadReceipt:job.receipt,downloadQueueId:p.queueId,...(old?{id:old.id,expectedFolder:old.folder}:{}),updatedAt:detail.updatedAt,preview:detail.preview,author:detail.author});
       job.installedId=mod.id;job.status='installed';
       let message='模组已安装。';
       try{await this.save(job);}catch(e){message='模组已安装，但下载记录保存失败：'+e.message;}
-      try{if(!old&&this.lib.snapshot().settings.autoEnable)await this.lib.enable(mod.id);if(this.lib.snapshot().mods.find(m=>m.id===mod.id)?.active)await this.refresh();}
+      try{if(!old&&this.lib.snapshot().settings.autoEnable){if(await this.confirmEnable(mod,detail))await this.lib.enable(mod.id);else message+=' 已取消自动启用。';}if(this.lib.snapshot().mods.find(m=>m.id===mod.id)?.active)await this.refresh();}
       catch(e){message+=' 启用或刷新未完成：'+e.message;}
       return {message,modId:mod.id};
     }catch(e){

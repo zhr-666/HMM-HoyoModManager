@@ -24,7 +24,7 @@ test('stale preview and changed files block writes and rollback without overwrit
  const batch=await lib.applyHash(await lib.previewHash('aabbccdd','11223344'));const current=lib.snapshot().mods[0];await fs.writeFile(path.join(current.folder,'extra.txt'),'user edit');await assert.rejects(lib.rollbackHash(batch.id),/变化/);assert.equal(await fs.readFile(path.join(current.folder,'extra.txt'),'utf8'),'user edit');
 });
 test('deployment failure leaves every source and batch history unchanged',async t=>{
- const {root,lib,a}=await fixture(t);await lib.settings({modsPath:path.join(root,'Mods')});await lib.enable(a.id);const preview=await lib.previewHash('aabbccdd','11223344');await fs.writeFile(path.join(root,'Mods','foreign.ini'),'[old]');await assert.rejects(lib.applyHash(preview));assert.equal(lib.snapshot().hashBatches?.length||0,0);assert.equal(lib.snapshot().mods[0].folder,a.folder);assert.match(await fs.readFile(path.join(a.folder,'mod.ini'),'utf8'),/aabbccdd/);
+ const {root,lib,a}=await fixture(t);await lib.settings({modsPath:path.join(root,'Mods')});await lib.enable(a.id);const preview=await lib.previewHash('aabbccdd','11223344');await fs.rm(path.join(root,'Mods','HoYoModManaged','.hoyo-managed'));await assert.rejects(lib.applyHash(preview));assert.equal(lib.snapshot().hashBatches?.length||0,0);assert.equal(lib.snapshot().mods[0].folder,a.folder);assert.match(await fs.readFile(path.join(a.folder,'mod.ini'),'utf8'),/aabbccdd/);
 });
 test('state-write failure after deployment swaps rolls back staged files and history',async t=>{
  const {root,lib,a}=await fixture(t);await lib.settings({modsPath:path.join(root,'Mods')});await lib.enable(a.id);const preview=await lib.previewHash('aabbccdd','11223344');

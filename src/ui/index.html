@@ -8,13 +8,16 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div class="home-backdrop" aria-hidden="true"><img id="home-background" src="home-background.jpg" alt=""></div>
+  <div id="help-tooltip" class="help-tooltip" role="tooltip" hidden></div>
+  <div id="context-menu" class="context-menu" role="menu" hidden><button id="context-refresh" role="menuitem" type="button">↻　刷新</button></div>
   <div id="download-toast" class="download-toast" role="status" aria-live="polite" hidden></div>
-  <div class="window-titlebar"><span>HoYoMod</span></div>
+  <div class="window-titlebar" aria-hidden="true"></div>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">H</span><div><strong>HoYoMod</strong><small>原神模组管理</small></div></div>
       <nav aria-label="主导航">
-        <button class="nav-item active" data-page="workshop"><span>✦</span>模组工坊</button>
+        <button class="nav-item active" data-page="home"><span>⌂</span>首页</button>
+        <button class="nav-item" data-page="workshop"><span>✦</span>模组工坊</button>
         <button class="nav-item" data-page="library"><span>▦</span>我的模组</button>
         <button class="nav-item" data-page="presets"><span>◫</span>搭配方案</button>
         <button class="nav-item" data-page="downloads"><span>↓</span>下载列表</button>
@@ -24,13 +27,27 @@
 
     <main>
       <header class="topbar">
-        <div><h1 id="page-title">模组工坊</h1><p id="page-subtitle">从 GameBanana 浏览并安装各类模组</p></div>
-        <div class="top-actions"><button class="button secondary" id="refresh-button">刷新</button><button class="button primary" id="launch-button">启动原神</button></div>
+        <div><h1 id="page-title">首页</h1><p id="page-subtitle">准备好下一次冒险</p></div>
+        <div class="top-actions"><button class="button secondary" id="open-mods-button" hidden>打开 Mods 文件夹</button></div>
       </header>
+<div id="app-update-banner" class="notice app-update-banner" hidden><span id="app-update-banner-text"></span><button class="link-button" id="view-app-update">查看更新</button></div>
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
       <div id="progress" class="progress" aria-live="polite" hidden><div><span id="progress-label">处理中…</span><span id="progress-value"></span></div><progress id="progress-bar"></progress></div>
 
-      <section id="page-workshop" class="page active" data-testid="workshop-page">
+      <section id="page-home" class="page active" data-testid="home-page">
+        <div class="home-gamebar"><span class="section-kicker">我的游戏</span><label class="game-selector">更改游戏 <select id="home-game-select" aria-label="更改游戏"><option value="genshin">原神</option></select></label></div>
+        <article class="game-hero">
+
+          <div class="hero-copy"><span class="hero-eyebrow">GENSHIN IMPACT</span><h2 id="home-game-name">原神</h2><p>搭配就绪，开启下一段旅程。</p><span id="home-ready-state" class="hero-status">检查游戏配置…</span></div>
+          <div class="hero-actions"><button class="button secondary program-settings" id="home-game-settings" title="选择要打开的 EXE 程序" aria-label="选择要打开的 EXE 程序">⚙</button><button class="button primary home-launch" id="launch-button"><span aria-hidden="true">▷</span> 打开程序</button></div>
+        </article>
+        <div class="home-summary">
+          <article class="home-card storage-card"><div class="home-card-heading"><span class="home-card-icon" aria-hidden="true">▱</span><h2>模组总大小</h2></div><strong id="home-total-size" class="storage-value" aria-live="polite">统计中…</strong><p id="home-storage-note" class="home-card-note">已安装模组文件</p><div class="home-counts"><div><strong id="home-mod-count">0</strong><span>已安装</span></div><div><strong id="home-active-count">0</strong><span>已启用</span></div></div><button class="link-button home-card-link" id="home-open-library">管理我的模组 <span aria-hidden="true">→</span></button></article>
+          <article class="home-card arrangement-card"><div class="home-card-heading"><span class="home-card-icon" aria-hidden="true">◫</span><h2>当前搭配方案</h2></div><strong id="home-preset-name" class="arrangement-name">自定义搭配</strong><p id="home-preset-detail" class="home-card-note">当前没有启用模组</p><div id="home-active-mods" class="home-active-mods"></div><button class="link-button home-card-link" id="home-open-presets">管理搭配方案 <span aria-hidden="true">→</span></button></article>
+        </div>
+      </section>
+
+      <section id="page-workshop" class="page" data-testid="workshop-page">
         <div class="toolbar">
           <label class="search"><span>⌕</span><input id="search-input" type="search" placeholder="搜索模组或作者" aria-label="搜索模组"></label>
           <button class="button secondary" id="search-button">搜索</button>
@@ -51,7 +68,7 @@
 
       <section id="page-library" class="page" data-testid="library-page">
         <div class="section-head"><div><h2>本机模组</h2><p>按 GameBanana 分类逐层浏览；同一归属同时启用一个模组</p></div><div class="row-actions"><button class="button secondary" id="replace-hash">批量替换 Hash</button><button class="button secondary" id="hash-history">替换记录</button><button class="button secondary" id="check-updates-library">检查更新</button><button class="button secondary" id="disable-all-library">全部停用</button><button class="button primary" id="import-button">导入本地模组</button></div></div>
-        <div class="library-navigation"><button type="button" id="library-back" class="button secondary library-back" aria-label="返回上一级分类" disabled><span aria-hidden="true">←</span> 返回上一级</button><nav id="library-breadcrumb" class="library-breadcrumb" aria-label="模组分类路径"></nav></div><div id="library-folders" class="folder-grid"></div>
+        <div class="library-navigation"><button type="button" id="library-back" class="button secondary library-back" aria-label="返回上一级分类" disabled><span aria-hidden="true">←</span> 返回</button><nav id="library-breadcrumb" class="library-breadcrumb" aria-label="模组分类路径"></nav><div class="library-view-switch" role="group" aria-label="模组显示方式"><button type="button" id="library-view-list" aria-pressed="true" title="横向列表"><span aria-hidden="true">☰</span> 列表</button><button type="button" id="library-view-grid" aria-pressed="false" title="大图网格"><span aria-hidden="true">▦</span> 网格</button></div></div><div id="library-folders" class="folder-grid"></div>
         <div id="library-grid" class="list-grid"></div><div id="library-empty" class="empty" hidden></div>
       </section>
 
@@ -67,10 +84,16 @@
       </section>
 
       <section id="page-settings" class="page" data-testid="settings-page">
-        <div id="onboarding" class="onboarding"><div><span>1</span><strong>获取 XXMI</strong><small>下载官方组件，或选择已有程序</small></div><i></i><div><span>2</span><strong>初始化 GIMI</strong><small>打开 XXMI 完成游戏与 GIMI 配置</small></div><i></i><div><span>3</span><strong>连接 Mods</strong><small>自动查找或选择 Mods 文件夹</small></div></div>
+        <div id="software-update-card" class="settings-card">
+          <div class="setting-row"><div><strong>软件更新 <span id="software-version"></span></strong><p id="software-update-status" role="status">尚未检查</p></div><div class="row-actions"><button class="button secondary" id="software-check">检查软件更新</button><button class="button primary" id="software-action" hidden>下载更新</button></div></div>
+          <div id="software-progress" hidden><progress id="software-progress-bar"></progress><span id="software-progress-text"></span></div>
+          <div id="software-notes" hidden><h3>更新内容</h3><pre id="software-notes-text" class="description"></pre></div>
+          <div class="setting-row"><div><strong>启动时检查软件更新</strong><p>只检查 GitHub 正式版并提示，不自动下载；重启更新不会替换 data 或 GIMI 模组。</p></div><label class="switch"><input id="auto-check-app-updates" type="checkbox" aria-label="启动时检查软件更新"><span></span></label></div>
+        </div>
         <div class="settings-card">
-          <div class="setting-row"><div><strong>XXMI Launcher</strong><p id="xxmi-path">尚未选择</p></div><div class="row-actions"><button class="button secondary" id="choose-xxmi">选择已有程序</button><button class="button primary" id="setup-xxmi">下载官方组件</button></div></div>
-          <div class="setting-row"><div><strong>GIMI Mods 文件夹</strong><p id="mods-path">尚未选择</p></div><div class="row-actions"><button class="button secondary" id="detect-mods">自动查找</button><button class="button secondary" id="choose-mods">选择文件夹</button></div></div>
+          <div class="setting-row"><div><strong>GIMI 文件夹</strong><p id="mods-path">尚未选择</p></div><button class="button secondary" id="choose-mods">选择 GIMI 文件夹</button></div>
+          <div class="setting-row"><div><strong>外部程序</strong><p id="program-path">尚未选择</p></div><button class="button secondary" id="choose-program">选择 EXE</button></div>
+          <div class="setting-row"><div><strong>首页背景</strong><p>默认使用原神官网首页大图；可替换为本地图片</p></div><div class="row-actions"><button class="button secondary" id="reset-background">恢复默认</button><button class="button secondary" id="choose-background">选择图片</button></div></div>
           <div class="setting-row"><div><strong>下载后自动启用</strong><p>安装完成后立即切换该角色使用此模组</p></div><label class="switch"><input id="auto-enable" type="checkbox" aria-label="下载后自动启用"><span></span></label></div>
           <div class="setting-row"><div><strong>自动检查更新</strong><p>启动时检查更新；安装哪个文件仍由你决定</p></div><label class="switch"><input id="auto-check-updates" type="checkbox" aria-label="自动检查更新"><span></span></label></div>
           <div class="setting-row"><div><strong>模糊 NSFW 预览</strong><p>仅作用于模组工坊与详情；本机模组预览始终清晰</p></div><label class="switch"><input id="blur-nsfw" type="checkbox" aria-label="模糊 NSFW 预览"><span></span></label></div>
@@ -82,7 +105,7 @@
           <div class="setting-row" id="proxy-url-row" hidden><label for="proxy-url">代理地址</label><div class="row-actions"><input id="proxy-url" type="url" placeholder="http://127.0.0.1:7890" aria-label="代理地址"><button class="button secondary" id="save-proxy">保存</button></div></div>
           <div class="setting-row"><p id="proxy-result" role="status">测试当前网络连接与代理路由</p><button class="button secondary" id="test-proxy">测试连接</button></div>
         </div>
-        <div class="settings-card compact"><div class="setting-row"><div><strong>维护与诊断</strong><p id="data-root">数据位置加载中…</p></div><div class="row-actions"><button class="button secondary" id="disable-all-settings">全部停用</button><button class="button secondary" id="configure-xxmi">打开 XXMI 配置</button><button class="button secondary" id="open-data">打开数据目录</button><button class="button secondary" id="check-updates">检查更新</button></div></div></div>
+        <div class="settings-card compact"><div class="setting-row"><div><strong>维护与诊断</strong><p id="data-root">数据位置加载中…</p></div><div class="row-actions"><button class="button secondary" id="disable-all-settings">全部停用</button><button class="button secondary" id="open-data">打开数据目录</button><button class="button secondary" id="check-updates">检查更新</button></div></div></div>
       </section>
     </main>
   </div>

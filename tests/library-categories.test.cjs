@@ -27,3 +27,14 @@ test('offline and unknown categories retain every local mod without duplicate ro
  assert.deepEqual(tree.flatMap(n=>n.modIds),['a','b','c']);
  assert.deepEqual(buildLibraryTree(taxonomy,[]),[]);
 });
+test('folders distinguish directly assigned mods from descendant mods',()=>{
+ const tree=buildLibraryTree(taxonomy,[{id:'parent',characterId:'11'},{id:'child',characterId:'12'}]);
+ assert.deepEqual(tree[0].directModIds,[]);
+ assert.deepEqual(tree[0].children[0].directModIds,['parent']);
+ assert.deepEqual(tree[0].children[0].children[0].directModIds,['child']);
+});
+test('local imports group by selected folder without assigning characters',()=>{
+ const {buildLibraryTree}=require('../src/ui/library-categories.js');
+ const tree=buildLibraryTree([],[{id:'a',characterId:'local:a',deploymentRelative:'收藏/外观'},{id:'b',characterId:'local:b',deploymentRelative:'收藏/外观'}]);
+ assert.equal(tree.length,1);assert.equal(tree[0].name,'本地导入');assert.equal(tree[0].children[0].name,'收藏');assert.deepEqual(tree[0].children[0].children[0].directModIds,['a','b']);
+});

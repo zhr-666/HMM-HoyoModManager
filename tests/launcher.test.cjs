@@ -20,3 +20,8 @@ test('GIMI discovery honors an absolute importer_folder from the XXMI configurat
   await fs.writeFile(path.join(root,'XXMI Launcher Config.json'),JSON.stringify({Importers:{GIMI:{Importer:{importer_folder:custom}}}}));
   assert.equal(await detectMods(path.join(root,'Resources','Bin','XXMI Launcher.exe')),path.join(custom,'Mods'));
 });
+test('explicit external EXE opens with no injected launcher arguments',()=>{
+ const {externalSpec}=require('../src/core/external-launcher.cjs');
+ assert.deepEqual(externalSpec('C:\\Tools & Games\\My Launcher.exe'),{file:'C:\\Tools & Games\\My Launcher.exe',args:[]});
+ for(const file of ['cmd.exe','C:\\test.bat','',null])assert.throws(()=>externalSpec(file));
+});

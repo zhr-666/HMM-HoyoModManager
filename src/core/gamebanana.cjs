@@ -205,6 +205,7 @@ class GameBanana {
     return {
       ...record,
       version: row._sVersion || '',
+      requirements: require('./dependencies.cjs').requirements(row._aRequirements),requirementsKnown:true,
       description: plainText(row._sText),
       images: (row._aPreviewMedia?._aImages || []).map(image => mediaUrl(image, false)).filter(Boolean),
       files: (row._aFiles || []).filter(file => !file._bIsArchived).map(file => ({

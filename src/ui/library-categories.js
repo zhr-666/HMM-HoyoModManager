@@ -13,18 +13,20 @@ function buildLibraryTree(taxonomy,mods){
   for(const mod of mods){
     const leaf=String(mod.characterId||'unclassified');
     let path=paths.get(leaf);
+    if(mod.deploymentRelative!==undefined){let relative='';path=[{id:'local',name:'本地导入',icon:''},...mod.deploymentRelative.split('/').filter(Boolean).map(name=>{relative+=(relative?'/':'')+name;return {id:'local-folder:'+relative,name,icon:''};})];}
     if(!path){
       const root=String(mod.rootCategoryId||(/^\d+$/.test(leaf)?'17510':'local'));
       path=paths.get(root)||[{id:root,name:mod.rootCategoryName||(root==='17510'?'Skins':'本地导入'),icon:''}];
       if(leaf!==root)path=[...path,{id:leaf,name:mod.characterName||'未分类',icon:''}];
     }
-    let siblings=roots;
+    let siblings=roots,directNode;
     for(const category of path){
       const id=String(category.id);
       let node=siblings.find(n=>n.id===id);
-      if(!node){node={id,name:category.name,icon:category.icon||'',children:[],modIds:[]};siblings.push(node)}
-      node.modIds.push(mod.id);siblings=node.children;
+      if(!node){node={id,name:category.name,icon:category.icon||'',children:[],modIds:[],directModIds:[]};siblings.push(node)}
+      node.modIds.push(mod.id);siblings=node.children;directNode=node;
     }
+    directNode.directModIds.push(mod.id);
   }
   function sort(nodes){
     nodes.sort((a,b)=>(order.get(a.id)??Infinity)-(order.get(b.id)??Infinity));

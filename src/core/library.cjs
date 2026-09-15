@@ -5,9 +5,10 @@ const {scanHotkeys}=require('./hotkeys.cjs');
 const hashReplace=require('./hash-replace.cjs');
 
 const DEFAULT_STATE = Object.freeze({
-  settings: { autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
+  settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
   mods: [],
   presets: [],
+  currentPresetId: null,
 });
 const MARKER = '.hoyo-managed';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -38,6 +39,16 @@ async function hasIni(folder) {
   return false;
 }
 
+async function folderBytes(folder){
+  const stat=await fs.lstat(folder);
+  if(stat.isSymbolicLink())throw new Error('模组目录包含链接');
+  if(stat.isFile())return stat.size;
+  if(!stat.isDirectory())return 0;
+  let bytes=0;
+  for(const name of await fs.readdir(folder))bytes+=await folderBytes(path.join(folder,name));
+  return bytes;
+}
+
 function intersects(a, b) {
   const relativeAB = path.relative(a, b);
   const relativeBA = path.relative(b, a);
@@ -66,6 +77,7 @@ class Library {
           settings: { ...DEFAULT_STATE.settings, ...(saved.settings || {}),autoUpdate:false,autoCheckUpdates:saved.settings?.autoCheckUpdates ?? !!saved.settings?.autoUpdate },
           mods: Array.isArray(saved.mods) ? saved.mods.map((mod) => this._rebaseMod(mod)) : [],
           presets: Array.isArray(saved.presets) ? saved.presets : [],
+          currentPresetId: typeof saved.currentPresetId==='string'?saved.currentPresetId:null,
           ...(Array.isArray(saved.hashBatches)?{hashBatches:saved.hashBatches}:{}),
         };
       } catch (error) {
@@ -81,6 +93,16 @@ class Library {
 
   snapshot() { return clone(this.state); }
 
+  statistics(){
+    return this._enqueue(async()=>{
+      let bytes=0,unavailableCount=0;
+      for(const mod of this.state.mods){
+        try{bytes+=await folderBytes(mod.folder)}catch{unavailableCount++}
+      }
+      return {totalBytes:unavailableCount?null:bytes,modCount:this.state.mods.length,activeCount:this.state.mods.filter(mod=>mod.active).length,unavailableCount};
+    });
+  }
+
   previewHash(oldHash,newHash,progress) {return this._enqueue(()=>hashReplace.preview(this,oldHash,newHash,progress));}
   applyHash(preview,progress) {return this._enqueue(()=>hashReplace.apply(this,preview,progress));}
   rollbackHash(id,progress) {return this._enqueue(()=>hashReplace.rollback(this,id,progress));}
@@ -93,9 +115,23 @@ class Library {
     });
   }
 
+  rename(id,name){
+    return this._enqueue(async()=>{
+      if(typeof name!=='string'||!name.trim()||name.trim().length>200)throw Error('名称须为 1–200 个字符。');
+      const next=clone(this.state),mod=this._find(next.mods,id,'mod');mod.name=name.trim();mod.customName=mod.name;
+      await this._writeState(next);this.state=next;return this.snapshot();
+    });
+  }
+
+  async importLocal(folder,{name,target}){
+    const relative=await require('./local-deployment.cjs').validateTarget(this.state.settings.modsPath,target);
+    const mod=await this.install(folder,{name,characterId:'local:'+randomUUID(),characterName:path.basename(target),deploymentRelative:relative});
+    await this.enable(mod.id);return this.snapshot().mods.find(m=>m.id===mod.id);
+  }
+
   updateMetadata(id,patch) {
     return this._enqueue(async()=>{
-      const allowed=new Set(['sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','updateStatus']);
+      const allowed=new Set(['sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','updateStatus','requirements','requirementsKnown']);
       if(!patch||typeof patch!=='object'||Object.keys(patch).some(k=>!allowed.has(k)))throw new Error('不支持的 Mod 元数据字段');
       const next=clone(this.state),mod=this._find(next.mods,id,'mod');
       Object.assign(mod,clone(patch));
@@ -118,7 +154,7 @@ class Library {
       await fs.cp(path.resolve(folder), destination, { recursive: true, errorOnExist: true, force: false });
       const mod = {
         id,
-        name: metadata.name.trim(),
+        name: old?.customName || metadata.name.trim(),
         characterId: old?.characterId || metadata.characterId.trim(),
         characterName: old?.characterName || metadata.characterName.trim(),
         active: old?.active || false,
@@ -126,7 +162,7 @@ class Library {
         libraryPath:path.relative(this.libraryRoot,destination).split(path.sep).join('/'),
         hotkeys: await scanHotkeys(destination),
       };
-      for (const field of ['rootCategoryId','rootCategoryName','sourceId', 'sourceFileName', 'updatedAt', 'preview', 'author','sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','downloadReceipt','downloadQueueId']) {
+      for (const field of ['customName','deploymentRelative','requirements','requirementsKnown','rootCategoryId','rootCategoryName','sourceId', 'sourceFileName', 'updatedAt', 'preview', 'author','sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','downloadReceipt','downloadQueueId']) {
         if (metadata[field] !== undefined) mod[field] = metadata[field];
         else if (old?.[field] !== undefined) mod[field] = old[field];
       }
@@ -151,20 +187,22 @@ class Library {
   enable(id) {
     return this._change((next) => {
       const mod = this._find(next.mods, id, 'mod');
+      next.currentPresetId=null;
       for (const item of next.mods) if (item.characterId === mod.characterId) item.active = item.id === id;
     });
   }
 
-  disable(id) { return this._change((next) => { this._find(next.mods, id, 'mod').active = false; }); }
+  disable(id) { return this._change((next) => { this._find(next.mods, id, 'mod').active = false; next.currentPresetId=null; }); }
 
   sync() { return this._change(() => {}); }
 
-  disableAll() { return this._change((next) => { for (const mod of next.mods) mod.active = false; }); }
+  disableAll() { return this._change((next) => { for (const mod of next.mods) mod.active = false; next.currentPresetId=null; }); }
 
   remove(id) {
     return this._enqueue(async () => {
       const old = this._find(this.state.mods, id, 'mod');
       const next = clone(this.state);
+      if(next.presets.find(p=>p.id===next.currentPresetId)?.modIds.includes(id))next.currentPresetId=null;
       next.mods = next.mods.filter((mod) => mod.id !== id);
       for (const preset of next.presets) preset.modIds = preset.modIds.filter((modId) => modId !== id);
       await this._commit(next);
@@ -176,7 +214,8 @@ class Library {
   savePreset(name) {
     return this._change((next) => {
       if (typeof name !== 'string' || !name.trim()) throw new Error('搭配方案名称不能为空');
-      next.presets.push({ id: randomUUID(), name: name.trim(), modIds: next.mods.filter((mod) => mod.active).map((mod) => mod.id) });
+      const preset={id:randomUUID(),name:name.trim(),modIds:next.mods.filter(mod=>mod.active).map(mod=>mod.id)};
+      next.presets.push(preset);next.currentPresetId=preset.id;
     });
   }
 
@@ -184,6 +223,7 @@ class Library {
     return this._change((next) => {
       const preset = this._find(next.presets, id, 'preset');
       const selected = new Set(preset.modIds);
+      next.currentPresetId=id;
       for (const mod of next.mods) mod.active = selected.has(mod.id);
       const characters = new Set();
       for (const mod of next.mods.filter((item) => item.active)) {
@@ -197,6 +237,7 @@ class Library {
     return this._change((next) => {
       this._find(next.presets, id, 'preset');
       next.presets = next.presets.filter((preset) => preset.id !== id);
+      if(next.currentPresetId===id)next.currentPresetId=null;
     });
   }
 
@@ -205,6 +246,8 @@ class Library {
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('设置内容不能为空');
       const allowed = new Set(Object.keys(DEFAULT_STATE.settings));
       for (const key of Object.keys(patch)) if (!allowed.has(key)) throw new Error(`未知设置项：${key}`);
+      for(const k of ['launchExe','backgroundVersion'])if(k in patch&&typeof patch[k]!=='string')throw Error('无效设置值');
+      if('libraryView' in patch&&!['list','grid'].includes(patch.libraryView))throw Error('模组视图无效。');
       if('theme' in patch&&!['light','dark','system'].includes(patch.theme))throw Error('主题选项无效。');
       if('material' in patch&&!['mica','acrylic'].includes(patch.material))throw Error('窗口材质选项无效。');
       if('proxyMode' in patch&&!['system','manual'].includes(patch.proxyMode))throw Error('代理模式无效。');
@@ -212,7 +255,7 @@ class Library {
       require('./preferences.cjs').proxyConfig({...this.state.settings,...patch});
       if ('modsPath' in patch) await this._validateModsPath(patch.modsPath);
       if ('xxmiPath' in patch && patch.xxmiPath && !path.isAbsolute(patch.xxmiPath)) throw new Error('XXMI 路径必须是绝对路径');
-      for (const key of ['autoEnable', 'autoUpdate','autoCheckUpdates','blurNsfw']) if (key in patch && typeof patch[key] !== 'boolean') throw new Error(`${key} 必须是布尔值`);
+      for (const key of ['autoEnable', 'autoUpdate','autoCheckUpdates','autoCheckAppUpdates','blurNsfw']) if (key in patch && typeof patch[key] !== 'boolean') throw new Error(`${key} 必须是布尔值`);
       if ('modsPath' in patch && patch.modsPath !== this.state.settings.modsPath && this.state.mods.some((mod) => mod.active)) {
         throw new Error('更改 Mod 路径前请先禁用全部 Mod');
       }
@@ -276,25 +319,15 @@ class Library {
     const isRootOrAncestor = rootRelative === '' || (!rootRelative.startsWith('..') && !path.isAbsolute(rootRelative));
     if (intersects(resolved, this.libraryRoot) || isRootOrAncestor) throw new Error('Mod 路径不能与资源库路径交叉或重叠');
     await fs.mkdir(resolved, { recursive: true });
-    await this._assertNoForeignIni(resolved);
+
   }
 
-  async _assertNoForeignIni(modsPath) {
-    const managed = path.join(modsPath, 'HoYoModManaged');
-    const scan = async (folder) => {
-      for (const entry of await fs.readdir(folder, { withFileTypes: true })) {
-        const target = path.join(folder, entry.name);
-        if (target === managed || (entry.isDirectory() && entry.name.toUpperCase().startsWith('DISABLED'))) continue;
-        if (entry.isFile() && entry.name.toLowerCase().endsWith('.ini')) {
-          throw new Error('检测到旧版 Mod。请将旧版 Mod 文件夹移出当前 Mods 路径后再继续。');
-        }
-        if (entry.isDirectory()) await scan(target);
-      }
-    };
-    await scan(modsPath);
+  async _commit(next){
+    if([...this.state.mods,...next.mods].some(m=>m.deploymentRelative!==undefined)&&next.settings.modsPath)return require('./local-deployment.cjs').commit(this,next);
+    return this._commitManaged(next);
   }
 
-  async _commit(next) {
+  async _commitManaged(next) {
     const modsPath = next.settings.modsPath;
     if (!modsPath) {
       await this._writeState(next);
@@ -306,7 +339,7 @@ class Library {
       this.state = next;
       return;
     }
-    await this._assertNoForeignIni(modsPath);
+
     const managed = path.join(modsPath, 'HoYoModManaged');
     if (await exists(managed) && !await exists(path.join(managed, MARKER))) {
       throw new Error('HoYoModManaged 已存在且不属于本管理器，请先将它移出');
@@ -361,6 +394,7 @@ class Library {
     let journal;
     try { journal = JSON.parse(await fs.readFile(this.journalFile, 'utf8')); }
     catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    if(journal.version===2)return require('./local-deployment.cjs').recover(this,journal);
     const { managed, staging, backup, hadManaged, nextState } = journal;
     let persisted;
     try { persisted = JSON.parse(await fs.readFile(this.stateFile, 'utf8')); }

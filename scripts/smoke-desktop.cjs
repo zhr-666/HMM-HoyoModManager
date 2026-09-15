@@ -12,6 +12,7 @@ const {Library}=require('../src/core/library.cjs');
   const a=await lib.install(input,{name:'本地样例 A',characterId:'18959',characterName:'Mona'});
   const b=await lib.install(input,{name:'本地样例 B',characterId:'18959',characterName:'Mona'});
   const modsPath=path.join(data,'GIMI','Mods');await fs.mkdir(modsPath,{recursive:true});await fs.writeFile(path.join(path.dirname(modsPath),'d3dx.ini'),'[Include]');
+  await fs.writeFile(path.join(data,'taxonomy.json'),JSON.stringify([{id:17510,name:'Skins',children:[{id:18140,name:'Characters',children:[{id:18959,name:'Mona',children:[]}]}]}]));
   const packaged=process.env.HOYOMOD_PACKAGED;
   const app=await _electron.launch({executablePath:packaged||require('electron'),args:packaged?[]:[path.resolve(__dirname,'..')],env:{...process.env,HOYOMOD_DATA:data},timeout:30000});
   try {
@@ -23,8 +24,10 @@ const {Library}=require('../src/core/library.cjs');
     await assert.rejects(page.evaluate(()=>window.hoyo.call('install',{sourceId:710045,fileId:1798090,characterId:'19498',characterName:'Raiden'})),/GIMI/);
     assert.deepEqual(snap.mods[0].hotkeys.bindings[0].keys,['H']);
     await page.locator('[data-page="library"]').click();
-    // Root view includes all installed mods while online taxonomy loads.
-    await page.locator('#library-grid .hotkeys').first().waitFor();
+    await page.locator('.category').first().waitFor({state:'attached',timeout:45000});
+    await page.locator('.folder-card').filter({hasText:'Skins'}).click();
+    await page.locator('.folder-card').filter({hasText:'Characters'}).click();
+    await page.locator('.folder-card').filter({hasText:'Mona'}).click();
     await page.locator('.hotkeys').first().click({timeout:40000});
     await page.locator('.hotkey-entry').waitFor();
     assert.match(await page.locator('#modal-body').textContent(),/KeyHat/);

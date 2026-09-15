@@ -19,7 +19,7 @@ test('automatic enable failure does not turn an installed mod into a failed down
   const {InstallService}=require('../src/core/install-service.cjs');
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-enable-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
   const lib=new Library(root);await lib.init();await lib.settings({autoEnable:true});
-  const modsPath=path.join(root,'components','Mods');await lib.settings({modsPath});await fs.writeFile(path.join(modsPath,'old.ini'),'[old]');
+  const modsPath=path.join(root,'components','Mods');await lib.settings({modsPath});await fs.rm(path.join(modsPath,'HoYoModManaged','.hoyo-managed'));
   const service=new InstallService(root,{lib,api:{detail:async()=>({id:2,name:'Test',files:[{id:3,name:'mod.zip',size:3,uploadedAt:200}]})},download:async(u,p)=>fs.writeFile(p,'zip'),extract:async(a,d)=>{await fs.mkdir(d);await fs.writeFile(path.join(d,'mod.ini'),'[mod]');}});
   const result=await service.install({sourceId:2,fileId:3,characterId:'1',characterName:'Amber'});
   assert.match(result.message,/已安装.*启用/);assert.equal(lib.snapshot().mods.length,1);assert.equal(lib.snapshot().mods[0].active,false);
@@ -70,4 +70,12 @@ test('real ZIP and 7Z installation preserves bundled programs and scripts withou
   assert.equal((await service.history())[0].status,'installed');
   await assert.rejects(fs.access(marker),{code:'ENOENT'});
  }
+});
+test('automatic activation asks dependency gate and cancellation keeps downloaded mod inactive',async t=>{
+ const {lib,service}=await stableFixture(t);await lib.settings({autoEnable:true});let checked=0;service.confirmEnable=async()=>{checked++;return false;};
+ const result=await service.install({sourceId:2,fileId:3,characterId:'1',characterName:'Amber'});assert.equal(checked,1);assert.equal(lib.snapshot().mods[0].active,false);assert.match(result.message,/取消自动启用/);
+});
+test('active update cancellation at dependency gate preserves prior files',async t=>{
+ const {lib,service}=await stableFixture(t);await service.install({sourceId:2,fileId:3,characterId:'1',characterName:'Amber'});const old=lib.snapshot().mods[0];await lib.enable(old.id);service.confirmEnable=async()=>false;
+ await assert.rejects(service.install({sourceId:2,fileId:3},lib.snapshot().mods[0]),/取消更新/);assert.equal(lib.snapshot().mods[0].folder,old.folder);assert.equal(lib.snapshot().mods[0].active,true);
 });
