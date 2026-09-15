@@ -1,4 +1,7 @@
 const fs=require('node:fs/promises'),path=require('node:path'),{createReadStream}=require('node:fs'),{createHash,randomUUID}=require('node:crypto'),{spawn}=require('node:child_process');
+// Update entries are physical files. Electron's patched fs presents app.asar as
+// a virtual directory; keep normal fs only for reading our bundled helper.
+const disk=process.versions.electron?require('original-fs').promises:fs;
 const REPO='zhr-666/HoYoMod',API=`https://api.github.com/repos/${REPO}/releases/latest`;
 const ROOT_FILES=new Set(['HoYoMod.exe','LICENSE.electron.txt','LICENSES.chromium.html','LICENSE-HoYoMod.txt','THIRD-PARTY-NOTICES.md','使用说明.md','Windows验收说明.md','vk_swiftshader_icd.json']);
 const rootAllowed=name=>ROOT_FILES.has(name)||['resources','locales'].includes(name)||/^[a-z0-9_-]+\.(dll|pak|bin|dat)$/i.test(name);
@@ -9,14 +12,15 @@ function selectRelease(current,row){
  if(!asset||asset.browser_download_url!==expected||!/^sha256:[a-f0-9]{64}$/i.test(asset.digest||'')||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>2*1024**3)throw Error('GitHub 发布缺少有效的 Windows 更新包或 SHA256 校验信息。');
  return {version:v,name,url:expected,digest:asset.digest.toLowerCase(),size:asset.size,notes:String(row.body||'').slice(0,16000),publishedAt:row.published_at||'',releaseUrl:`https://github.com/${REPO}/releases/tag/${row.tag_name}`};
 }
-async function exists(file){try{await fs.lstat(file);return true;}catch(e){if(e.code==='ENOENT')return false;throw e;}}
-async function noLinks(dir){const stat=await fs.lstat(dir);if(stat.isSymbolicLink())throw Error('更新路径不能包含链接。');if(stat.isDirectory())for(const name of await fs.readdir(dir))await noLinks(path.join(dir,name));}
+async function exists(file){try{await disk.lstat(file);return true;}catch(e){if(e.code==='ENOENT')return false;throw e;}}
+async function noLinks(dir){const stat=await disk.lstat(dir);if(stat.isSymbolicLink())throw Error('更新路径不能包含链接。');if(stat.isDirectory())for(const name of await disk.readdir(dir))await noLinks(path.join(dir,name));}
 function inside(parent,child){const rel=path.relative(parent,child);return rel===''||(!rel.startsWith('..')&&!path.isAbsolute(rel));}
 async function replacementPlan(appDir,staging,protectedPaths=[]){
  appDir=path.resolve(appDir);staging=path.resolve(staging);if(!inside(path.join(appDir,'.hoyo-updates'),staging))throw Error('更新暂存路径无效。');await noLinks(staging);
- const names=await fs.readdir(staging);if(names.some(n=>!rootAllowed(n)))throw Error('更新包包含不允许替换的目录或文件（例如 data）。');
- const exe=await fs.open(path.join(staging,'HoYoMod.exe'),'r');const header=Buffer.alloc(64);try{await exe.read(header,0,64,0);if(header.toString('ascii',0,2)!=='MZ')throw Error();const pos=header.readUInt32LE(60),pe=Buffer.alloc(6);await exe.read(pe,0,6,pos);if(pe.toString('ascii',0,4)!=='PE\0\0'||pe.readUInt16LE(4)!==0x8664)throw Error();}catch{throw Error('更新包不是有效的 Windows x64 程序。');}finally{await exe.close();}
- if(!(await fs.stat(path.join(staging,'resources','app.asar'))).isFile())throw Error('更新包缺少程序资源。');
+ const names=await disk.readdir(staging);if(names.some(n=>!rootAllowed(n)))throw Error('更新包包含不允许替换的目录或文件（例如 data）。');
+ const exe=await disk.open(path.join(staging,'HoYoMod.exe'),'r');const header=Buffer.alloc(64);try{await exe.read(header,0,64,0);if(header.toString('ascii',0,2)!=='MZ')throw Error();const pos=header.readUInt32LE(60),pe=Buffer.alloc(6);await exe.read(pe,0,6,pos);if(pe.toString('ascii',0,4)!=='PE\0\0'||pe.readUInt16LE(4)!==0x8664)throw Error();}catch{throw Error('更新包不是有效的 Windows x64 程序。');}finally{await exe.close();}
+ const resource=await disk.lstat(path.join(staging,'resources','app.asar')).catch(e=>{if(e.code==='ENOENT')return null;throw e;});
+ if(!resource?.isFile()||!resource.size)throw Error('更新包缺少程序资源。');
  const protectedAll=[path.join(appDir,'data'),path.join(appDir,'.hoyo-updates'),...protectedPaths].filter(Boolean).map(p=>path.resolve(p));
  const entries=[];
  for(const name of names){const target=path.join(appDir,name);if(protectedAll.some(p=>inside(target,p)||inside(p,target)))throw Error('程序更新目录与现有模组或配置路径重叠，请先将这些数据移出程序运行文件目录。');if(await exists(target))await noLinks(target);entries.push({name,hadOld:await exists(target)});}
