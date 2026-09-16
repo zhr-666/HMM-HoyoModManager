@@ -32,7 +32,7 @@ const {_electron}=require(process.env.PLAYWRIGHT_MODULE||'playwright'),assert=re
  await page.locator('#modal .dialog-back').click();await page.locator('[data-page=library]').click();await page.locator('.folder-card').first().click();
  const item=page.locator('.library-item').first();assert.equal(await item.locator('.rename,.remove,.source').count(),0);await item.click({button:'right'});await page.getByRole('menuitem',{name:'重命名',exact:true}).click();assert.equal(await page.locator('#modal-title').textContent(),'修改模组名称');await page.locator('#modal .dialog-back').click();
  await item.locator('.hotkeys').click();assert.deepEqual(await page.locator('.hotkey-overview kbd').allTextContents(),['X','CTRL Y','Z']);assert.ok(!(await page.locator('.hotkey-overview').textContent()).includes('Something'));await page.locator('#modal .dialog-back').click();
- await page.locator('#open-managed-mods-button').click();assert.ok(await page.evaluate(()=>testCalls.some(c=>c.action==='openManagedMods')));
+ await page.locator('#open-library-button').click();assert.ok(await page.evaluate(()=>testCalls.some(c=>c.action==='openLibrary')));
  assert.ok((await page.locator('.sidebar').boundingBox()).width<=80);assert.equal(await page.locator('.nav-item').first().getAttribute('title'),'首页');assert.ok((await page.locator('.settings-nav').boundingBox()).y<400);
  assert.deepEqual(errors,[]);console.log('Workshop navigation passed: skeletons, image-first details, five preserved layers, back/selection/scroll, fresh recheck, context menu, hotkey overview and compact sidebar.');
  }finally{await app.close();}})().catch(e=>{console.error(e);process.exitCode=1});

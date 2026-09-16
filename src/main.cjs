@@ -187,7 +187,7 @@ const actions={
     if(!r.canceled){const st=await fs.stat(r.filePaths[0]);if(st.size>32*1024**2)throw Error('背景图片请控制在 32 MB 以内。');let img=nativeImage.createFromPath(r.filePaths[0]);if(img.isEmpty())throw Error('无法读取该图片。');if(img.getSize().width>3840)img=img.resize({width:3840});await fs.writeFile(path.join(root,'home-background.jpg'),img.toJPEG(90));await lib.settings({backgroundVersion:require('node:crypto').randomUUID()});}return snapshot();
   }),
   resetBackground:()=>exclusive(()=>lib.settings({backgroundVersion:''})),
-  openManagedMods:async()=>{await requireMods(lib.snapshot().settings);const folder=path.join(lib.snapshot().settings.modsPath,'HoYoModManaged');if(!await fs.stat(folder).then(s=>s.isDirectory(),()=>false))throw Error('受管理模组文件夹尚未创建，请先启用一个模组。');const error=await shell.openPath(folder);if(error)throw Error(error);},
+  openLibrary:async()=>{const folder=lib.libraryRoot;if(!await fs.stat(folder).then(s=>s.isDirectory(),()=>false))throw Error('本机库文件夹尚未创建，请先安装一个模组。');const error=await shell.openPath(folder);if(error)throw Error(error);},
   openMods:async()=>{await requireMods(lib.snapshot().settings);const error=await shell.openPath(lib.snapshot().settings.modsPath);if(error)throw Error(error);},
   setupXXMI:()=>downloadQueue.add({kind:'component',name:'XXMI 官方便携组件'}),
   configureXXMI:()=>launcher.launch(lib.snapshot().settings,true),
