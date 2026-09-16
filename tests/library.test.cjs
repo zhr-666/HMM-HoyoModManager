@@ -26,6 +26,97 @@ async function fixture(t) {
 
 const meta = (name, characterId = name) => ({ name, characterId, characterName: characterId });
 
+test('non-character categories can coexist in deployment and saved presets', async t => {
+  const {library,modsPath,modFolder}=await fixture(t);
+  await library.settings({modsPath});
+  const ids=[];
+  for(const root of ['Audio','UI','Skins','Other']){
+    for(const suffix of ['one','two']){
+      const mod=await library.install(await modFolder(root+suffix),{...meta(root+suffix,root+'-shared'),characterGroupId:null,rootCategoryId:root==='Skins'?'17510':root,rootCategoryName:root});
+      ids.push(mod.id);await library.enable(mod.id);
+    }
+  }
+  assert.equal(library.snapshot().mods.filter(m=>m.active).length,8);
+  const preset=(await library.savePreset('all')).presets[0];
+  await library.disableAll();await library.applyPreset(preset.id);
+  assert.deepEqual(library.snapshot().mods.filter(m=>m.active).map(m=>m.id),ids);
+  for(const id of ids)await fs.access(path.join(modsPath,'HoYoModManaged',id));
+});
+
+test('cached character ancestry groups nested skins by character and survives restart',async t=>{
+  const {library,modFolder}=await fixture(t);
+  await fs.writeFile(path.join(library.root,'taxonomy.json'),JSON.stringify([{id:17510,children:[{id:18140,children:[{id:100,children:[{id:101,children:[]},{id:102,children:[]}]},{id:200,children:[]}]},{id:300,children:[]}]}]));
+  const add=async(name,category)=>library.install(await modFolder(name),{...meta(name,String(category)),rootCategoryId:'17510',rootCategoryName:'Skins'});
+  const a=await add('skin-a',101),b=await add('skin-b',102),other=await add('other-character',200),npc=await add('npc',300);
+  await library.enable(a.id);await library.enable(other.id);await library.enable(npc.id);
+  const reopened=new Library(library.root);await reopened.init();await reopened.enable(b.id);
+  assert.deepEqual(reopened.snapshot().mods.filter(m=>m.active).map(m=>m.id),[b.id,other.id,npc.id]);
+});
+
+test('persisted role classification prevents conflicting presets without a network cache',async t=>{
+  const {library,modFolder}=await fixture(t);
+  const a=await library.install(await modFolder('a'),{...meta('A','101'),characterGroupId:'100',rootCategoryId:'17510',rootCategoryName:'Skins'});
+  const b=await library.install(await modFolder('b'),{...meta('B','102'),characterGroupId:'100',rootCategoryId:'17510',rootCategoryName:'Skins'});
+  await library.enable(a.id);await library.enable(b.id);
+  assert.deepEqual(library.snapshot().mods.filter(m=>m.active).map(m=>m.id),[b.id]);
+  const saved=library.snapshot();saved.presets.push({id:'conflict',name:'bad',modIds:[a.id,b.id]});
+  await fs.writeFile(library.stateFile,JSON.stringify(saved));
+  const reopened=new Library(library.root);await reopened.init();
+  await assert.rejects(reopened.applyPreset('conflict'),/同一角色/);
+  assert.deepEqual(reopened.snapshot().mods.filter(m=>m.active).map(m=>m.id),[b.id]);
+});
+
+test('legacy Skins without classification cannot silently bypass role exclusivity',async t=>{
+ const {library,modFolder}=await fixture(t);
+ const mod=await library.install(await modFolder('legacy-role'),{...meta('Legacy','19513'),rootCategoryId:'17510',rootCategoryName:'Skins'});
+ await assert.rejects(library.enable(mod.id),/分类/);
+ assert.equal(library.snapshot().mods[0].active,false);
+ const saved=library.snapshot();saved.presets.push({id:'unknown',name:'Unknown',modIds:[mod.id]});await fs.writeFile(library.stateFile,JSON.stringify(saved));
+ const reopened=new Library(library.root);await reopened.init();await assert.rejects(reopened.applyPreset('unknown'),/分类/);
+ assert.equal(reopened.snapshot().mods[0].active,false);
+});
+
+test('missing legacy classification is resolved once and remains usable offline',async t=>{
+ const {library,modFolder}=await fixture(t);
+ const a=await library.install(await modFolder('role-one'),{...meta('One','19513'),rootCategoryId:'17510',rootCategoryName:'Skins'});
+ const b=await library.install(await modFolder('role-two'),{...meta('Two','19513'),rootCategoryId:'17510',rootCategoryName:'Skins'});
+ const npc=await library.install(await modFolder('npc-skin'),{...meta('NPC','300'),rootCategoryId:'17510',rootCategoryName:'Skins'});
+ const reopened=new Library(library.root,{resolveTaxonomy:async()=>[{id:17510,children:[{id:18140,children:[{id:19513,children:[]}]},{id:300,children:[]}]}]});
+ await reopened.init();await reopened.enable(a.id);await reopened.enable(npc.id);
+ await fs.rm(path.join(library.root,'taxonomy.json'),{force:true});
+ const offline=new Library(library.root);await offline.init();await offline.enable(b.id);
+ assert.deepEqual(offline.snapshot().mods.filter(m=>m.active).map(m=>m.id),[b.id,npc.id]);
+});
+
+test('known role metadata classifies an older active mod in the same category',async t=>{
+ const {library,modFolder}=await fixture(t);
+ const old=await library.install(await modFolder('old-role'),{...meta('Old','19513'),rootCategoryId:'17510',rootCategoryName:'Skins'});
+ const saved=library.snapshot();saved.mods[0].active=true;await fs.writeFile(library.stateFile,JSON.stringify(saved));
+ const reopened=new Library(library.root);await reopened.init();
+ const next=await reopened.install(await modFolder('new-role'),{...meta('New','19513'),rootCategoryId:'17510',rootCategoryName:'Skins',characterGroupId:'19513'});
+ await reopened.enable(next.id);
+ assert.equal(reopened.snapshot().mods.find(m=>m.id===old.id).active,false);
+});
+
+test('enable preview preserves non-role dependencies without mutating stored state',async t=>{
+ const {library,modFolder}=await fixture(t);
+ const a=await library.install(await modFolder('dependency'),{...meta('Dependency','300'),rootCategoryId:'Other',rootCategoryName:'Other'});
+ const b=await library.install(await modFolder('dependent'),{...meta('Dependent','300'),rootCategoryId:'Other',rootCategoryName:'Other'});
+ await library.enable(a.id);
+ assert.deepEqual((await library.previewEnable(b.id)).filter(m=>m.active).map(m=>m.id),[a.id,b.id]);
+ assert.equal(library.snapshot().mods.find(m=>m.id===b.id).active,false);
+});
+
+test('known roles cannot bypass an unresolved active skin in another subcategory',async t=>{
+ const {library,modFolder}=await fixture(t);
+ await library.install(await modFolder('unknown-skin'),{...meta('Unknown','101'),rootCategoryId:'17510',rootCategoryName:'Skins'});
+ const saved=library.snapshot();saved.mods[0].active=true;await fs.writeFile(library.stateFile,JSON.stringify(saved));
+ const reopened=new Library(library.root);await reopened.init();
+ const next=await reopened.install(await modFolder('known-skin'),{...meta('Known','102'),rootCategoryId:'17510',rootCategoryName:'Skins',characterGroupId:'100'});
+ await assert.rejects(reopened.enable(next.id),/分类/);
+ assert.equal(reopened.snapshot().mods.find(m=>m.id===next.id).active,false);
+});
+
 test('initializes defaults and snapshot is a deep clone', async (t) => {
   const { library } = await fixture(t);
   const snapshot = library.snapshot();

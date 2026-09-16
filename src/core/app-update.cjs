@@ -1,4 +1,5 @@
-const fs=require('node:fs/promises'),path=require('node:path'),{createReadStream}=require('node:fs'),{createHash,randomUUID}=require('node:crypto'),{spawn}=require('node:child_process');
+const fs=require('node:fs/promises'),path=require('node:path'),{createReadStream}=require('node:fs'),{createHash,randomUUID}=require('node:crypto');
+const {startHelper}=require('./update-helper.cjs');
 // Update entries are physical files. Electron's patched fs presents app.asar as
 // a virtual directory; keep normal fs only for reading our bundled helper.
 const disk=process.versions.electron?require('original-fs').promises:fs;
@@ -32,7 +33,22 @@ class AppUpdate{
  snapshot(){return JSON.parse(JSON.stringify(this.state));}
  emit(patch){Object.assign(this.state,patch);this.onChange(this.snapshot());}
  async init(){
-  try{const pointer=JSON.parse(await fs.readFile(path.join(this.home,'current.json'),'utf8'));if(!/^[0-9a-f-]{36}$/.test(pointer.job))throw Error('更新记录无效');const job=path.join(this.home,pointer.job),result=await fs.readFile(path.join(job,'status.txt'),'utf8').catch(()=>'pending');
+  try{const pointer=JSON.parse(await fs.readFile(path.join(this.home,'current.json'),'utf8'));if(!/^[0-9a-f-]{36}$/.test(pointer.job))throw Error('更新记录无效');const job=path.join(this.home,pointer.job),result=await fs.readFile(path.join(job,'status.txt'),'utf8').catch(e=>{if(e.code==='ENOENT')return 'pending';throw e;});
+   // Older builds wrote the journal before launching PowerShell. No status and
+   // an empty backup mean replacement never began; validate before permitting retry.
+   if(result==='pending'){
+    try{
+     await noLinks(job);
+     const plan=JSON.parse(await fs.readFile(path.join(job,'plan.json'),'utf8'));
+     if(path.resolve(plan.appDir)!==this.appDir||path.resolve(plan.staging)!==path.join(job,'staging'))throw Error('更新记录路径无效');
+     if((await fs.readdir(path.join(job,'backup'))).length)throw Error('已有恢复备份');
+     const checked=await replacementPlan(this.appDir,plan.staging,this.protectedPaths());
+     const next=version(plan.version),current=version(this.version),difference=next.findIndex((n,i)=>n!==current[i]);
+     if(difference<0||next[difference]<current[difference]){this.emit({status:'idle',message:'旧更新未执行，当前程序已是相同或更新版本。'});return this.snapshot();}
+     if(JSON.stringify(checked.entries)!==JSON.stringify(plan.entries))throw Error('更新文件已改变');
+     this.job=job;this.emit({status:'ready',update:{version:plan.version},message:'上次更新助手未启动，可以重新点击重启并安装。'});return this.snapshot();
+    }catch{/* Incomplete or changed staging must retain the recovery path. */}
+   }
    if(!['complete','rolledback'].includes(result.trim())){this.job=job;this.emit({status:'recovery',error:'上次软件更新未完成，请恢复旧版本后重试。'});}else this.emit({status:'idle',message:result.trim()==='complete'?'上次软件更新已完成。':'上次软件更新已回滚，配置保持不变。'});
   }catch(e){if(e.code!=='ENOENT')this.emit({status:'error',error:e.message});}
   return this.snapshot();
@@ -59,13 +75,12 @@ class AppUpdate{
   await fs.writeFile(planFile,JSON.stringify({...plan,parentPid},null,2));
   const recovery=path.join(this.appDir,'HoYoMod-Recover.cmd'),recoveryText='@echo off\r\nrem HoYoMod update recovery\r\nsetlocal DisableDelayedExpansion\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0.hoyo-updates\\'+path.basename(this.job)+'\\update.ps1" -PlanFile "%~dp0.hoyo-updates\\'+path.basename(this.job)+'\\plan.json" -RecoverOnly\r\npause\r\n';
   if(await exists(recovery)&&!(await fs.readFile(recovery,'utf8')).startsWith('@echo off\r\nrem HoYoMod update recovery'))throw Error('恢复脚本名称已被其他文件占用。');
-  await fs.writeFile(recovery,recoveryText);await fs.writeFile(path.join(this.home,'current.json'),JSON.stringify({job:path.basename(this.job)}));await fs.rm(path.join(this.job,'ready'),{force:true});
+  await fs.writeFile(recovery,recoveryText);await fs.rm(path.join(this.job,'ready'),{force:true});
   const shell=path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
-  const child=spawn(shell,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(this.job,'update.ps1'),'-PlanFile',planFile,...(recover?['-RecoverOnly']:[])],{cwd:this.job,detached:true,stdio:'ignore',shell:false,windowsHide:true});
-  await new Promise((resolve,reject)=>{child.once('error',reject);child.once('spawn',resolve);});child.unref();
-  for(let i=0;i<100;i++){if(await exists(path.join(this.job,'ready'))){this.emit({status:'handoff'});return;}await new Promise(r=>setTimeout(r,100));}
-  child.kill();
-  throw Error('更新助手未能启动，软件未关闭。请检查 .hoyo-updates 中的日志。');
+  const child=await startHelper({command:shell,args:['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(this.job,'update.ps1'),'-PlanFile',planFile,...(recover?['-RecoverOnly']:[])],job:this.job,isReady:()=>exists(path.join(this.job,'ready'))});
+  try{await fs.writeFile(path.join(this.home,'current.json'),JSON.stringify({job:path.basename(this.job)}));}
+  catch(e){child.kill();throw e;}
+  this.emit({status:'handoff'});
  }
 }
 module.exports={AppUpdate,selectRelease,replacementPlan,rootAllowed,sha256};

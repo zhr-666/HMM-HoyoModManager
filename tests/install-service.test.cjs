@@ -33,7 +33,7 @@ test('retry replaces a corrupted cached archive before downloading again',async 
  await fs.writeFile(path.join(service.folder('2-3'),'package.zip'),'corrupt');fail=false;
  await service.retry('2-3');assert.equal(downloads,2);assert.equal(lib.snapshot().mods.length,1);
 });
-async function stableFixture(t){const {InstallService}=require('../src/core/install-service.cjs');const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-stable-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));const lib=new Library(root);await lib.init();const service=new InstallService(root,{lib,api:{detail:async()=>({id:2,name:'Test',files:[{id:3,name:'mod.zip',size:3,uploadedAt:200}]})},download:async(u,p)=>fs.writeFile(p,'zip'),extract:async(a,d)=>{await fs.mkdir(d);await fs.writeFile(path.join(d,'mod.ini'),'[mod]');}});return {root,lib,service};}
+async function stableFixture(t){const {InstallService}=require('../src/core/install-service.cjs');const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-stable-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));const lib=new Library(root);await lib.init();const service=new InstallService(root,{lib,api:{detail:async()=>({id:2,name:'Test',characterGroupId:'1',files:[{id:3,name:'mod.zip',size:3,uploadedAt:200}]})},download:async(u,p)=>fs.writeFile(p,'zip'),extract:async(a,d)=>{await fs.mkdir(d);await fs.writeFile(path.join(d,'mod.ini'),'[mod]');}});return {root,lib,service};}
 test('successful installation stays successful when the final download record cannot be saved',async t=>{
  const {lib,service}=await stableFixture(t),save=service.save.bind(service);service.save=async job=>{if(job.status==='installed')throw Error('disk full');return save(job);};
  const result=await service.install({sourceId:2,fileId:3,characterId:'1',characterName:'Amber'});assert.match(result.message,/已安装.*记录/);assert.equal(lib.snapshot().mods.length,1);assert.equal((await service.history())[0].status,'installed');
@@ -48,6 +48,13 @@ test('download classification comes from GameBanana detail even outside known ch
  await service.install({sourceId:2,fileId:3,characterId:'wrong',characterName:'Wrong'});
  const mod=lib.snapshot().mods[0];assert.equal(mod.characterId,'33221');assert.equal(mod.characterName,'Icons');assert.equal(mod.rootCategoryName,'UI');assert.equal(mod.rootCategoryId,'22474');
  assert.equal(path.relative(lib.libraryRoot,mod.folder).split(path.sep).length,3);
+});
+
+test('download persists role grouping used by offline enable and presets',async t=>{
+ const {service,lib}=await stableFixture(t);
+ service.api.detail=async()=>({id:2,name:'Skin',rootCategoryId:17510,rootCategoryName:'Skins',characterId:101,characterName:'Outfit',characterGroupId:'100',files:[{id:3,name:'mod.zip',size:3}]});
+ await service.install({sourceId:2,fileId:3});
+ assert.equal(lib.snapshot().mods[0].characterGroupId,'100');
 });
 
 test('real ZIP and 7Z installation preserves bundled programs and scripts without executing them',async t=>{

@@ -1,4 +1,5 @@
 const network = require('./network.cjs');
+const {characterGroups}=require('./character-groups.cjs');
 
 const API = 'https://gamebanana.com/apiv11';
 const GAME_ID = 8552;
@@ -197,10 +198,19 @@ class GameBanana {
     const row = await this.json(`${API}/Mod/${id}/ProfilePage`);
     if (Number(row._aGame?._idRow) !== GAME_ID) throw new Error('该 Mod 不属于原神。');
     const record = baseRecord(row);
+    let taxonomy;
     if (!record.rootCategoryId && record.characterId) {
-      try { await this.taxonomy(); } catch { /* Detail still works if category service is unavailable. */ }
+      try { taxonomy=await this.taxonomy(); } catch { /* Detail still works if category service is unavailable. */ }
       const root = this.categoryRoots.get(record.characterId);
       if (root) { record.rootCategoryId = root.id; record.rootCategoryName = root.name; }
+    }
+    if(record.rootCategoryId&&record.rootCategoryId!==SKINS_CATEGORY_ID)record.characterGroupId=null;
+    else if(record.characterId){
+      try{
+        const groups=characterGroups(taxonomy||await this.taxonomy());
+        if(groups.has(String(record.characterId)))record.characterGroupId=groups.get(String(record.characterId));
+      }catch{ /* Cached library classification remains available offline. */ }
+      if(record.characterGroupId===undefined&&Number(row._aSuperCategory?._idRow)===18140)record.characterGroupId=String(record.characterId);
     }
     return {
       ...record,

@@ -3,6 +3,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const {scanHotkeys}=require('./hotkeys.cjs');
 const hashReplace=require('./hash-replace.cjs');
+const {characterGroups}=require('./character-groups.cjs');
 
 const DEFAULT_STATE = Object.freeze({
   settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
@@ -57,7 +58,7 @@ function intersects(a, b) {
 }
 
 class Library {
-  constructor(root) {
+  constructor(root,{resolveTaxonomy}={}) {
     if (!path.isAbsolute(root)) throw new Error('资源库根目录必须是绝对路径');
     this.root = path.resolve(root);
     this.libraryRoot = path.join(this.root, 'library');
@@ -65,6 +66,7 @@ class Library {
     this.journalFile = path.join(this.root, 'deployment-journal.json');
     this.state = clone(DEFAULT_STATE);
     this.queue = Promise.resolve();
+    this.resolveTaxonomy=resolveTaxonomy;
   }
 
   async init() {
@@ -162,7 +164,7 @@ class Library {
         libraryPath:path.relative(this.libraryRoot,destination).split(path.sep).join('/'),
         hotkeys: await scanHotkeys(destination),
       };
-      for (const field of ['customName','deploymentRelative','requirements','requirementsKnown','rootCategoryId','rootCategoryName','sourceId', 'sourceFileName', 'updatedAt', 'preview', 'author','sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','downloadReceipt','downloadQueueId']) {
+      for (const field of ['characterGroupId','customName','deploymentRelative','requirements','requirementsKnown','rootCategoryId','rootCategoryName','sourceId', 'sourceFileName', 'updatedAt', 'preview', 'author','sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','downloadReceipt','downloadQueueId']) {
         if (metadata[field] !== undefined) mod[field] = metadata[field];
         else if (old?.[field] !== undefined) mod[field] = old[field];
       }
@@ -185,11 +187,53 @@ class Library {
   }
 
   enable(id) {
-    return this._change((next) => {
-      const mod = this._find(next.mods, id, 'mod');
-      next.currentPresetId=null;
-      for (const item of next.mods) if (item.characterId === mod.characterId) item.active = item.id === id;
+    return this._change(next=>this._enableSelection(next,id));
+  }
+
+  previewEnable(id) {
+    return this._enqueue(async()=>{
+      const next=clone(this.state);
+      await this._enableSelection(next,id);
+      return next.mods;
     });
+  }
+
+  async _enableSelection(next,id) {
+    const mod=this._find(next.mods,id,'mod');
+    const groups=await this._characterGroups(next.mods),group=groups.get(id);
+    if(group===undefined||(group&&next.mods.some(item=>item.active&&groups.get(item.id)===undefined)))throw new Error('无法确认模组之间的角色分类，请联网打开模组工坊刷新分类后重试。');
+    next.currentPresetId=null;
+    if(group)for(const item of next.mods)if(groups.get(item.id)===group)item.active=false;
+    mod.active=true;
+  }
+
+  async _characterGroups(mods) {
+    const readCache=async name=>{
+      try{return JSON.parse(await fs.readFile(path.join(this.root,name),'utf8'));}
+      catch{return [];}
+    };
+    let categories=characterGroups(await readCache('taxonomy.json'));
+    const legacy=await readCache('categories.json');
+    for(const row of Array.isArray(legacy)?legacy:[])if(!categories.has(String(row.id)))categories.set(String(row.id),String(row.id));
+    for(const mod of mods)if(mod.deploymentRelative===undefined&&mod.characterGroupId!==undefined&&!categories.has(String(mod.characterId)))categories.set(String(mod.characterId),mod.characterGroupId);
+    const unknown=mod=>mod.deploymentRelative===undefined&&!String(mod.characterId).startsWith('local:')&&mod.characterGroupId===undefined&&!categories.has(String(mod.characterId))&&(String(mod.rootCategoryId)==='17510'||mod.rootCategoryName==='Skins');
+    if(this.resolveTaxonomy&&mods.some(unknown)){
+      try{
+        const taxonomy=await this.resolveTaxonomy();
+        for(const [id,group] of characterGroups(taxonomy))categories.set(id,group);
+        await fs.writeFile(path.join(this.root,'taxonomy.json'),JSON.stringify(taxonomy));
+      }catch{ /* Unknown roles are rejected below; already classified mods still work offline. */ }
+    }
+    return new Map(mods.map(mod=>{
+      if(mod.deploymentRelative!==undefined||String(mod.characterId).startsWith('local:'))return [mod.id,null];
+      const category=String(mod.characterId);
+      if(categories.has(category))mod.characterGroupId=categories.get(category);
+      let group=mod.characterGroupId;
+      // Pre-taxonomy libraries were character-only; preserve their existing grouping.
+      if(group===undefined&&!mod.rootCategoryId&&!mod.rootCategoryName)group=category;
+      if(group===undefined&&(String(mod.rootCategoryId)==='17510'||mod.rootCategoryName==='Skins'))return [mod.id,undefined];
+      return [mod.id,group==null?null:String(group)];
+    }));
   }
 
   disable(id) { return this._change((next) => { this._find(next.mods, id, 'mod').active = false; next.currentPresetId=null; }); }
@@ -220,15 +264,19 @@ class Library {
   }
 
   applyPreset(id) {
-    return this._change((next) => {
+    return this._change(async (next) => {
       const preset = this._find(next.presets, id, 'preset');
       const selected = new Set(preset.modIds);
       next.currentPresetId=id;
       for (const mod of next.mods) mod.active = selected.has(mod.id);
       const characters = new Set();
+      const groups=await this._characterGroups(next.mods);
       for (const mod of next.mods.filter((item) => item.active)) {
-        if (characters.has(mod.characterId)) throw new Error('搭配方案中同一角色存在多个 Mod');
-        characters.add(mod.characterId);
+        const group=groups.get(mod.id);
+        if(group===undefined)throw new Error('无法确认搭配方案中的角色分类，请联网打开模组工坊刷新分类后重试。');
+        if(!group)continue;
+        if (characters.has(group)) throw new Error('搭配方案中同一角色存在多个 Mod');
+        characters.add(group);
       }
     });
   }
@@ -270,7 +318,7 @@ class Library {
   _change(mutator) {
     return this._enqueue(async () => {
       const next = clone(this.state);
-      mutator(next);
+      await mutator(next);
       await this._commit(next);
       return this.snapshot();
     });

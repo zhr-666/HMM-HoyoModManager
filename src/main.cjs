@@ -55,12 +55,12 @@ async function dependencyReminder(detail,active=false,mods=lib.snapshot().mods){
  if(!win||win.isDestroyed())return false;
  return dependencyPrompts.ask({name:detail.name||'',missing,active,unknown:detail.requirementsKnown===false,retry:operationContext.getStore()||null});
 }
-function enableState(mod){return lib.snapshot().mods.map(m=>({...m,active:m.characterId===mod.characterId?m.id===mod.id:m.active}));}
+function enableState(mod){return lib.previewEnable(mod.id);}
 async function modDependencies(mod,active=true,mods){
  let detail=mod;
  if(mod.sourceId){try{detail=await api.detail(id(mod.sourceId));await lib.updateMetadata(mod.id,{requirements:detail.requirements,requirementsKnown:true});}catch{detail={...mod,requirementsKnown:false};}}
  else {try{detail={...mod,requirements:await require('./core/dependencies.cjs').scanLocal(mod.folder),requirementsKnown:true};}catch{detail={...mod,requirementsKnown:false};}}
- return dependencyReminder(detail,active,mods||(active?enableState(mod):lib.snapshot().mods));
+ return dependencyReminder(detail,active,mods||(active?await enableState(mod):lib.snapshot().mods));
 }
 async function enqueueMod(p,old){
   await requireMods(lib.snapshot().settings);
@@ -220,9 +220,9 @@ const actions={
   openData:async()=>{const error=await shell.openPath(root);if(error)throw new Error(error);}
 };
 if(lock)app.whenReady().then(async()=>{
-  lib=new Library(root);await lib.init();api=new GameBanana();network.setFetch(require('./core/electron-fetch.cjs').electronFetch(net));
+  lib=new Library(root,{resolveTaxonomy:()=>api.taxonomy()});await lib.init();api=new GameBanana();network.setFetch(require('./core/electron-fetch.cjs').electronFetch(net));
   await session.defaultSession.setProxy(proxyConfig(lib.snapshot().settings));applyAppearance();
-  installer=new InstallService(root,{lib,api,download:network.download,extract,progress:v=>downloadQueue?.progress(v),validate:()=>requireMods(lib.snapshot().settings),refresh:async()=>{},confirmEnable:(mod,detail,retry)=>operationContext.run(retry||{action:'enable',payload:{id:mod.id}},()=>dependencyReminder(detail,true,enableState(mod)))});
+  installer=new InstallService(root,{lib,api,download:network.download,extract,progress:v=>downloadQueue?.progress(v),validate:()=>requireMods(lib.snapshot().settings),refresh:async()=>{},confirmEnable:(mod,detail,retry)=>operationContext.run(retry||{action:'enable',payload:{id:mod.id}},async()=>dependencyReminder(detail,true,await enableState(mod)))});
   downloadQueue=new DownloadQueue(root,{validate:p=>p.kind==='component'?Promise.resolve():requireMods(lib.snapshot().settings),onChange:()=>{const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key),...downloadQueue.hiddenKeysSnapshot()]);send('downloads',[...rows,...legacyDownloads.filter(r=>!keys.has(r.key))]);},run:async row=>{
     const p=row.payload;
     try{

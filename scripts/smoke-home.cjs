@@ -23,6 +23,18 @@ const path=require('node:path'),assert=require('node:assert/strict');
   });
   await page.goto(require('node:url').pathToFileURL(path.resolve(__dirname,'../src/ui/index.html')).href);
   await page.locator('#page-home').waitFor({state:'visible'});
+  // A constrained real action button must keep its text on one line.
+  const labelLines=await page.locator('#launch-button').evaluate(button=>{
+    const previous=button.style.cssText;
+    button.style.width='55px';button.style.minWidth='0';
+    const walker=document.createTreeWalker(button,NodeFilter.SHOW_TEXT),lines=[];
+    let node;while((node=walker.nextNode()))if(node.textContent.trim()){
+      const range=document.createRange();range.selectNodeContents(node);
+      lines.push(new Set([...range.getClientRects()].map(r=>Math.round(r.y))).size);
+    }
+    button.style.cssText=previous;return lines;
+  });
+  assert.ok(labelLines.every(lines=>lines<=1),'action button labels must stay on one line');
   assert.equal(await page.locator('.sidebar .brand').count(),0);
   assert.equal(await page.locator('.nav-item').first().getAttribute('data-page'),'home');
   await page.waitForFunction(()=>document.querySelector('#home-total-size').textContent.includes('GB'));
@@ -58,6 +70,25 @@ const path=require('node:path'),assert=require('node:assert/strict');
   await page.locator('[data-page="settings"]').click();await page.locator('#theme-select').selectOption('dark');
   await page.locator('[data-page="home"]').click();await page.screenshot({path:path.resolve(__dirname,'../test-results/home-dark.png')});
   await page.locator('[data-page="library"]').click();await page.locator('#library-view-grid').click();await page.screenshot({path:path.resolve(__dirname,'../test-results/library-grid-dark.png')});
-  assert.deepEqual(errors,[]);console.log('Home and explorer passed: scoped contents, list/grid geometry, persistent view, preset identity, totals, launch placement, themes.');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  for(const width of [980,1280]){
+    await app.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setSize(width,900),width);
+    for(const name of ['home','library','presets','downloads','settings','workshop']){
+      await page.locator(`[data-page="${name}"]`).click();
+      const wrapped=await page.locator('button:visible, a.button:visible, a.link-button:visible').evaluateAll(buttons=>buttons.flatMap(button=>{
+        const walker=document.createTreeWalker(button,NodeFilter.SHOW_TEXT);let node;
+        while((node=walker.nextNode()))if(node.textContent.trim()){
+          const range=document.createRange();range.selectNodeContents(node);
+          if(new Set([...range.getClientRects()].filter(r=>r.width).map(r=>Math.round(r.y))).size>1)return [button.textContent.trim()];
+        }
+        return [];
+      }));
+      assert.deepEqual(wrapped,[],`${name} at ${width}px: no wrapped button labels`);
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} at ${width}px: no horizontal page overflow`);
+    }
+    await page.locator('[data-page="library"]').click();
+    await page.screenshot({path:path.resolve(__dirname,`../test-results/library-buttons-${width}.png`)});
+  }
+  assert.deepEqual(errors,[]);console.log('Home and explorer passed: scoped contents, list/grid geometry, persistent view, preset identity, totals, launch placement, themes, single-line buttons at 980/1280px.');
  }finally{await app.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

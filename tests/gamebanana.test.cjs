@@ -175,5 +175,15 @@ test('detail resolves genuine root ancestry while retaining actual leaf category
   if(p.get('_idCategoryRow')==='17510')return [{_idRow:18140,_sName:'Characters',_nCategoryCount:1}];
   return [{_idRow:19513,_sName:'Xingqiu',_nCategoryCount:0}];
  });
- const d=await api.detail(55);assert.equal(d.rootCategoryId,17510);assert.equal(d.rootCategoryName,'Skins');assert.equal(d.characterId,19513);assert.equal(d.characterName,'Xingqiu');
+ const d=await api.detail(55);assert.equal(d.rootCategoryId,17510);assert.equal(d.rootCategoryName,'Skins');assert.equal(d.characterId,19513);assert.equal(d.characterName,'Xingqiu');assert.equal(d.characterGroupId,'19513');
+});
+
+test('detail classifies nested role skins but not other skin categories',async()=>{
+ const api=new GameBanana(async url=>{
+  if(url.includes('/ProfilePage'))return {_idRow:55,_aGame:{_idRow:8552},_aRootCategory:{_idRow:17510,_sName:'Skins'},_aCategory:{_idRow:url.includes('/55/')?101:300,_sName:'Skin'}};
+  throw Error('unexpected network request');
+ });
+ api.taxonomy=async()=>[{id:17510,children:[{id:18140,children:[{id:100,children:[{id:101,children:[]}]}]},{id:300,children:[]}]}];
+ assert.equal((await api.detail(55)).characterGroupId,'100');
+ assert.equal((await api.detail(56)).characterGroupId,null);
 });

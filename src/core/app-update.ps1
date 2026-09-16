@@ -37,6 +37,7 @@ function Rollback {
 }
 try {
  $helperLock=[IO.File]::Open((Join-Path $job 'helper.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+ Log 'Helper started; validating update files'
  $plan = Get-Content -LiteralPath $PlanFile -Raw -Encoding UTF8 | ConvertFrom-Json
  $updateHome=Join-Path $plan.appDir '.hoyo-updates'; $backup=Join-Path $job 'backup'
  if (!(IsInside $updateHome $job) -or ([IO.Path]::GetDirectoryName($job) -ne $updateHome) -or $plan.staging -ne (Join-Path $job 'staging')) { throw 'Invalid updater workspace' }
@@ -51,6 +52,7 @@ try {
  }
  if (!$seen.ContainsKey('hoyomod.exe') -or !$seen.ContainsKey('resources')) { throw 'Incomplete application update' }
  if (!(Exists $backup)) { New-Item -ItemType Directory -Path $backup | Out-Null }
+ Log 'Validation complete; waiting for HoYoMod to close'
  [IO.File]::WriteAllText((Join-Path $job 'ready'),'ready')
  # Wait only for this application; never terminate the game, mod loader, or other processes.
  $exe=Join-Path $plan.appDir 'HoYoMod.exe'

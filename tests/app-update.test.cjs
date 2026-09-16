@@ -28,3 +28,8 @@ test('interrupted update is surfaced as recovery and cannot silently check/downl
  const {AppUpdate}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');const {appDir}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);await fs.mkdir(dir);await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));await fs.writeFile(path.join(dir,'status.txt'),'updating');let calls=0;
  const service=new AppUpdate({appDir,version:'0.8.0',json:async()=>{calls++;return release()}});await service.init();assert.equal((await service.check()).status,'recovery');assert.equal(calls,0);await assert.rejects(service.prepare());
 });
+test('legacy launch failure can retry only with intact staging and an empty backup',async t=>{
+ const {AppUpdate,replacementPlan}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');const {appDir,staging}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);await fs.rename(path.dirname(staging),dir);const prepared=path.join(dir,'staging');await fs.mkdir(path.join(dir,'backup'));await fs.writeFile(path.join(dir,'plan.json'),JSON.stringify({...await replacementPlan(appDir,prepared),version:'0.9.3'}));await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));
+ const service=new AppUpdate({appDir,version:'0.9.2'});assert.equal((await service.init()).status,'ready');assert.equal(service.state.update.version,'0.9.3');
+ await fs.writeFile(path.join(dir,'backup','old.dll'),'old');const interrupted=new AppUpdate({appDir,version:'0.9.2'});assert.equal((await interrupted.init()).status,'recovery');
+});
