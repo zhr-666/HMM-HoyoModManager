@@ -5,7 +5,9 @@ async function startHelper({command,args,job,isReady,spawn=require('node:child_p
  try{
   await handle.write(`\nUpdate helper launch: ${new Date().toISOString()}\n`);
   await new Promise((resolve,reject)=>{
-   child=spawn(command,args,{cwd:job,detached:false,stdio:['ignore',handle.fd,handle.fd],shell:false,windowsHide:true});
+   // Windows kills non-detached children when the Electron parent exits.
+   // unref() alone only releases the event-loop reference, not that lifetime link.
+   child=spawn(command,args,{cwd:job,detached:true,stdio:['ignore',handle.fd,handle.fd],shell:false,windowsHide:true});
    child.on('error',e=>{failure=e;reject(e);});
    child.once('exit',(code,signal)=>{exited=true;failure=Error(`更新助手提前退出（退出码 ${code}，信号 ${signal||'无'}）`);});
    child.once('spawn',resolve);
