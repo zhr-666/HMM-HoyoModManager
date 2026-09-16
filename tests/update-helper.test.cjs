@@ -2,7 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {startHelper}=require('../src/core/update-helper.cjs');
 async function fixture(t){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-helper-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));return dir;}
 test('helper startup captures early exit output instead of reporting only timeout',async t=>{
- const dir=await fixture(t);await assert.rejects(startHelper({command:'powershell',args:[],job:dir,isReady:async()=>false,spawn:(_c,_a,opts)=>{const child=new EventEmitter();child.unref=()=>{};child.kill=()=>{};process.nextTick(()=>{require('node:fs').writeSync(opts.stdio[2],'PowerShell startup failed');child.emit('spawn');child.emit('exit',7,null);});return child;}}),/7.*PowerShell startup failed/s);
+ const dir=await fixture(t);await assert.rejects(startHelper({command:'powershell',args:[],job:dir,isReady:async()=>false,spawn:(_c,_a,opts)=>{assert.equal(opts.detached,true);const child=new EventEmitter();child.unref=()=>{};child.kill=()=>{};process.nextTick(()=>{require('node:fs').writeSync(opts.stdio[2],'PowerShell startup failed');child.emit('spawn');child.emit('exit',7,null);});return child;}}),/7.*PowerShell startup failed/s);
  assert.match(await fs.readFile(path.join(dir,'helper-startup.log'),'utf8'),/startup failed/);
 });
 test('helper readiness returns a live unreferenced child',async t=>{
