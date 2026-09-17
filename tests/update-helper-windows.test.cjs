@@ -29,14 +29,25 @@ function applicationPackage(marker){
 async function linkOrCopy(source,destination){
  try{await fs.link(source,destination);}catch{await fs.copyFile(source,destination);}
 }
+async function copyTree(source,destination){
+ await fs.mkdir(destination,{recursive:true});
+ for(const entry of await fs.readdir(source,{withFileTypes:true})){
+  const from=path.join(source,entry.name),to=path.join(destination,entry.name);
+  if(entry.isDirectory())await copyTree(from,to);else await linkOrCopy(from,to);
+ }
+}
 async function fixture(t){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-windows-update-'));
  t.after(()=>fs.rm(root,{recursive:true,force:true,maxRetries:30,retryDelay:200}));
  const appDir=path.join(root,'HoYoMod'),job=path.join(appDir,'.hoyo-updates',randomUUID()),staging=path.join(job,'staging');
- for(const dir of [path.join(appDir,'resources'),path.join(appDir,'data'),path.join(appDir,'GIMI','Mods'),path.join(staging,'resources'),path.join(job,'backup')])await fs.mkdir(dir,{recursive:true});
+ // 真实便携版布局：完整 Electron 运行时 + 重命名后的 HoYoMod.exe。
+ // 缺失 icudtl.dat 等运行时文件时 Electron 的 Node 模式会直接以 0x80000003 退出。
+ await copyTree(path.dirname(electronExe),appDir);
+ await fs.rename(path.join(appDir,'electron.exe'),path.join(appDir,'HoYoMod.exe'));
+ await fs.rm(path.join(appDir,'resources','default_app.asar'),{force:true});
+ for(const dir of [path.join(appDir,'data'),path.join(appDir,'GIMI','Mods'),path.join(staging,'resources'),path.join(job,'backup')])await fs.mkdir(dir,{recursive:true});
  const oldPackage=applicationPackage('ran-old.txt'),newPackage=applicationPackage('ran-new.txt');
  // 程序自身的可执行文件既是应用也是引擎宿主：这正是生产里的真实形态。
- await linkOrCopy(electronExe,path.join(appDir,'HoYoMod.exe'));
  await linkOrCopy(electronExe,path.join(staging,'HoYoMod.exe'));
  await fs.writeFile(path.join(appDir,'resources','app.asar'),oldPackage);
  await fs.writeFile(path.join(staging,'resources','app.asar'),newPackage);
@@ -48,17 +59,19 @@ async function fixture(t){
  const plan={...await replacementPlan(appDir,staging,[path.join(appDir,'data'),path.join(appDir,'GIMI')]),version:'1.0.0'};
  const planFile=path.join(job,'plan.json');
  await fs.writeFile(planFile,JSON.stringify(plan));
- const stagedExe=await fs.readFile(path.join(staging,'HoYoMod.exe')),previousExe=await fs.readFile(path.join(appDir,'HoYoMod.exe'));
- return {root,appDir,job,staging,planFile,oldPackage,newPackage,stagedExe,previousExe};
+ // 给更新包里的 EXE 一个可辨认的时间戳，用它证明正在运行的 EXE 真的被替换了。
+ const stamp=new Date('2020-01-02T03:04:05Z');
+ await fs.utimes(path.join(staging,'HoYoMod.exe'),stamp,stamp);
+ return {root,appDir,job,staging,planFile,oldPackage,newPackage,stamp:Math.round(stamp.getTime()/1000)};
 }
-async function parentScript(file,{appDir,job,planFile,token,engine}){
+async function parentScript(file,{appDir,job,planFile,token}){
  await fs.writeFile(file,`const fs=require('node:fs'),path=require('node:path');
 const {startHelper,helperAttempts}=require(${JSON.stringify(helperModule)});
 (async()=>{
  const plan=JSON.parse(fs.readFileSync(${JSON.stringify(planFile)},'utf8'));
  plan.parentPid=process.pid;
  fs.writeFileSync(${JSON.stringify(planFile)},JSON.stringify(plan));
- const attempts=helperAttempts({appDir:${JSON.stringify(appDir)},job:${JSON.stringify(job)},planFile:${JSON.stringify(planFile)},token:${JSON.stringify(token)}})${engine==='fallback'?'.slice(1)':''};
+ const attempts=helperAttempts({appDir:${JSON.stringify(appDir)},job:${JSON.stringify(job)},planFile:${JSON.stringify(planFile)},token:${JSON.stringify(token)}});
  await startHelper({attempts,job:${JSON.stringify(job)},isStarted:async()=>{try{return fs.readFileSync(path.join(${JSON.stringify(job)},'started.txt'),'utf8')===${JSON.stringify(token)};}catch{return false;}},isReady:async()=>fs.existsSync(path.join(${JSON.stringify(job)},'ready'))});
  process.exit(0);
 })().catch(error=>{try{fs.writeFileSync(path.join(${JSON.stringify(job)},'parent-error.txt'),String(error&&error.stack||error));}catch{}process.exit(1);});
@@ -83,28 +96,14 @@ test('the detached update engine survives a console-less parent and replaces the
  try{
   try{assert.equal(await waitFor(path.join(f.job,'status.txt')),'complete');}
   catch(e){e.message+='\n'+await diagnostics(f);throw e;}
-  assert.equal((await fs.readFile(path.join(f.appDir,'HoYoMod.exe'))).equals(f.stagedExe),true,'the running executable was replaced by the staged one');
+  assert.equal(Math.round((await fs.stat(path.join(f.appDir,'HoYoMod.exe'))).mtimeMs/1000),f.stamp,'the running executable was replaced by the staged one');
   assert.equal((await fs.readFile(path.join(f.appDir,'resources','app.asar'))).equals(f.newPackage),true);
   assert.equal((await fs.readFile(path.join(f.job,'backup','resources','app.asar'))).equals(f.oldPackage),true);
-  assert.equal((await fs.readFile(path.join(f.job,'backup','HoYoMod.exe'))).equals(f.previousExe),true,'the previous executable was kept in the backup');
+  assert.notEqual(Math.round((await fs.stat(path.join(f.job,'backup','HoYoMod.exe'))).mtimeMs/1000),f.stamp,'the previous executable was kept in the backup');
   assert.equal(await readText(f.appDir,'data','state.json'),'keep-configuration');
   assert.equal(await readText(f.appDir,'GIMI','Mods','mod.ini'),'keep-mod');
   assert.equal(await waitFor(path.join(f.appDir,'ran-new.txt'),30000),'application started','the updated application was started after replacement');
   assert.match(await readText(f.job,'update.log'),/Update completed; data directory was untouched/);
   assert.doesNotMatch(await readText(f.job,'helper-startup.log'),/Launch failed/);
- }finally{try{process.kill(running.pid);}catch{}}
-});
-test('the headless console PowerShell fallback also starts from a console-less parent',{skip:process.platform!=='win32',timeout:180000},async t=>{
- const f=await fixture(t);
- const parent=path.join(f.root,'application.cjs');
- await parentScript(parent,{appDir:f.appDir,job:f.job,planFile:f.planFile,token:'fallback-token',engine:'fallback'});
- const running=launchParent(parent);
- try{
-  try{assert.equal(await waitFor(path.join(f.job,'status.txt')),'complete');}
-  catch(e){e.message+='\n'+await diagnostics(f);throw e;}
-  assert.equal((await fs.readFile(path.join(f.appDir,'resources','app.asar'))).equals(f.newPackage),true);
-  assert.equal((await fs.readFile(path.join(f.job,'backup','resources','app.asar'))).equals(f.oldPackage),true);
-  assert.equal(await readText(f.appDir,'data','state.json'),'keep-configuration');
-  assert.equal(await waitFor(path.join(f.appDir,'ran-new.txt'),30000),'application started');
  }finally{try{process.kill(running.pid);}catch{}}
 });

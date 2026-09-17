@@ -1,17 +1,15 @@
 'use strict';
 const fs=require('node:fs/promises'),path=require('node:path'),{spawn:defaultSpawn}=require('node:child_process');
 const DEFAULT_START_TIMEOUT_MS=15000,DEFAULT_READY_TIMEOUT_MS=60000,DEFAULT_POLL_MS=100;
-const system32=()=>path.join(process.env.SystemRoot||'C:\\Windows','System32');
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-// 引擎按顺序尝试，只有看到心跳（started.txt 等于本次 token）才认为引擎真的在运行。
-// 主引擎是应用自身的可执行文件以 Node 模式运行：GUI 子系统进程不需要控制台，而
-// detached 的 PowerShell 会因为 DETACHED_PROCESS 拿不到控制台而静默退出（退出码 0）。
-// 第二引擎用 conhost --headless 给 PowerShell 一个真实的无窗口控制台，作为兜底。
-function helperAttempts({appDir,job,planFile,recover=false,token='',host={}}){
- return [
-  {name:'application-node-host',command:host.command||path.join(appDir,'HoYoMod.exe'),args:[path.join(job,'update-run.cjs'),'--plan',planFile,'--token',token,...(recover?['--recover-only']:[])],env:{...process.env,...(host.env||{}),ELECTRON_RUN_AS_NODE:'1'}},
-  {name:'headless-console-powershell',command:path.join(system32(),'conhost.exe'),args:['--headless',path.join(system32(),'WindowsPowerShell','v1.0','powershell.exe'),'-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(job,'update.ps1'),'-PlanFile',planFile,'-Token',token,...(recover?['-RecoverOnly']:[])],env:{...process.env}}
- ];
+// 引擎由应用自身的可执行文件以 Node 模式运行：GUI 子系统进程不需要控制台。
+// 控制台宿主（powershell.exe / cmd.exe）在这里行不通：detached 会带上
+// DETACHED_PROCESS，它们拿不到控制台就直接以退出码 0 结束；不 detached 又会在
+// 应用退出时被一起结束。conhost --headless 在 Windows Server 2025 实测也不能
+// 真正运行 PowerShell（见 tests/update-helper-windows.test.cjs 的历史证据），
+// 所以只保留一个引擎，PowerShell 脚本仅用于用户自己双击的恢复流程。
+function helperAttempts({appDir,planFile,job,token='',recover=false,host={}}){
+ return [{name:'application-node-host',command:host.command||path.join(appDir,'HoYoMod.exe'),args:[path.join(job,'update-run.cjs'),'--plan',planFile,'--token',token,...(recover?['--recover-only']:[])],env:{...process.env,...(host.env||{}),ELECTRON_RUN_AS_NODE:'1'}}];
 }
 async function startHelper({attempts,job,isStarted=async()=>false,isReady,spawn=defaultSpawn,startTimeoutMs=DEFAULT_START_TIMEOUT_MS,readyTimeoutMs=DEFAULT_READY_TIMEOUT_MS,pollMs=DEFAULT_POLL_MS}){
  const log=path.join(job,'helper-startup.log'),handle=await fs.open(log,'a'),failures=[];

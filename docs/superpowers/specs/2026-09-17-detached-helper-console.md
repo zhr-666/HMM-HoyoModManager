@@ -33,13 +33,15 @@ Node 在 Windows 上把 `detached:true` 翻译成 libuv 的 `UV_PROCESS_DETACHED
 - 助手宿主是 `HoYoMod.exe`（GUI 子系统，不需要控制台），以 `ELECTRON_RUN_AS_NODE=1` 运行 `update-run.cjs`，仍然 `detached:true` 以便在应用退出后继续运行。
 - 引擎 `src/core/update-run.cjs` 自包含（不 require 应用模块），沿用现有磁盘契约：`helper.lock`、`update.log`、`ready` 握手、`status.txt`（`updating`/`complete`/`rolledback`）、`backup/` 备份与回滚、完成后重启应用；`--recover-only` 对应原 `-RecoverOnly`。
 - **启动标记（心跳）**：应用写 `launch.json`（含本次 token）并删除旧 `started.txt`；引擎第一件事就是写 `started.txt` = token。启动器只有看到心跳才认为引擎真的跑起来了，彻底排除“宿主静默退出却被当成成功”。
-- **引擎链**：主引擎是应用 Node 宿主；若它在启动窗口内没有心跳（例如该构建关闭了 RunAsNode 保险丝、或被杀软拦下第二个实例），自动改试 `conhost.exe --headless powershell.exe ... app-update.ps1`——`conhost` 会给 PowerShell 一个真实的（无窗口）控制台，从而绕开同一个坑。心跳一旦出现就不再尝试下一个引擎，避免两个引擎互相抢锁。
+- **单一引擎**：只保留应用 Node 宿主。曾经考虑过的第二条引擎（`conhost.exe --headless powershell.exe`，据外部报告可给控制台宿主补一个无窗口控制台）在真实 Windows 上被证伪：CI 运行 `35218547336` 里 conhost 打印完自己的控制台转义序列就以退出码 0 结束，根本没有运行 PowerShell。保留一个静默失效的兜底只会拖长失败时间并污染诊断，因此 PowerShell 脚本只留给用户自己双击的恢复流程。
+- 启动器仍然按“引擎列表”实现：每个引擎先等心跳，没有心跳或宿主提前退出就记录诊断并换下一个。当前列表只有一个引擎，宿主静默退出时会给出确切退出码与捕获到的输出。
 - 手动恢复脚本 `HoYoMod-Recover.cmd` 先跑 Node 引擎，失败再回退 PowerShell（用户双击 `.cmd` 时本来就有控制台，PowerShell 可用）。
+- 另一个实测发现：Electron 的 Node 模式需要可执行文件旁边的 `icudtl.dat` 等运行时文件，缺失时以 `0x80000003`（STATUS_BREAKPOINT）退出并打印 `Invalid file descriptor to ICU data received`。真实便携版目录本来就带这些文件，Windows 端到端测试因此必须复制完整的 Electron 运行时。
 
 ## 验收范围
 
 - macOS：引擎与启动器的单元/集成测试（替换、备份、回滚、`--recover-only`、受保护路径、链接拒绝、心跳、引擎链、父进程退出等待）。
-- Windows CI（真实 Windows Server 2025）：用真实 Electron 可执行文件当宿主也当被替换的程序文件，复现“无控制台的 GUI 父进程 + detached 助手”，验证助手存活、文件替换、备份、data 保留与新版启动。这正是本机 macOS 无法覆盖的部分。
+- Windows CI（真实 Windows Server 2025）：复制完整 Electron 运行时作为便携版目录，用真实可执行文件当宿主也当被替换的程序文件，复现“无控制台的 GUI 父进程 + detached 助手”，验证助手存活、正在运行的 EXE 被替换、备份、data 保留与新版启动。这正是本机 macOS 无法覆盖的部分。
 - 仍需用户实机确认：真实 0.9.8/0.9.9 目录上的整包更新、游戏与 GIMI 行为。
 
 ## 边界

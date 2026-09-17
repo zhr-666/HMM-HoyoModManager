@@ -2,20 +2,15 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {startHelper,helperAttempts}=require('../src/core/update-helper.cjs');
 async function fixture(t){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-helper-'));t.after(()=>fs.rm(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100}));return dir;}
 const attempts=(...names)=>names.map(name=>({name,command:'engine-'+name,args:[],env:{}}));
-test('engine chain prefers the application Node host and keeps a headless console fallback',()=>{
+test('the engine chain runs the application itself in Node mode',()=>{
  const list=helperAttempts({appDir:'C:\\Game\\HoYoMod',job:'C:\\Game\\HoYoMod\\.hoyo-updates\\job-1',planFile:'C:\\Game\\HoYoMod\\.hoyo-updates\\job-1\\plan.json',token:'token-1'});
- assert.equal(list.length,2);
+ assert.equal(list.length,1);
  assert.equal(list[0].name,'application-node-host');
  assert.equal(list[0].command,path.join('C:\\Game\\HoYoMod','HoYoMod.exe'));
  assert.deepEqual(list[0].args.slice(0,2),[path.join('C:\\Game\\HoYoMod\\.hoyo-updates\\job-1','update-run.cjs'),'--plan']);
  assert.ok(list[0].args.includes('--token')&&list[0].args.includes('token-1'));
  assert.equal(list[0].env.ELECTRON_RUN_AS_NODE,'1');
- assert.equal(list[1].name,'headless-console-powershell');
- assert.ok(list[1].command.endsWith(path.join('System32','conhost.exe')));
- assert.ok(list[1].args.includes('--headless'));
- assert.ok(list[1].args.includes('-Token')&&list[1].args.includes('token-1'));
- const recover=helperAttempts({appDir:'C:\\Game',job:'C:\\Game\\.hoyo-updates\\j',planFile:'p',recover:true,token:'t'});
- assert.ok(recover[0].args.includes('--recover-only')&&recover[1].args.includes('-RecoverOnly'));
+ assert.ok(helperAttempts({appDir:'C:\\Game',job:'C:\\Game\\.hoyo-updates\\j',planFile:'p',recover:true,token:'t'})[0].args.includes('--recover-only'));
  const injected=helperAttempts({appDir:'/app',job:'/job',planFile:'/job/plan.json',token:'t',host:{command:'/electron',env:{CUSTOM:'1'}}});
  assert.equal(injected[0].command,'/electron');assert.equal(injected[0].env.CUSTOM,'1');assert.equal(injected[0].env.ELECTRON_RUN_AS_NODE,'1');
 });

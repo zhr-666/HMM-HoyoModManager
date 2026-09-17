@@ -79,7 +79,7 @@ test('handoff installs the update engine, hands over a launch token, and keeps a
  assert.match(launch.token,/^[0-9a-f-]{36}$/);
  assert.equal(await fs.readFile(path.join(dir,'started.txt'),'utf8'),launch.token);
  assert.equal(await fs.readFile(path.join(dir,'update-run.cjs'),'utf8'),await fs.readFile(path.join(__dirname,'../src/core/update-run.cjs'),'utf8'));
- assert.ok((await fs.readFile(path.join(dir,'update.ps1'),'utf8')).includes('Token'),'older fallback helper is replaced by the current one');
+ assert.equal(await fs.readFile(path.join(dir,'update.ps1'),'utf8'),await fs.readFile(path.join(__dirname,'../src/core/app-update.ps1'),'utf8'),'an older copied fallback helper is replaced by the current one');
  assert.equal(JSON.parse(await fs.readFile(path.join(dir,'plan.json'),'utf8')).parentPid,4321);
  assert.equal(JSON.parse(await fs.readFile(path.join(appDir,'.hoyo-updates','current.json'),'utf8')).job,job);
  const recovery=await fs.readFile(path.join(appDir,'HoYoMod-Recover.cmd'),'utf8');
