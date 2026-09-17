@@ -195,8 +195,9 @@ const actions={
     let folder=mod.folder;
     if(p.kind==='mods'){
       await requireMods(lib.snapshot().settings);
-      const managed=path.join(lib.snapshot().settings.modsPath,'HoYoModManaged'),target=path.join(managed,String(mod.id)),relative=path.relative(managed,target);
-      if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw Error('模组目录无效。');
+      const modsPath=lib.snapshot().settings.modsPath,target=require('./core/local-deployment.cjs').deployedPath(mod,modsPath);
+      if(!target)throw Error('模组目录无效。');
+      if(mod.deploymentRelative!==undefined&&path.dirname(target)!==path.resolve(modsPath,mod.deploymentRelative))throw Error('模组目录无效。');
       if(!await fs.stat(target).then(s=>s.isDirectory(),()=>false))throw Error('此模组未启用，GIMI 中还没有它的文件。');
       folder=target;
     }

@@ -6,12 +6,11 @@ const hashReplace=require('./hash-replace.cjs');
 const {characterGroups}=require('./character-groups.cjs');
 
 const DEFAULT_STATE = Object.freeze({
-  settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
+  settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
   mods: [],
   presets: [],
   currentPresetId: null,
 });
-const MARKER = '.hoyo-managed';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function categoryFolder(name,id) {
@@ -141,7 +140,7 @@ class Library {
   }
 
   async importLocal(folder,{name,target}){
-    const relative=await require('./local-deployment.cjs').validateTarget(this.state.settings.modsPath,target);
+    const relative=await require('./local-deployment.cjs').validateTarget(this.state.settings.modsPath,target,{create:true});
     const mod=await this.install(folder,{name,characterId:'local:'+randomUUID(),characterName:path.basename(target),deploymentRelative:relative});
     await this.enable(mod.id);return this.snapshot().mods.find(m=>m.id===mod.id);
   }
@@ -318,7 +317,7 @@ class Library {
       require('./preferences.cjs').proxyConfig({...this.state.settings,...patch});
       if ('modsPath' in patch) await this._validateModsPath(patch.modsPath);
       if ('xxmiPath' in patch && patch.xxmiPath && !path.isAbsolute(patch.xxmiPath)) throw new Error('XXMI 路径必须是绝对路径');
-      for (const key of ['autoEnable', 'autoUpdate','autoCheckUpdates','autoCheckAppUpdates','blurNsfw']) if (key in patch && typeof patch[key] !== 'boolean') throw new Error(`${key} 必须是布尔值`);
+      for (const key of ['autoEnable', 'autoUpdate','autoCheckUpdates','autoCheckAppUpdates','blurNsfw','useLinks']) if (key in patch && typeof patch[key] !== 'boolean') throw new Error(`${key} 必须是布尔值`);
       if ('modsPath' in patch && patch.modsPath !== this.state.settings.modsPath && this.state.mods.some((mod) => mod.active)) {
         throw new Error('更改 Mod 路径前请先禁用全部 Mod');
       }
@@ -388,57 +387,7 @@ class Library {
   }
 
   async _commit(next){
-    if([...this.state.mods,...next.mods].some(m=>m.deploymentRelative!==undefined)&&next.settings.modsPath)return require('./local-deployment.cjs').commit(this,next);
-    return this._commitManaged(next);
-  }
-
-  async _commitManaged(next) {
-    const modsPath = next.settings.modsPath;
-    if (!modsPath) {
-      await this._writeState(next);
-      this.state = next;
-      return;
-    }
-    if (!await exists(modsPath) && !next.mods.some((item) => item.active)) {
-      await this._writeState(next);
-      this.state = next;
-      return;
-    }
-
-    const managed = path.join(modsPath, 'HoYoModManaged');
-    if (await exists(managed) && !await exists(path.join(managed, MARKER))) {
-      throw new Error('HoYoModManaged 已存在且不属于本管理器，请先将它移出');
-    }
-    const hadManaged = await exists(managed);
-    const suffix = randomUUID();
-    const staging = path.join(modsPath, `DISABLED HoYoModManaged-staging-${suffix}`);
-    const backup = path.join(modsPath, `DISABLED HoYoModManaged-backup-${suffix}`);
-    const journal = { managed, staging, backup, hadManaged, nextState: next };
-    let oldMoved = false;
-    let newMoved = false;
-    let committed = false;
-    try {
-      await fs.mkdir(staging, { recursive: true });
-      await fs.writeFile(path.join(staging, MARKER), 'managed\n');
-      for (const mod of next.mods.filter((item) => item.active)) {
-        await fs.cp(mod.folder, path.join(staging, mod.id), { recursive: true, errorOnExist: true, force: false });
-      }
-      await this._atomicJson(this.journalFile, journal);
-      if (await exists(managed)) { await fs.rename(managed, backup); oldMoved = true; }
-      await fs.rename(staging, managed); newMoved = true;
-      await this._writeState(next);
-      this.state = next;
-      committed = true;
-      await fs.rm(this.journalFile, { force: true }).catch(() => {});
-      if (oldMoved) await fs.rm(backup, { recursive: true, force: true }).catch(() => {});
-    } catch (error) {
-      if (committed) throw error;
-      if (newMoved && await exists(managed)) await fs.rm(managed, { recursive: true, force: true });
-      if (oldMoved && await exists(backup)) await fs.rename(backup, managed);
-      await fs.rm(staging, { recursive: true, force: true });
-      await fs.rm(this.journalFile, { force: true });
-      throw error;
-    }
+    return require('./local-deployment.cjs').deploy(this,next,{useLinks:next.settings.useLinks!==false});
   }
 
   async _writeState(state) { await this._atomicJson(this.stateFile, state); }
@@ -459,67 +408,9 @@ class Library {
     let journal;
     try { journal = JSON.parse(await fs.readFile(this.journalFile, 'utf8')); }
     catch (error) { if (error.code === 'ENOENT') return; throw error; }
-    if(journal.version===2)return require('./local-deployment.cjs').recover(this,journal);
-    const { managed, staging, backup, hadManaged, nextState } = journal;
-    let persisted;
-    try { persisted = JSON.parse(await fs.readFile(this.stateFile, 'utf8')); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
-    await this._validateJournal(journal, persisted);
-    let stateWasCommitted = false;
-    if (nextState) {
-      stateWasCommitted = JSON.stringify(persisted) === JSON.stringify(nextState);
-    }
-    if (stateWasCommitted) {
-      await fs.rm(backup, { recursive: true, force: true }).catch(() => {});
-      await fs.rm(staging, { recursive: true, force: true }).catch(() => {});
-      await fs.rm(this.journalFile, { force: true }).catch(() => {});
-      return;
-    } else if (backup && await exists(backup)) {
-      if (managed && await exists(managed)) await fs.rm(managed, { recursive: true, force: true });
-      await fs.rename(backup, managed);
-    } else if (hadManaged === false && managed && await exists(managed)) {
-      await fs.rm(managed, { recursive: true, force: true });
-    }
-    if (staging) await fs.rm(staging, { recursive: true, force: true });
-    await fs.rm(this.journalFile, { force: true });
-  }
-
-  async _validateJournal(journal, persisted) {
-    const { managed, staging, backup, hadManaged } = journal || {};
-    const persistedPath = persisted?.settings?.modsPath;
-    const nextPath = journal?.nextState?.settings?.modsPath;
-    const sameLibraryState = JSON.stringify(persisted?.mods) === JSON.stringify(journal?.nextState?.mods) &&
-      JSON.stringify(persisted?.presets) === JSON.stringify(journal?.nextState?.presets);
-    const settingsPathTransition = typeof nextPath === 'string' && path.isAbsolute(nextPath) &&
-      typeof persistedPath === 'string' && nextPath !== persistedPath && sameLibraryState &&
-      Array.isArray(persisted?.mods) && persisted.mods.every((mod) => !mod.active);
-    const configured = settingsPathTransition ? nextPath : persistedPath;
-    if (typeof configured !== 'string' || !path.isAbsolute(configured) ||
-        [managed, staging, backup].some((value) => typeof value !== 'string' || !path.isAbsolute(value)) ||
-        typeof hadManaged !== 'boolean') {
-      throw new Error('部署事务日志无效，未对文件进行更改');
-    }
-    const parent = path.resolve(configured);
-    const suffixMatch = path.basename(staging).match(/^DISABLED HoYoModManaged-staging-([0-9a-f-]+)$/i);
-    const suffix = suffixMatch?.[1];
-    if (path.resolve(path.dirname(managed)) !== parent || path.basename(managed) !== 'HoYoModManaged' ||
-        path.resolve(path.dirname(staging)) !== parent || path.resolve(path.dirname(backup)) !== parent ||
-        !UUID_RE.test(suffix || '') || path.basename(backup) !== `DISABLED HoYoModManaged-backup-${suffix}`) {
-      throw new Error('部署事务日志路径无效，未对文件进行更改');
-    }
-    const rootRelative = path.relative(parent, this.root);
-    const isRootOrAncestor = rootRelative === '' || (!rootRelative.startsWith('..') && !path.isAbsolute(rootRelative));
-    if (intersects(parent, this.libraryRoot) || isRootOrAncestor) throw new Error('部署事务日志路径不安全，未对文件进行更改');
-    for (const target of [managed, staging, backup]) {
-      if (await exists(target) && !await this._isOwnedDirectory(target)) {
-        throw new Error('部署事务日志指向非本管理器目录，未对文件进行更改');
-      }
-    }
-  }
-
-  async _isOwnedDirectory(folder) {
-    try { return await fs.readFile(path.join(folder, MARKER), 'utf8') === 'managed\n'; }
-    catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return false; throw error; }
+    const deployment = require('./local-deployment.cjs');
+    if (journal?.version === 3) return deployment.recover(this, journal);
+    return deployment.recoverLegacy(this, journal);
   }
 }
 

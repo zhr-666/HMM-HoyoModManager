@@ -19,7 +19,7 @@ test('automatic enable failure does not turn an installed mod into a failed down
   const {InstallService}=require('../src/core/install-service.cjs');
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-enable-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
   const lib=new Library(root);await lib.init();await lib.settings({autoEnable:true});
-  const modsPath=path.join(root,'components','Mods');await lib.settings({modsPath});await fs.rm(path.join(modsPath,'HoYoModManaged','.hoyo-managed'));
+  const modsPath=path.join(root,'components','Mods');await lib.settings({modsPath});await fs.rm(path.join(modsPath,'HoYoModManaged'),{recursive:true,force:true});
   const service=new InstallService(root,{lib,api:{detail:async()=>({id:2,name:'Test',files:[{id:3,name:'mod.zip',size:3,uploadedAt:200}]})},download:async(u,p)=>fs.writeFile(p,'zip'),extract:async(a,d)=>{await fs.mkdir(d);await fs.writeFile(path.join(d,'mod.ini'),'[mod]');}});
   const result=await service.install({sourceId:2,fileId:3,characterId:'1',characterName:'Amber'});
   assert.match(result.message,/已安装.*启用/);assert.equal(lib.snapshot().mods.length,1);assert.equal(lib.snapshot().mods[0].active,false);

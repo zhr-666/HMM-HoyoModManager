@@ -120,7 +120,7 @@ test('known roles cannot bypass an unresolved active skin in another subcategory
 test('initializes defaults and snapshot is a deep clone', async (t) => {
   const { library } = await fixture(t);
   const snapshot = library.snapshot();
-  assert.deepEqual(snapshot, { currentPresetId:null, settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], presets: [] });
+  assert.deepEqual(snapshot, { currentPresetId:null, settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], presets: [] });
   snapshot.settings.autoEnable = true;
   assert.equal(library.snapshot().settings.autoEnable, false);
 });
@@ -337,27 +337,147 @@ test('failed active update preserves the prior source version and metadata', asy
   assert.equal(await fs.readFile(path.join(unchanged.folder, 'old-source.ini'), 'utf8'), '[old]');
 });
 
-test('remove updates presets and init recovers an interrupted deployment journal', async (t) => {
+test('remove updates presets and an interrupted full-rebuild journal is rolled back', async (t) => {
   const { library, root, modsPath, modFolder } = await fixture(t);
+  const data = path.join(root, 'data');
   const item = await library.install(await modFolder('remove'), meta('Remove'));
+  await library.settings({ modsPath });
   await library.enable(item.id);
   await library.savePreset('p');
+  await fs.mkdir(path.join(modsPath, 'HoYoModManaged', 'BufferValues'), { recursive: true });
+  await fs.writeFile(path.join(modsPath, 'HoYoModManaged', 'BufferValues', 'ORFix.ini'), '[Resource]');
   const state = await library.remove(item.id);
   assert.equal(state.mods.length, 0);
   assert.deepEqual(state.presets[0].modIds, []);
+  await library.disableAll();
 
-  const data = path.join(root, 'data');
-  await library.settings({ modsPath });
   const managed = path.join(modsPath, 'HoYoModManaged');
   const suffix = '11111111-1111-4111-8111-111111111111';
   const backup = path.join(modsPath, `DISABLED HoYoModManaged-backup-${suffix}`);
   const staging = path.join(modsPath, `DISABLED HoYoModManaged-staging-${suffix}`);
   await fs.rename(managed, backup);
-  await fs.writeFile(path.join(data, 'deployment-journal.json'), JSON.stringify({ managed, backup, staging, hadManaged: true }));
+  await fs.mkdir(managed, { recursive: true });
+  await fs.writeFile(path.join(managed, '.hoyo-managed'), 'managed\n');
+  const nextState = JSON.parse(await fs.readFile(library.stateFile, 'utf8'));
+  await fs.writeFile(library.stateFile, JSON.stringify(nextState));
+  nextState.settings.libraryView = 'grid';
+  await fs.writeFile(path.join(data, 'deployment-journal.json'), JSON.stringify({ version:2, managed, backup, staging, hadManaged: true, nextState }));
   const recovered = new Library(data);
   await recovered.init();
-  assert.equal(await fs.readFile(path.join(managed, '.hoyo-managed'), 'utf8'), 'managed\n');
+  assert.deepEqual((await fs.readdir(managed)).sort(), ['.hoyo-managed','BufferValues']);
+  assert.equal(await fs.readFile(path.join(managed, 'BufferValues', 'ORFix.ini'), 'utf8'), '[Resource]');
+  assert.equal(recovered.snapshot().mods.length, 0);
+  await assert.rejects(fs.access(path.join(backup)));
   await assert.rejects(fs.access(path.join(data, 'deployment-journal.json')));
+});
+
+test('a stale full-rebuild journal from an older version is cleaned up without deleting mod folders',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const target=path.join(modsPath,'HoYoModManaged');
+ const mod=await library.install(await modFolder('kept'),meta('Kept'));await library.enable(mod.id);
+ await fs.mkdir(path.join(target,'BufferValues'),{recursive:true});await fs.writeFile(path.join(target,'BufferValues','ORFix.ini'),'[Resource]');
+ const suffix='33333333-3333-4333-8333-333333333333';
+ await fs.writeFile(library.journalFile,JSON.stringify({version:2,managed:target,staging:path.join(modsPath,`DISABLED HoYoModManaged-staging-${suffix}`),backup:path.join(modsPath,`DISABLED HoYoModManaged-backup-${suffix}`),hadManaged:true,nextState:JSON.parse(await fs.readFile(library.stateFile,'utf8'))}));
+ const reopened=new Library(library.root);await reopened.init();
+ await fs.access(path.join(target,mod.id,'kept.ini'));
+ assert.equal(await fs.readFile(path.join(target,'BufferValues','ORFix.ini'),'utf8'),'[Resource]');
+ await assert.rejects(fs.access(library.journalFile));
+});
+
+test('an interrupted single-entry deployment is rolled back without touching other folders',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const target=path.join(modsPath,'HoYoModManaged');await fs.mkdir(target,{recursive:true});
+ await fs.writeFile(path.join(target,'.hoyo-managed'),'managed\n');
+ await fs.mkdir(path.join(target,'BufferValues'));await fs.writeFile(path.join(target,'BufferValues','ORFix.ini'),'[Resource]');
+ const m=await library.install(await modFolder('interrupted'),meta('Interrupted'));
+ await library.enable(m.id);
+ const managed=path.join(target,m.id);
+ await fs.rename(managed,path.join(target,'__hoyo-staging-22222222-2222-4222-8222-222222222222'));
+ const next=library.snapshot();next.mods[0].active=false;
+ await fs.writeFile(library.journalFile,JSON.stringify({version:3,nextState:next,entries:[{managed,staging:path.join(target,'__hoyo-staging-22222222-2222-4222-8222-222222222222'),backup:path.join(target,'__hoyo-staging-22222222-2222-4222-8222-222222222222-backup'),hadManaged:true,removal:true,kind:'entry'}]}));
+ const reopened=new Library(library.root);await reopened.init();
+ assert.equal(reopened.snapshot().mods[0].active,true);
+ await fs.access(path.join(managed,'interrupted.ini'));
+ assert.equal(await fs.readFile(path.join(target,'BufferValues','ORFix.ini'),'utf8'),'[Resource]');
+ await assert.rejects(fs.access(library.journalFile));
+});
+
+test('enabling and disabling a mod only touches its own folder under HoYoModManaged',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const target=path.join(modsPath,'HoYoModManaged');
+ await fs.mkdir(path.join(target,'BufferValues','nested'),{recursive:true});
+ await fs.writeFile(path.join(target,'.hoyo-managed'),'managed\n');
+ await fs.writeFile(path.join(target,'BufferValues','nested','ORFix.ini'),'[Resource]');
+ await fs.mkdir(path.join(target,'Other','Misc'),{recursive:true});
+ await fs.writeFile(path.join(target,'Other','Misc','TexFx.txt'),'text');
+ await fs.writeFile(path.join(target,'d3dx.ini'),'[Loader]');
+ const first=await library.install(await modFolder('keep-first'),meta('First','amber'));await library.enable(first.id);
+ const second=await library.install(await modFolder('keep-second'),meta('Second','lisa'));await library.enable(second.id);
+ assert.deepEqual((await fs.readdir(target)).sort(),['.hoyo-managed','BufferValues','Other','d3dx.ini',first.id,second.id].sort());
+ await library.disable(first.id);
+ assert.deepEqual((await fs.readdir(target)).sort(),['.hoyo-managed','BufferValues','Other','d3dx.ini',second.id].sort());
+ assert.equal(await fs.readFile(path.join(target,'BufferValues','nested','ORFix.ini'),'utf8'),'[Resource]');
+ assert.equal(await fs.readFile(path.join(target,'Other','Misc','TexFx.txt'),'utf8'),'text');
+ assert.equal(await fs.readFile(path.join(target,'d3dx.ini'),'utf8'),'[Loader]');
+ await library.disableAll();
+ assert.deepEqual((await fs.readdir(target)).sort(),['.hoyo-managed','BufferValues','Other','d3dx.ini'].sort());
+ assert.equal(await fs.readFile(path.join(target,'BufferValues','nested','ORFix.ini'),'utf8'),'[Resource]');
+ await library.enable(second.id);
+ assert.deepEqual((await fs.readdir(target)).sort(),['.hoyo-managed','BufferValues','Other','d3dx.ini',second.id].sort());
+ const reopened=new Library(library.root);await reopened.init();
+ assert.equal(reopened.snapshot().mods.find(m=>m.id===second.id).active,true);
+ assert.equal(await fs.readFile(path.join(target,'BufferValues','nested','ORFix.ini'),'utf8'),'[Resource]');
+});
+
+test('enabling a mod links the library copy instead of copying it, and disabling removes only the link',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const deployment=require('../src/core/local-deployment.cjs');
+ const target=path.join(modsPath,'HoYoModManaged');
+ await fs.mkdir(target,{recursive:true});await fs.writeFile(path.join(target,'.hoyo-managed'),'managed\n');
+ await fs.mkdir(path.join(target,'BufferValues'),{recursive:true});await fs.writeFile(path.join(target,'BufferValues','ORFix.ini'),'[Resource]');
+ const mod=await library.install(await modFolder('linked'),meta('Linked','amber'));await library.enable(mod.id);
+ const deployed=path.join(target,mod.id),stat=await fs.lstat(deployed);
+ assert.ok(stat.isSymbolicLink(),'启用后应当在 HoYoModManaged 下创建链接目录');
+ assert.equal(await fs.readlink(deployed).then(link=>path.resolve(path.dirname(deployed),link)),path.resolve(mod.folder));
+ assert.equal(deployment.linkType(deployed,path.join(library.libraryRoot,'x')),'dir');
+ assert.equal(await fs.readFile(path.join(deployed,'linked.ini'),'utf8'),'[TextureOverride]');
+ await fs.writeFile(path.join(mod.folder,'extra.ini'),'[Extra]');
+ assert.equal(await fs.readFile(path.join(deployed,'extra.ini'),'utf8'),'[Extra]');
+ await library.disable(mod.id);
+ await assert.rejects(fs.access(deployed));
+ await fs.access(path.join(mod.folder,'linked.ini'));
+ assert.equal(await fs.readFile(path.join(target,'BufferValues','ORFix.ini'),'utf8'),'[Resource]');
+ const reopened=new Library(library.root);await reopened.init();
+ assert.equal(reopened.snapshot().mods[0].active,false);
+});
+
+test('HoYoModManaged/BufferValues can be selected as the install folder and enable, disable and reopen keep working',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const deployment=require('../src/core/local-deployment.cjs');
+ const target=path.join(modsPath,'HoYoModManaged','BufferValues');
+ const mod=await library.importLocal(await modFolder('buffer-mod'),{name:'Buffer mod',target});
+ const deployed=path.join(target,mod.id);
+ assert.equal(deployment.deployedPath(library.snapshot().mods[0],modsPath),deployed);
+ assert.equal(await fs.readlink(deployed).then(link=>path.resolve(path.dirname(deployed),link)),path.resolve(mod.folder));
+ assert.equal(await fs.readFile(path.join(deployed,'buffer-mod.ini'),'utf8'),'[TextureOverride]');
+ assert.equal(await fs.readFile(path.join(modsPath,'HoYoModManaged','.hoyo-managed'),'utf8'),'managed\n');
+ await library.disable(mod.id);
+ await assert.rejects(fs.access(deployed));
+ await fs.access(target);
+ const reopened=new Library(library.root);await reopened.init();
+ await reopened.enable(mod.id);
+ assert.equal(await fs.readFile(path.join(deployed,'buffer-mod.ini'),'utf8'),'[TextureOverride]');
+ assert.equal((await fs.readdir(target)).includes(mod.id),true);
+});
+
+test('a HoYoModManaged folder owned by another manager is refused instead of overwritten',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const target=path.join(modsPath,'HoYoModManaged');
+ await fs.mkdir(path.join(target,require('node:crypto').randomUUID()),{recursive:true});
+ const mod=await library.install(await modFolder('foreign'),meta('Foreign'));
+ await assert.rejects(library.enable(mod.id),/不属于本管理器/);
+ assert.equal((await fs.readdir(target)).length,1);
+ assert.equal(library.snapshot().mods[0].active,false);
 });
 
 test('categorized downloads use two safe folders and remain portable through hash rollback', async t=>{
@@ -454,13 +574,14 @@ test('multi-folder deployment failure restores every previous deployment and sta
 test('multi-folder recovery rolls back interrupted local deployment and rejects unowned journal paths',async t=>{
  const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});const target=path.join(modsPath,'custom');await fs.mkdir(target);
  const m=await library.importLocal(await modFolder('recover-local'),{name:'Local',target});
- const managed=path.join(target,m.id),suffix=require('node:crypto').randomUUID(),staging=path.join(target,`DISABLED ${m.id}-staging-${suffix}`),backup=path.join(target,`DISABLED ${m.id}-backup-${suffix}`);
- await fs.rename(managed,backup);await fs.mkdir(managed);await fs.writeFile(path.join(managed,'.hoyo-managed'),'managed\n');
- const next=library.snapshot();next.mods[0].active=false;
- await fs.writeFile(library.journalFile,JSON.stringify({version:2,entries:[{managed,staging,backup,hadManaged:true}],nextState:next}));
+ const managed=path.join(target,m.id),next=library.snapshot();next.mods[0].active=false;
+ const [entry]=require('../src/core/local-deployment.cjs').prepare([{managed,mod:library.snapshot().mods[0],remove:true,kind:'entry'}]);
+ await fs.rename(managed,entry.staging);
+ await fs.writeFile(library.journalFile,JSON.stringify({version:3,nextState:next,entries:[{managed:entry.managed,staging:entry.staging,backup:entry.backup,hadManaged:true,removal:true,kind:'entry'}]}));
  const reopened=new Library(library.root);await reopened.init();await fs.access(path.join(managed,'recover-local.ini'));assert.equal(reopened.snapshot().mods[0].active,true);
- await fs.writeFile(library.journalFile,JSON.stringify({version:2,entries:[{managed:target,staging,backup,hadManaged:true}],nextState:next}));
- await assert.rejects(new Library(library.root).init(),/日志路径/);await fs.access(path.join(managed,'recover-local.ini'));
+ const foreign=require('../src/core/local-deployment.cjs').prepare([{managed:target,mod:library.snapshot().mods[0],remove:true,kind:'entry'}]);
+ await fs.writeFile(library.journalFile,JSON.stringify({version:3,nextState:next,entries:[{managed:foreign.managed,staging:foreign.staging,backup:foreign.backup,hadManaged:true,removal:true,kind:'entry'}]}));
+ await assert.rejects(new Library(library.root).init(),/日志|状态/);await fs.access(path.join(managed,'recover-local.ini'));
 });
 test('missing local target can be removed and GIMI can change after disabling imports',async t=>{
  const {library,modsPath,modFolder,root}=await fixture(t);await library.settings({modsPath});const target=path.join(modsPath,'missing');await fs.mkdir(target);
