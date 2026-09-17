@@ -59,7 +59,7 @@ const {startHelper,helperAttempts}=require(${JSON.stringify(helperModule)});
  plan.parentPid=process.pid;
  fs.writeFileSync(${JSON.stringify(planFile)},JSON.stringify(plan));
  const attempts=helperAttempts({appDir:${JSON.stringify(appDir)},job:${JSON.stringify(job)},planFile:${JSON.stringify(planFile)},token:${JSON.stringify(token)}})${engine==='fallback'?'.slice(1)':''};
- await startHelper({attempts,job:${JSON.stringify(job)},isStarted:async()=>fs.readFileSync(path.join(${JSON.stringify(job)},'started.txt'),'utf8').catch(()=>'')===${JSON.stringify(token)},isReady:async()=>fs.existsSync(path.join(${JSON.stringify(job)},'ready'))});
+ await startHelper({attempts,job:${JSON.stringify(job)},isStarted:async()=>{try{return fs.readFileSync(path.join(${JSON.stringify(job)},'started.txt'),'utf8')===${JSON.stringify(token)};}catch{return false;}},isReady:async()=>fs.existsSync(path.join(${JSON.stringify(job)},'ready'))});
  process.exit(0);
 })().catch(error=>{try{fs.writeFileSync(path.join(${JSON.stringify(job)},'parent-error.txt'),String(error&&error.stack||error));}catch{}process.exit(1);});
 `);

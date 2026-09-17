@@ -38,6 +38,7 @@ async function moveRetry(source,destination){
   catch(e){
    last=e;
    if(e.code==='ENOENT'&&!(await exists(source)))throw Error('更新文件缺失：'+path.basename(source));
+   if(['EPERM','EEXIST','ENOTEMPTY'].includes(e.code)&&await exists(destination))throw Error('替换目标已存在：'+destination);
    await delay(MOVE_DELAY_MS);
   }
  }

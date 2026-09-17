@@ -14,7 +14,7 @@ async function fixture(t,{parentPid=999999,entries}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-engine-'));
  t.after(()=>fs.rm(root,{recursive:true,force:true,maxRetries:20,retryDelay:100}));
  const appDir=path.join(root,'app'),job=path.join(appDir,'.hoyo-updates',randomUUID()),staging=path.join(job,'staging');
- for(const dir of [path.join(appDir,'data'),path.join(appDir,'resources'),path.join(staging,'resources'),path.join(job,'backup'),path.join(job,'backup','resources')])await fs.mkdir(dir,{recursive:true});
+ for(const dir of [path.join(appDir,'data'),path.join(appDir,'resources'),path.join(staging,'resources'),path.join(job,'backup')])await fs.mkdir(dir,{recursive:true});
  await fs.writeFile(path.join(appDir,'HoYoMod.exe'),script('old-app'),{mode:0o755});
  await fs.writeFile(path.join(appDir,'resources','app.asar'),'old-asar');
  await fs.writeFile(path.join(appDir,'data','state.json'),'keep-exact');
@@ -67,6 +67,7 @@ test('engine rolls back every replaced entry when a later entry is missing',asyn
 test('recover-only restores the backup, restarts the old program, and leaves staging untouched',async t=>{
  const f=await fixture(t);
  // 模拟替换做到一半：旧程序文件已经在备份里，新文件还没到位。
+ await fs.mkdir(path.join(f.job,'backup','resources'),{recursive:true});
  await fs.rename(path.join(f.appDir,'resources','app.asar'),path.join(f.job,'backup','resources','app.asar'));
  await fs.rename(path.join(f.appDir,'HoYoMod.exe'),path.join(f.job,'backup','HoYoMod.exe'));
  await fs.writeFile(path.join(f.appDir,'resources','app.asar'),'half-replaced');
