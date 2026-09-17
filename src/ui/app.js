@@ -258,9 +258,11 @@ function renameMod(mod){
  $('#rename-confirm').onclick=async()=>{const name=$('#mod-name').value.trim();if(!name)return notice('请输入模组名称。',true);const result=await mutate('rename',{id:mod.id,name});if(result)closeModal();};
 }
 function hideContextMenu(){$('#context-menu').hidden=true;$('#help-tooltip').hidden=true;}
+function openModFolder(mod,kind){call('openModFolder',{id:mod.id,kind}).catch(()=>{});}
 function showModContext(event,mod){
  event.preventDefault();event.stopPropagation();const menu=$('#context-menu');$$('.mod-context-action',menu).forEach(b=>b.remove());$('#context-refresh').hidden=true;
- for(const [text,fn]of [['重命名',()=>renameMod(mod)],['移除',()=>confirmRemove(mod)],...(mod.sourceId?[['来源',()=>openSourceItem(mod)]]:[])]){const b=document.createElement('button');b.type='button';b.className='mod-context-action';b.setAttribute('role','menuitem');b.textContent=text;b.disabled=busyCount>0;b.onclick=()=>{hideContextMenu();fn();};menu.append(b);}
+ const items=[['重命名',()=>renameMod(mod)],['移除',()=>confirmRemove(mod)],...(mod.sourceId?[['来源',()=>openSourceItem(mod)]]:[]),['打开本机库',()=>openModFolder(mod,'library')],['打开 Mods 文件夹',()=>openModFolder(mod,'mods'),mod.active?'':'此模组未启用，GIMI 中还没有它的文件。']];
+ for(const [text,fn,unavailable]of items){const b=document.createElement('button');b.type='button';b.className='mod-context-action';b.setAttribute('role','menuitem');b.textContent=text;b.disabled=busyCount>0||!!unavailable;if(unavailable)b.title=unavailable;b.onclick=()=>{hideContextMenu();fn();};menu.append(b);}
  menu.hidden=false;menu.dataset.scrollX=scrollX;menu.dataset.scrollY=scrollY;menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-170))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-menu.offsetHeight-8))+'px';$('.mod-context-action',menu)?.focus({preventScroll:true});
 }
 function refreshPage(){hideContextMenu();if(activePage==='workshop')return loadCategories();if(activePage==='downloads')return loadDownloads();return loadState();}

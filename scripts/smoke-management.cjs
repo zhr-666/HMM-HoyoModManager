@@ -45,6 +45,10 @@ const {Library}=require('../src/core/library.cjs');
   await page.locator('#page-subtitle').hover();await page.locator('#help-tooltip').waitFor({state:'visible'});assert.match(await page.locator('#help-tooltip').textContent(),/GIMI/);
   await page.locator('[data-page="library"]').click();assert.equal(await page.locator('#open-mods-button').isVisible(),true);await page.locator('#open-library-button').click();await page.locator('#open-mods-button').click();assert.deepEqual(await app.evaluate(()=>testOpened.slice(-2)),[path.join(root,'data','library'),mods]);
   await page.locator('#page-title').click({button:'right'});await page.locator('#context-refresh').click();assert.equal(await page.locator('#context-menu').isVisible(),false);
+  await page.locator('[data-testid="installed-mod"]').first().click({button:'right'});
+  assert.deepEqual(await page.locator('.mod-context-action').allTextContents(),['重命名','移除','来源','打开本机库','打开 Mods 文件夹']);
+  await page.locator('.mod-context-action',{hasText:'打开 Mods 文件夹'}).click();
+  assert.equal(await app.evaluate(()=>testOpened.at(-1)),path.join(mods,'HoYoModManaged',dependent.id));
   await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('#page-library').evaluate(el=>getComputedStyle(el).animationName),'none');
   for(const name of ['home','library','presets','downloads']){await page.locator('[data-page="'+name+'"]').click();assert.equal(await page.locator('#page-subtitle').isVisible(),false);assert.equal(await page.locator('#page-'+name+' .section-head .help-note').count(),0);}
   assert.equal(await page.locator('#page-library .section-head h2').count(),0);assert.equal(await page.locator('#page-presets .section-head h2').count(),0);
@@ -52,6 +56,10 @@ const {Library}=require('../src/core/library.cjs');
   const titleBox=await page.locator('#page-title').boundingBox(),subtitleBox=await page.locator('#page-subtitle').boundingBox();assert.ok(subtitleBox.y>=titleBox.y+titleBox.height);
   await page.locator('[data-page="presets"]').click();await page.locator('#save-preset-button').click();const heading=await page.locator('#modal-title').boundingBox(),hint=await page.locator('#modal-subtitle').boundingBox();assert.ok(hint.x>=heading.x+heading.width);assert.ok(Math.abs(hint.y-heading.y)<10);await page.locator('#modal .icon-button').click();
   await page.evaluate(()=>window.hoyo.call('settings',{theme:'dark'}));await app.evaluate(()=>{testRequirements=[{name:'TexFx',sourceId:485763,url:'https://gamebanana.com/mods/485763'}]});await startAction('enable',{id:dependent.id});await page.screenshot({path:path.join(project,'test-results/dependencies-dark.png')});await page.locator('#dependency-cancel').click();await page.evaluate(()=>pendingAction);
-  assert.deepEqual(errors,[]);console.log('Management passed: native GIMI/EXE/background choices, dependency cancel/continue, local target deployment, passive scripts, rename, tooltips, context refresh.');
+  await page.locator('[data-page="library"]').click();await page.evaluate(id=>window.hoyo.call('disable',{id}),dependent.id);await page.evaluate(()=>loadState());
+  await page.locator('[data-testid="installed-mod"]').first().click({button:'right'});
+  const unavailableMods=page.locator('.mod-context-action',{hasText:'打开 Mods 文件夹'});
+  assert.equal(await unavailableMods.isDisabled(),true);assert.match(await unavailableMods.getAttribute('title'),/未启用/);await page.keyboard.press('Escape');
+  assert.deepEqual(errors,[]);console.log('Management passed: native GIMI/EXE/background choices, dependency cancel/continue, local target deployment, passive scripts, rename, tooltips, context refresh, per-mod folder entries.');
  }catch(error){console.error('Test failed:',error);throw error;}finally{if(app){await app.evaluate(({app})=>app.exit(0)).catch(()=>{});await app.close().catch(()=>{});}await fs.rm(root,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1});

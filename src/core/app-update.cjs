@@ -7,6 +7,7 @@ const REPO='zhr-666/HoYoMod',API=`https://api.github.com/repos/${REPO}/releases/
 const ROOT_FILES=new Set(['HoYoMod.exe','LICENSE.electron.txt','LICENSES.chromium.html','LICENSE-HoYoMod.txt','THIRD-PARTY-NOTICES.md','使用说明.md','Windows验收说明.md','vk_swiftshader_icd.json']);
 const rootAllowed=name=>ROOT_FILES.has(name)||['resources','locales'].includes(name)||/^[a-z0-9_-]+\.(dll|pak|bin|dat)$/i.test(name);
 function version(value){const m=String(value).match(/^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);if(!m)throw Error('无效的软件版本号');return m.slice(1).map(Number);}
+function notNewer(next,current){const a=version(next),b=version(current),difference=a.findIndex((n,i)=>n!==b[i]);return difference<0||a[difference]<b[difference];}
 function selectRelease(current,row){
  if(row.draft||row.prerelease)return null;const next=version(row.tag_name),old=version(current),diff=next.findIndex((n,i)=>n!==old[i]);if(diff<0||next[diff]<old[diff])return null;
  const v=next.join('.'),name=`HoYoMod-${v}-Windows-x64.zip`,asset=row.assets?.find(a=>a.name===name),expected=`https://github.com/${REPO}/releases/download/${row.tag_name}/${name}`;
@@ -43,15 +44,33 @@ class AppUpdate{
      if(path.resolve(plan.appDir)!==this.appDir||path.resolve(plan.staging)!==path.join(job,'staging'))throw Error('更新记录路径无效');
      if((await fs.readdir(path.join(job,'backup'))).length)throw Error('已有恢复备份');
      const checked=await replacementPlan(this.appDir,plan.staging,this.protectedPaths());
-     const next=version(plan.version),current=version(this.version),difference=next.findIndex((n,i)=>n!==current[i]);
-     if(difference<0||next[difference]<current[difference]){this.emit({status:'idle',message:'旧更新未执行，当前程序已是相同或更新版本。'});return this.snapshot();}
+     if(notNewer(plan.version,this.version)){this.emit({status:'idle',message:'旧更新未执行，当前程序已是相同或更新版本。'});return this.snapshot();}
      if(JSON.stringify(checked.entries)!==JSON.stringify(plan.entries))throw Error('更新文件已改变');
      this.job=job;this.emit({status:'ready',update:{version:plan.version},message:'上次更新助手未启动，可以重新点击重启并安装。'});return this.snapshot();
     }catch{/* Incomplete or changed staging must retain the recovery path. */}
    }
-   if(!['complete','rolledback'].includes(result.trim())){this.job=job;this.emit({status:'recovery',error:'上次软件更新未完成，请恢复旧版本后重试。'});}else this.emit({status:'idle',message:result.trim()==='complete'?'上次软件更新已完成。':'上次软件更新已回滚，配置保持不变。'});
+   if(!['complete','rolledback'].includes(result.trim())){
+    // A manual overwrite replaces program files but leaves .hoyo-updates behind.
+    // When the running program already reached the planned version that record
+    // describes a finished update; close it instead of demanding a recovery.
+    if(result.trim()!=='pending'&&await this._finishStaleUpdate(job)){this.emit({status:'idle',message:'上次软件更新已完成，过期的更新记录已清理。'});return this.snapshot();}
+    this.job=job;this.emit({status:'recovery',error:'上次软件更新未完成，请恢复旧版本后重试。'});
+   }else this.emit({status:'idle',message:result.trim()==='complete'?'上次软件更新已完成。':'上次软件更新已回滚，配置保持不变。'});
   }catch(e){if(e.code!=='ENOENT')this.emit({status:'error',error:e.message});}
   return this.snapshot();
+ }
+ // Replacement had already started, so the staging check above does not apply.
+ // Compare the planned version with the running one and keep the logs and backup.
+ async _finishStaleUpdate(job){
+  try{
+   const plan=JSON.parse(await fs.readFile(path.join(job,'plan.json'),'utf8'));
+   if(!notNewer(plan.version,this.version))return false;
+   await fs.writeFile(path.join(job,'status.txt'),'complete');
+   await fs.rm(path.join(this.home,'current.json'),{force:true});
+   const recovery=path.join(this.appDir,'HoYoMod-Recover.cmd');
+   if((await fs.readFile(recovery,'utf8').catch(()=>'')).startsWith('@echo off\r\nrem HoYoMod update recovery'))await fs.rm(recovery,{force:true}).catch(()=>{});
+   return true;
+  }catch{return false;}
  }
  async check(){if(this.operation||['ready','recovery','handoff'].includes(this.state.status))return this.snapshot();this.emit({status:'checking',error:''});try{const update=selectRelease(this.version,await this.json(API));this.emit({status:update?'available':'current',update});}catch(e){this.emit({status:'error',error:e.message});throw e;}return this.snapshot();}
  prepare(){if(['recovery','handoff'].includes(this.state.status))return Promise.reject(Error('请先完成更新恢复'));if(this.operation)return this.operation;this.operation=this._prepare().finally(()=>{this.operation=null});return this.operation;}

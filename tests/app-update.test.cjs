@@ -33,3 +33,20 @@ test('legacy launch failure can retry only with intact staging and an empty back
  const service=new AppUpdate({appDir,version:'0.9.2'});assert.equal((await service.init()).status,'ready');assert.equal(service.state.update.version,'0.9.3');
  await fs.writeFile(path.join(dir,'backup','old.dll'),'old');const interrupted=new AppUpdate({appDir,version:'0.9.2'});assert.equal((await interrupted.init()).status,'recovery');
 });
+test('a leftover in-progress record is closed when the running program already reached its version',async t=>{
+ const {AppUpdate,replacementPlan}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');const {appDir,staging}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);await fs.rename(path.dirname(staging),dir);const prepared=path.join(dir,'staging');
+ await fs.writeFile(path.join(dir,'plan.json'),JSON.stringify({...await replacementPlan(appDir,prepared),version:'0.9.8'}));await fs.writeFile(path.join(dir,'status.txt'),'updating');await fs.writeFile(path.join(dir,'helper-startup.log'),'Update helper launch');
+ await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));await fs.writeFile(path.join(appDir,'HoYoMod-Recover.cmd'),'@echo off\r\nrem HoYoMod update recovery\r\nold');
+ const finished=new AppUpdate({appDir,version:'0.9.8'}),state=await finished.init();assert.equal(state.status,'idle');assert.match(state.message,/已完成/);
+ await assert.rejects(fs.access(path.join(appDir,'.hoyo-updates','current.json')));await assert.rejects(fs.access(path.join(appDir,'HoYoMod-Recover.cmd')));
+ assert.equal(await fs.readFile(path.join(dir,'status.txt'),'utf8'),'complete');assert.equal(await fs.readFile(path.join(dir,'helper-startup.log'),'utf8'),'Update helper launch');
+ assert.equal(await fs.readFile(path.join(appDir,'data','state.json'),'utf8'),'keep-exact');assert.equal((await new AppUpdate({appDir,version:'0.9.8'}).init()).status,'idle');
+});
+test('a leftover record for a newer or unreadable plan keeps the recovery path',async t=>{
+ const {AppUpdate,replacementPlan}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');const {appDir,staging}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);await fs.rename(path.dirname(staging),dir);const prepared=path.join(dir,'staging');
+ await fs.writeFile(path.join(dir,'plan.json'),JSON.stringify({...await replacementPlan(appDir,prepared),version:'0.9.9'}));await fs.writeFile(path.join(dir,'status.txt'),'updating');await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));
+ const pending=new AppUpdate({appDir,version:'0.9.8'}),state=await pending.init();assert.equal(state.status,'recovery');assert.match(state.error,/未完成/);
+ await fs.access(path.join(appDir,'.hoyo-updates','current.json'));await assert.rejects(pending.prepare());
+ await fs.rm(path.join(dir,'plan.json'));const unknown=new AppUpdate({appDir,version:'0.9.9'});assert.equal((await unknown.init()).status,'recovery');
+ await fs.access(path.join(appDir,'.hoyo-updates','current.json'));assert.equal((await fs.readFile(path.join(dir,'status.txt'),'utf8')),'updating');
+});

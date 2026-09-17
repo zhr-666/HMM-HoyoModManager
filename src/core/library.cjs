@@ -13,7 +13,6 @@ const DEFAULT_STATE = Object.freeze({
 });
 const MARKER = '.hoyo-managed';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const GIMI_ROOT_FOLDERS = new Set(['shaderfixes','buffervalues']);
 
 function categoryFolder(name,id) {
   const label=String(name||'未分类').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/^[ .]+|[ .]+$/g,'').slice(0,45)||'未分类';
@@ -41,17 +40,18 @@ async function hasIni(folder) {
   return false;
 }
 
-// Packages zipped from a GIMI folder keep its layout. The manager deploys into
-// GIMI/Mods/<managed>/<id>, so ShaderFixes and BufferValues would land in the wrong
-// place and silently not load. Report those folders instead of installing them.
-async function gimiLayoutFolders(folder) {
-  const folders = (await fs.readdir(folder, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-  if (!folders.length) return null;
-  const lower = folders.map((name) => name.toLowerCase());
-  const roots = folders.filter((_, index) => GIMI_ROOT_FOLDERS.has(lower[index]));
-  if (roots.length) return roots;
-  const mods = lower.indexOf('mods');
-  if (mods >= 0 && folders.length > 1) return folders.filter((_, index) => index !== mods);
+// ShaderFixes belongs next to Mods in the GIMI folder. The manager deploys into
+// GIMI/Mods/<managed>/<id>, so a ShaderFixes folder at any depth would land in the
+// wrong place and silently not load. Report it instead of installing the package.
+async function shaderFixesFolder(folder, depth = 0) {
+  const entries = await fs.readdir(folder, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.toLowerCase() === 'shaderfixes') return entry.name;
+    if (depth >= 12) continue;
+    const nested = await shaderFixesFolder(path.join(folder, entry.name), depth + 1);
+    if (nested) return nested;
+  }
   return null;
 }
 
@@ -368,8 +368,8 @@ class Library {
     const stat = await fs.stat(folder);
     if (!stat.isDirectory()) throw new Error('Mod 路径必须指向文件夹');
     if (!await hasIni(folder)) throw new Error('Mod 文件夹中必须包含 ini 文件');
-    const layout = await gimiLayoutFolders(folder);
-    if (layout) throw new Error(`该压缩包按 GIMI 目录结构打包（包含 ${layout.join('、')} 文件夹），程序无法把它放到正确的加载位置，请手动安装到 GIMI 文件夹。`);
+    const shaderFixes = await shaderFixesFolder(folder);
+    if (shaderFixes) throw new Error(`该压缩包包含 ${shaderFixes} 文件夹，它需要放在 GIMI 根目录而不是模组目录，程序无法正确安装，请手动安装到 GIMI 文件夹。`);
     for (const field of ['name', 'characterId', 'characterName']) {
       if (typeof metadata?.[field] !== 'string' || !metadata[field].trim()) throw new Error(`缺少角色信息：${field}`);
     }

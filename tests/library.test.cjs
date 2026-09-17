@@ -467,17 +467,23 @@ test('missing local target can be removed and GIMI can change after disabling im
  const m=await library.importLocal(await modFolder('gone'),{name:'Gone',target});await library.disableAll();await fs.rm(target,{recursive:true});await library.remove(m.id);
  await fs.mkdir(target);const n=await library.importLocal(await modFolder('move'),{name:'Move',target});await library.disableAll();const other=path.join(root,'OtherMods');await library.settings({modsPath:other});await library.enable(n.id);await fs.access(path.join(other,'missing',n.id,'move.ini'));
 });
-test('packages packed from a GIMI folder are refused instead of deployed into the wrong place',async t=>{
+test('packages containing a ShaderFixes folder at any depth are refused with a manual install hint',async t=>{
  const {library,modsPath,input}=await fixture(t);await library.settings({modsPath});
  const pack=async(name,build)=>{const folder=path.join(input,name);await fs.mkdir(folder,{recursive:true});await build(folder);return folder;};
  const skin=async folder=>{await fs.mkdir(path.join(folder,'mods','Amber'),{recursive:true});await fs.writeFile(path.join(folder,'mods','Amber','Amber.ini'),'[TextureOverride]');};
- const shader=await pack('shader-pack',async folder=>{await skin(folder);await fs.mkdir(path.join(folder,'ShaderFixes'));await fs.writeFile(path.join(folder,'ShaderFixes','fix.fx'),'// shader');});
- await assert.rejects(library.install(shader,meta('Shader pack')),/GIMI 目录结构.*ShaderFixes.*手动安装/s);
- const mixed=await pack('mixed-pack',async folder=>{await skin(folder);await fs.mkdir(path.join(folder,'extras'));await fs.writeFile(path.join(folder,'extras','notes.txt'),'text');});
- await assert.rejects(library.install(mixed,meta('Mixed pack')),/GIMI 目录结构.*extras.*手动安装/s);
- const buffers=await pack('buffer-pack',async folder=>{await fs.mkdir(path.join(folder,'BufferValues','nested'),{recursive:true});await fs.writeFile(path.join(folder,'BufferValues','nested','value.ini'),'[Resource]');});
- await assert.rejects(library.install(buffers,meta('Buffer pack')),/GIMI 目录结构.*BufferValues.*手动安装/s);
+ const top=await pack('top-shader',async folder=>{await skin(folder);await fs.mkdir(path.join(folder,'ShaderFixes'));await fs.writeFile(path.join(folder,'ShaderFixes','fix.fx'),'// shader');});
+ await assert.rejects(library.install(top,meta('Top shader')),/ShaderFixes.*手动安装/s);
+ const nested=await pack('nested-shader',async folder=>{await fs.mkdir(path.join(folder,'Amber','ShaderFixes'),{recursive:true});await fs.writeFile(path.join(folder,'Amber','Amber.ini'),'[TextureOverride]');await fs.writeFile(path.join(folder,'Amber','ShaderFixes','fix.fx'),'// shader');});
+ await assert.rejects(library.install(nested,meta('Nested shader')),/ShaderFixes.*手动安装/s);
+ const deep=await pack('deep-shader',async folder=>{await fs.mkdir(path.join(folder,'Amber','Textures','ShaderFixes'),{recursive:true});await fs.writeFile(path.join(folder,'Amber','Amber.ini'),'[TextureOverride]');await fs.writeFile(path.join(folder,'Amber','Textures','ShaderFixes','fix.fx'),'// shader');});
+ await assert.rejects(library.install(deep,meta('Deep shader')),/ShaderFixes.*手动安装/s);
+ const upper=await pack('upper-shader',async folder=>{await fs.mkdir(path.join(folder,'Amber','SHADERFIXES'),{recursive:true});await fs.writeFile(path.join(folder,'Amber','Amber.ini'),'[TextureOverride]');await fs.writeFile(path.join(folder,'Amber','SHADERFIXES','fix.fx'),'// shader');});
+ await assert.rejects(library.install(upper,meta('Upper shader')),/SHADERFIXES.*手动安装/s);
  assert.deepEqual(library.snapshot().mods,[]);
+ const buffers=await pack('buffer-pack',async folder=>{await fs.mkdir(path.join(folder,'BufferValues','nested'),{recursive:true});await fs.writeFile(path.join(folder,'BufferValues','nested','value.ini'),'[Resource]');});
+ assert.equal((await library.install(buffers,meta('Buffer pack'))).name,'Buffer pack');
+ const mixed=await pack('mixed-pack',async folder=>{await skin(folder);await fs.mkdir(path.join(folder,'extras'));await fs.writeFile(path.join(folder,'extras','notes.txt'),'text');});
+ assert.equal((await library.install(mixed,meta('Mixed pack'))).name,'Mixed pack');
  const wrapped=await pack('wrapped-pack',skin);
  const installed=await library.install(wrapped,meta('Wrapped pack'));
  await library.enable(installed.id);
@@ -485,10 +491,10 @@ test('packages packed from a GIMI folder are refused instead of deployed into th
  const plain=await pack('plain-pack',async folder=>{await fs.mkdir(path.join(folder,'Amber'),{recursive:true});await fs.writeFile(path.join(folder,'Amber','Amber.ini'),'[TextureOverride]');});
  assert.equal((await library.install(plain,meta('Plain pack'))).name,'Plain pack');
 });
-test('local imports reject GIMI layout archives as well',async t=>{
+test('local imports reject a nested ShaderFixes folder as well',async t=>{
  const {library,modsPath,input}=await fixture(t);await library.settings({modsPath});const target=path.join(modsPath,'Other','Misc');await fs.mkdir(target,{recursive:true});
- const folder=path.join(input,'local-shader');await fs.mkdir(path.join(folder,'mods','Amber'),{recursive:true});await fs.writeFile(path.join(folder,'mods','Amber','Amber.ini'),'[TextureOverride]');
- await fs.mkdir(path.join(folder,'shaderfixes'));await fs.writeFile(path.join(folder,'shaderfixes','fix.fx'),'// shader');
- await assert.rejects(library.importLocal(folder,{name:'Local shader',target}),/GIMI 目录结构.*shaderfixes.*手动安装/s);
+ const folder=path.join(input,'local-shader');await fs.mkdir(path.join(folder,'Amber','shaderfixes'),{recursive:true});
+ await fs.writeFile(path.join(folder,'Amber','Amber.ini'),'[TextureOverride]');await fs.writeFile(path.join(folder,'Amber','shaderfixes','fix.fx'),'// shader');
+ await assert.rejects(library.importLocal(folder,{name:'Local shader',target}),/shaderfixes.*手动安装/s);
  assert.deepEqual(library.snapshot().mods,[]);
 });

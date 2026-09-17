@@ -189,6 +189,21 @@ const actions={
   resetBackground:()=>exclusive(()=>lib.settings({backgroundVersion:''})),
   openLibrary:async()=>{const folder=lib.libraryRoot;if(!await fs.stat(folder).then(s=>s.isDirectory(),()=>false))throw Error('本机库文件夹尚未创建，请先安装一个模组。');const error=await shell.openPath(folder);if(error)throw Error(error);},
   openMods:async()=>{await requireMods(lib.snapshot().settings);const error=await shell.openPath(lib.snapshot().settings.modsPath);if(error)throw Error(error);},
+  openModFolder:async p=>{
+    const mod=lib.snapshot().mods.find(m=>m.id===p.id);if(!mod)throw Error('找不到模组');
+    if(!['library','mods'].includes(p.kind))throw Error('无效的目录类型。');
+    let folder=mod.folder;
+    if(p.kind==='mods'){
+      await requireMods(lib.snapshot().settings);
+      const managed=path.join(lib.snapshot().settings.modsPath,'HoYoModManaged'),target=path.join(managed,String(mod.id)),relative=path.relative(managed,target);
+      if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw Error('模组目录无效。');
+      if(!await fs.stat(target).then(s=>s.isDirectory(),()=>false))throw Error('此模组未启用，GIMI 中还没有它的文件。');
+      folder=target;
+    }
+    if(!await fs.stat(folder).then(s=>s.isDirectory(),()=>false))throw Error('该文件夹不存在，请刷新后重试。');
+    const error=await shell.openPath(folder);if(error)throw Error(error);
+    return {};
+  },
   setupXXMI:()=>downloadQueue.add({kind:'component',name:'XXMI 官方便携组件'}),
   configureXXMI:()=>launcher.launch(lib.snapshot().settings,true),
   detectMods:()=>exclusive(async()=>{
