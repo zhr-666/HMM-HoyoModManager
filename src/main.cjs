@@ -1,6 +1,8 @@
 const {app,BrowserWindow,ipcMain,dialog,shell,nativeImage,protocol,net,session,nativeTheme}=require('electron');
 const fs=require('node:fs/promises');
 const path=require('node:path');
+const {NotificationCenter}=require('./core/notification-center.cjs');
+const {DownloadBatchReporter}=require('./core/download-summary.cjs');
 const {pathToFileURL}=require('node:url');
 const {Library}=require('./core/library.cjs');
 const {DownloadQueue}=require('./core/download-queue.cjs');
@@ -18,11 +20,16 @@ app.setPath('sessionData',path.join(root,'session'));
 const lock=app.requestSingleInstanceLock();
 if(!lock)app.quit();
 let appUpdater,updateHandoff=false,pendingActions=0;
-let win,lib,api,installer,busy=false,updateTimer,hashPreview,downloadQueue;let nativeMaterial=materialSupported(),legacyDownloads=[];
+let win,lib,api,installer,busy=false,updateTimer,hashPreview,downloadQueue,notifications,downloadReporter;let nativeMaterial=materialSupported(),legacyDownloads=[];
 function send(channel,data){if(win&&!win.isDestroyed())win.webContents.send('hoyo:'+channel,data);}
+// 通知中心：小弹窗之外的所有消息都进入这里，历史持久化在 data 目录。
+function pushNotification(text,{title,tone='info',target}={}){if(!text)return null;return notifications?.add({text,title,tone,target})||null;}
+function flushNotifications(){if(win&&!win.isDestroyed()&&notifications)notifications.flushPending(entry=>win.webContents.send('hoyo:notification-popups',[entry]));}
 const dependencyPrompts=new (require('./core/dependency-prompts.cjs').DependencyPrompts)(detail=>send('dependency',detail));
 function snapshot(){return {...lib.snapshot(),runtime:{version:app.getVersion(),platform:process.platform,dataRoot:root,dark:nativeTheme.shouldUseDarkColors,materialSupported:nativeMaterial}};}
-function notify(message){send('notice',message);}
+function notify(message,tone='info'){return pushNotification(message,{tone});}
+// 下载队列从「有进行中的任务」变为「全部结束」时，向通知中心发一条汇总消息。
+function reportDownloadBatch(rows){downloadReporter?.update(rows);}
 function id(value){if(!/^\d+$/.test(String(value)))throw new Error('无效的 GameBanana 编号。');return Number(value);}
 function character(p){
   if(Number.isSafeInteger(p.characterId)&&p.characterId>0)p={...p,characterId:String(p.characterId)};
@@ -66,6 +73,7 @@ async function enqueueMod(p,old){
   await requireMods(lib.snapshot().settings);
   const detail=await api.detail(id(old?.sourceId||p.sourceId));
   if(!await dependencyReminder(detail))return {cancelled:true};
+  downloadReporter?.arm();
   return downloadQueue.add({sourceId:id(old?.sourceId||p.sourceId),fileId:id(p.fileId),...(old?{id:old.id,name:old.name}:{...character(p),...(p.rootCategoryId&&p.rootCategoryName?{rootCategoryId:String(id(p.rootCategoryId)),rootCategoryName:String(p.rootCategoryName).slice(0,100)}:{}),name:p.name?String(p.name).slice(0,200):undefined})});
 }
 
@@ -98,6 +106,15 @@ const actions={
     catch(e){updateHandoff=false;throw e;}
   },
   state:()=>snapshot(),
+  notifications:()=>notifications.snapshot(),
+  addNotification:p=>{
+    const text=typeof p?.text==='string'?p.text.slice(0,600):'';if(!text.trim())return notifications.snapshot();
+    notifications.add({text,title:typeof p.title==='string'?p.title.slice(0,80):'',tone:p.tone==='error'?'error':'info',target:typeof p.target==='string'?p.target:''});
+    return notifications.snapshot();
+  },
+  readNotifications:()=>notifications.markAllRead(),
+  clearNotifications:()=>notifications.clear(),
+  removeNotification:p=>notifications.remove(String(p?.id||'')),
   libraryStats:()=>lib.statistics(),
   previewHash:p=>exclusive(async()=>{const result=await withProgress(progress=>lib.previewHash(p.oldHash,p.newHash,progress));const token=require('node:crypto').randomUUID();hashPreview={token,result,at:Date.now()};return {...result,token};}),
   applyHash:p=>exclusive(async()=>{if(!hashPreview||p.token!==hashPreview.token||Date.now()-hashPreview.at>15*60*1000)throw Error('预览已失效，请重新查找。');const expected=hashPreview.result;hashPreview=null;const result=await withProgress(progress=>lib.applyHash(expected,progress));return result;}),
@@ -145,6 +162,7 @@ const actions={
       let requirements=[],known=true;try{requirements=await require('./core/dependencies.cjs').scanLocal(path.join(temp,'unpacked'));}catch{known=false;}
       if(!await dependencyReminder({name:path.basename(result.filePaths[0]),requirements,requirementsKnown:known},true))return {cancelled:true};
       await lib.importLocal(path.join(temp,'unpacked'),{name:path.basename(result.filePaths[0],path.extname(result.filePaths[0])),target:target.filePaths[0]});
+      notify(`本地模组「${path.basename(result.filePaths[0])}」已导入。`);
       return snapshot();
     }finally{await fs.rm(temp,{recursive:true,force:true});}
   }),
@@ -205,14 +223,14 @@ const actions={
     const error=await shell.openPath(folder);if(error)throw Error(error);
     return {};
   },
-  setupXXMI:()=>downloadQueue.add({kind:'component',name:'XXMI 官方便携组件'}),
+  setupXXMI:()=>{downloadReporter?.arm();return downloadQueue.add({kind:'component',name:'XXMI 官方便携组件'});},
   configureXXMI:()=>launcher.launch(lib.snapshot().settings,true),
   detectMods:()=>exclusive(async()=>{
     const modsPath=await launcher.detectMods(lib.snapshot().settings.xxmiPath);
     if(!modsPath)throw new Error('尚未找到 GIMI。请先初始化 GIMI，或手动选择 Mods 文件夹。');
     await lib.settings({modsPath});return snapshot();
   }),
-  launch:()=>require('./core/external-launcher.cjs').open(lib.snapshot().settings.launchExe),
+  launch:async()=>{const result=await require('./core/external-launcher.cjs').open(lib.snapshot().settings.launchExe);notify(result.message||'已打开指定程序。');return result;},
   refresh:()=>snapshot(),
   checkUpdates:()=>exclusive(()=>checkUpdates()),
   updateMod:async p=>{
@@ -225,7 +243,7 @@ const actions={
     const task=downloadQueue.snapshot().find(r=>r.id===p.id);
     if(task?.payload?.kind!=='component')await requireMods(lib.snapshot().settings);
     if(task?.payload?.sourceId&&!await dependencyReminder(await api.detail(id(task.payload.sourceId))))return {cancelled:true};
-    if(p.id&&!String(p.id).startsWith('legacy:'))return downloadQueue.retry(p.id);
+    if(p.id&&!String(p.id).startsWith('legacy:')){downloadReporter?.arm();return downloadQueue.retry(p.id);}
     const key=p.key||String(p.id||'').replace(/^legacy:/,'');installer.folder(key);
     const record=(await installer.history()).find(r=>r.key===key);if(!record)throw Error('找不到下载记录。');
     if(!await dependencyReminder(await api.detail(id(record.sourceId))))return {cancelled:true};
@@ -238,8 +256,11 @@ const actions={
 if(lock)app.whenReady().then(async()=>{
   lib=new Library(root,{resolveTaxonomy:()=>api.taxonomy()});await lib.init();api=new GameBanana();network.setFetch(require('./core/electron-fetch.cjs').electronFetch(net));
   await session.defaultSession.setProxy(proxyConfig(lib.snapshot().settings));applyAppearance();
+  notifications=new NotificationCenter(path.join(root,'notifications.json'),{onChange:unread=>send('notifications',{unread}),onPopup:entry=>send('notification-popups',[entry])});
+  await notifications.init();
+  downloadReporter=new DownloadBatchReporter((text,tone)=>notify(text,tone));
   installer=new InstallService(root,{lib,api,download:network.download,extract,progress:v=>downloadQueue?.progress(v),validate:()=>requireMods(lib.snapshot().settings),refresh:async()=>{},confirmEnable:(mod,detail,retry)=>operationContext.run(retry||{action:'enable',payload:{id:mod.id}},async()=>dependencyReminder(detail,true,await enableState(mod)))});
-  downloadQueue=new DownloadQueue(root,{validate:p=>p.kind==='component'?Promise.resolve():requireMods(lib.snapshot().settings),onChange:()=>{const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key),...downloadQueue.hiddenKeysSnapshot()]);send('downloads',[...rows,...legacyDownloads.filter(r=>!keys.has(r.key))]);},run:async row=>{
+  downloadQueue=new DownloadQueue(root,{validate:p=>p.kind==='component'?Promise.resolve():requireMods(lib.snapshot().settings),onChange:()=>{const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key),...downloadQueue.hiddenKeysSnapshot()]);send('downloads',[...rows,...legacyDownloads.filter(r=>!keys.has(r.key))]);reportDownloadBatch(rows);},run:async row=>{
     const p=row.payload;
     try{
       if(p.kind==='component'){const executable=await launcher.setup(root,v=>downloadQueue.progress({label:'下载 XXMI 官方组件',...v,speed:v.bytesPerSecond}));await lib.settings({xxmiPath:executable});return {message:'组件已就绪，请到设置中打开 XXMI 配置，安装 GIMI。'};}
@@ -276,10 +297,12 @@ if(lock)app.whenReady().then(async()=>{
       pendingActions++;try{return {ok:true,value:await operationContext.run({action,payload},()=>actions[action](payload))};}finally{pendingActions--;}
     }catch(e){return {ok:false,error:e.message||'操作失败，请重试。'};}
   });
-  await win.loadURL('hoyo://app/index.html');downloadQueue.start();
-  setTimeout(()=>{if(lib.snapshot().settings.autoCheckAppUpdates&&!updateHandoff)appUpdater.check().then(result=>{if(result.status==='available')notify('软件有新版本，可在设置中查看更新。');}).catch(()=>{});},8000).unref();
+  await win.loadURL('hoyo://app/index.html');flushNotifications();downloadReporter.arm();downloadQueue.start();
+  setTimeout(()=>{if(lib.snapshot().settings.autoCheckAppUpdates&&!updateHandoff)appUpdater.check().then(result=>{if(result.status==='available')notifications.add({text:'软件有新版本 '+(result.update?.version||'')+'，可在设置中查看更新。',target:'appUpdate'});}).catch(()=>{});},8000).unref();
   const periodic=()=>{if(!busy&&lib.snapshot().settings.autoCheckUpdates&&lib.snapshot().mods.some(m=>m.sourceId))exclusive(()=>checkUpdates(true)).catch(e=>notify(e.message));};
   setTimeout(periodic,20000).unref();updateTimer=setInterval(periodic,6*60*60*1000);updateTimer.unref();
 }).catch(e=>{dialog.showErrorBox('HoYoMod 无法启动','请将便携版放在可写入的文件夹。\n'+e.message);app.quit();});
+process.on('uncaughtException',e=>notify('程序发生未预期的错误：'+(e?.message||e),'error'));
+process.on('unhandledRejection',reason=>notify('后台任务失败：'+(reason?.message||reason),'error'));
 app.on('second-instance',()=>{if(win){if(win.isMinimized())win.restore();win.focus();}});
 app.on('window-all-closed',()=>app.quit());
