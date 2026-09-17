@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory=$true)][string]$PlanFile,[switch]$RecoverOnly)
+﻿param([Parameter(Mandatory=$true)][string]$PlanFile,[switch]$RecoverOnly,[string]$Token='')
 $ErrorActionPreference = 'Stop'
 $job = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($PlanFile))
 $log = Join-Path $job 'update.log'
@@ -36,6 +36,7 @@ function Rollback {
  Status 'rolledback'
 }
 try {
+ if ($Token) { [IO.File]::WriteAllText((Join-Path $job 'started.txt'),$Token) }
  $helperLock=[IO.File]::Open((Join-Path $job 'helper.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
  Log 'Helper started; validating update files'
  $plan = Get-Content -LiteralPath $PlanFile -Raw -Encoding UTF8 | ConvertFrom-Json

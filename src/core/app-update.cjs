@@ -1,5 +1,5 @@
-const fs=require('node:fs/promises'),path=require('node:path'),{createReadStream}=require('node:fs'),{createHash,randomUUID}=require('node:crypto');
-const {startHelper}=require('./update-helper.cjs');
+const fs=require('node:fs/promises'),path=require('node:path'),{createReadStream}=require('node:fs'),{createHash,randomUUID}=require('node:crypto'),{spawn}=require('node:child_process');
+const {startHelper,helperAttempts}=require('./update-helper.cjs');
 // Update entries are physical files. Electron's patched fs presents app.asar as
 // a virtual directory; keep normal fs only for reading our bundled helper.
 const disk=process.versions.electron?require('original-fs').promises:fs;
@@ -30,9 +30,18 @@ async function replacementPlan(appDir,staging,protectedPaths=[]){
 }
 async function sha256(file){const h=createHash('sha256');for await(const chunk of createReadStream(file))h.update(chunk);return 'sha256:'+h.digest('hex');}
 class AppUpdate{
- constructor({appDir,version,protectedPaths=()=>[],json,download,extract,onChange=()=>{}}){Object.assign(this,{appDir:path.resolve(appDir),version,protectedPaths,json,download,extract,onChange});this.home=path.join(this.appDir,'.hoyo-updates');this.state={status:'idle',currentVersion:version};this.operation=null;this.job=null;}
+ constructor({appDir,version,protectedPaths=()=>[],json,download,extract,onChange=()=>{},spawnHelper=spawn,host={},platform=process.platform}){Object.assign(this,{appDir:path.resolve(appDir),version,protectedPaths,json,download,extract,onChange,spawnHelper,host,platform});this.home=path.join(this.appDir,'.hoyo-updates');this.state={status:'idle',currentVersion:version};this.operation=null;this.job=null;}
  snapshot(){return JSON.parse(JSON.stringify(this.state));}
  emit(patch){Object.assign(this.state,patch);this.onChange(this.snapshot());}
+ // 引擎与兜底脚本都必须落在真实文件系统里：更新过程中 app.asar 本身会被替换。
+ async _installHelpers(job){
+  const files=[['update-run.cjs','update-run.cjs'],['app-update.ps1','update.ps1']];
+  for(const [source,name] of files){
+   const target=path.join(job,name);
+   await fs.copyFile(path.join(__dirname,source),target);
+   if(!(await fs.stat(target)).size)throw Error(`更新助手文件复制失败：${name}`);
+  }
+ }
  async init(){
   try{const pointer=JSON.parse(await fs.readFile(path.join(this.home,'current.json'),'utf8'));if(!/^[0-9a-f-]{36}$/.test(pointer.job))throw Error('更新记录无效');const job=path.join(this.home,pointer.job),result=await fs.readFile(path.join(job,'status.txt'),'utf8').catch(e=>{if(e.code==='ENOENT')return 'pending';throw e;});
    // Older builds wrote the journal before launching PowerShell. No status and
@@ -82,21 +91,30 @@ class AppUpdate{
    await this.download(update.url,archive,p=>this.emit({received:p.received||0,total:p.total||update.size}),update.digest,{expectedSize:update.size});
    if(await sha256(archive)!==update.digest)throw Error('更新包 SHA256 校验失败，原程序和配置未更改。');
    this.emit({status:'preparing'});await this.extract(archive,staging);const plan=await replacementPlan(this.appDir,staging,this.protectedPaths());
-   await fs.mkdir(path.join(job,'backup'));await fs.copyFile(path.join(__dirname,'app-update.ps1'),path.join(job,'update.ps1'));await fs.writeFile(path.join(job,'plan.json'),JSON.stringify({...plan,version:update.version},null,2));
+   await fs.mkdir(path.join(job,'backup'));await this._installHelpers(job);await fs.writeFile(path.join(job,'plan.json'),JSON.stringify({...plan,version:update.version},null,2));
    this.job=job;this.emit({status:'ready',received:update.size,total:update.size});return this.snapshot();
   }catch(e){this.emit({status:'error',error:e.message});throw e;}
  }
  async handoff({packaged,parentPid=process.pid,recover=false}={}){
-  if(process.platform!=='win32'||!packaged)throw Error('自动替换仅支持 Windows 便携版。');
+  if(this.platform!=='win32'||!packaged)throw Error('自动替换仅支持 Windows 便携版。');
   if(!this.job||(!recover&&this.state.status!=='ready')||(recover&&this.state.status!=='recovery'))throw Error('更新尚未准备好。');
   const planFile=path.join(this.job,'plan.json'),plan=JSON.parse(await fs.readFile(planFile,'utf8'));
   if(!recover)await replacementPlan(this.appDir,plan.staging,this.protectedPaths());
   await fs.writeFile(planFile,JSON.stringify({...plan,parentPid},null,2));
-  const recovery=path.join(this.appDir,'HoYoMod-Recover.cmd'),recoveryText='@echo off\r\nrem HoYoMod update recovery\r\nsetlocal DisableDelayedExpansion\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0.hoyo-updates\\'+path.basename(this.job)+'\\update.ps1" -PlanFile "%~dp0.hoyo-updates\\'+path.basename(this.job)+'\\plan.json" -RecoverOnly\r\npause\r\n';
+  // 旧任务目录（0.9.x 只复制了 update.ps1）在重试时补齐引擎文件。
+  await this._installHelpers(this.job);
+  // 恢复脚本先跑 Node 引擎（用户双击 .cmd 时有控制台，两条路径都可用）。
+  const updateDir='%~dp0.hoyo-updates\\'+path.basename(this.job);
+  const recovery=path.join(this.appDir,'HoYoMod-Recover.cmd'),recoveryText='@echo off\r\nrem HoYoMod update recovery\r\nsetlocal DisableDelayedExpansion\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n"%~dp0HoYoMod.exe" "'+updateDir+'\\update-run.cjs" --plan "'+updateDir+'\\plan.json" --recover-only\r\nif errorlevel 1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "'+updateDir+'\\update.ps1" -PlanFile "'+updateDir+'\\plan.json" -RecoverOnly\r\npause\r\n';
   if(await exists(recovery)&&!(await fs.readFile(recovery,'utf8')).startsWith('@echo off\r\nrem HoYoMod update recovery'))throw Error('恢复脚本名称已被其他文件占用。');
-  await fs.writeFile(recovery,recoveryText);await fs.rm(path.join(this.job,'ready'),{force:true});
-  const shell=path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
-  const child=await startHelper({command:shell,args:['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(this.job,'update.ps1'),'-PlanFile',planFile,...(recover?['-RecoverOnly']:[])],job:this.job,isReady:()=>exists(path.join(this.job,'ready'))});
+  await fs.writeFile(recovery,recoveryText);
+  await fs.rm(path.join(this.job,'ready'),{force:true});
+  const token=randomUUID();
+  await fs.writeFile(path.join(this.job,'launch.json'),JSON.stringify({token,engine:'application-node-host',at:new Date().toISOString()},null,2));
+  await fs.rm(path.join(this.job,'started.txt'),{force:true});
+  // 只有引擎自己写下本次 token 才算启动成功：宿主静默退出不能再被当成就绪。
+  const isStarted=async()=>await fs.readFile(path.join(this.job,'started.txt'),'utf8').catch(()=>'')===token;
+  const child=await startHelper({attempts:helperAttempts({appDir:this.appDir,job:this.job,planFile,recover,token,host:this.host}),job:this.job,isStarted,isReady:()=>exists(path.join(this.job,'ready')),spawn:this.spawnHelper});
   try{await fs.writeFile(path.join(this.home,'current.json'),JSON.stringify({job:path.basename(this.job)}));}
   catch(e){child.kill();throw e;}
   this.emit({status:'handoff'});

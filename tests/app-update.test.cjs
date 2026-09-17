@@ -50,3 +50,76 @@ test('a leftover record for a newer or unreadable plan keeps the recovery path',
  await fs.rm(path.join(dir,'plan.json'));const unknown=new AppUpdate({appDir,version:'0.9.9'});assert.equal((await unknown.init()).status,'recovery');
  await fs.access(path.join(appDir,'.hoyo-updates','current.json'));assert.equal((await fs.readFile(path.join(dir,'status.txt'),'utf8')),'updating');
 });
+
+test('handoff installs the update engine, hands over a launch token, and keeps a recovery script',async t=>{
+ const {AppUpdate,replacementPlan}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto'),{EventEmitter}=require('node:events');
+ const {appDir,staging}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);
+ await fs.rename(path.dirname(staging),dir);const prepared=path.join(dir,'staging');
+ await fs.mkdir(path.join(dir,'backup'));
+ await fs.writeFile(path.join(dir,'update.ps1'),'old fallback helper');
+ await fs.writeFile(path.join(dir,'plan.json'),JSON.stringify({...await replacementPlan(appDir,prepared),version:'1.0.0'}));
+ await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));
+ const spawned=[];
+ const service=new AppUpdate({appDir,version:'0.9.9',platform:'win32',spawnHelper:(command,args,options)=>{
+  spawned.push({command,args,options});
+  const child=new EventEmitter();child.unref=()=>{};child.kill=()=>{};
+  process.nextTick(()=>{
+   child.emit('spawn');
+   const launch=JSON.parse(require('node:fs').readFileSync(path.join(dir,'launch.json'),'utf8'));
+   require('node:fs').writeFileSync(path.join(dir,'started.txt'),launch.token);
+   require('node:fs').writeFileSync(path.join(dir,'ready'),'ready');
+  });
+  return child;
+ }});
+ assert.equal((await service.init()).status,'ready');
+ await service.handoff({packaged:true,parentPid:4321});
+ assert.equal(service.snapshot().status,'handoff');
+ assert.equal(spawned.length,1);
+ const launch=JSON.parse(await fs.readFile(path.join(dir,'launch.json'),'utf8'));
+ assert.match(launch.token,/^[0-9a-f-]{36}$/);
+ assert.equal(await fs.readFile(path.join(dir,'started.txt'),'utf8'),launch.token);
+ assert.equal(await fs.readFile(path.join(dir,'update-run.cjs'),'utf8'),await fs.readFile(path.join(__dirname,'../src/core/update-run.cjs'),'utf8'));
+ assert.ok((await fs.readFile(path.join(dir,'update.ps1'),'utf8')).includes('Token'),'older fallback helper is replaced by the current one');
+ assert.equal(JSON.parse(await fs.readFile(path.join(dir,'plan.json'),'utf8')).parentPid,4321);
+ assert.equal(JSON.parse(await fs.readFile(path.join(appDir,'.hoyo-updates','current.json'),'utf8')).job,job);
+ const recovery=await fs.readFile(path.join(appDir,'HoYoMod-Recover.cmd'),'utf8');
+ assert.ok(recovery.startsWith('@echo off\r\nrem HoYoMod update recovery'));
+ assert.ok(recovery.includes('update-run.cjs')&&recovery.includes('--recover-only'));
+ assert.ok(recovery.includes('update.ps1')&&recovery.includes('-RecoverOnly'));
+ assert.equal(spawned[0].command,path.join(appDir,'HoYoMod.exe'));
+ assert.equal(spawned[0].options.detached,true);
+ assert.equal(spawned[0].options.env.ELECTRON_RUN_AS_NODE,'1');
+ assert.ok(spawned[0].args.some(value=>String(value).endsWith('update-run.cjs')));
+ assert.ok(spawned[0].args.includes('--token')&&spawned[0].args.includes(launch.token));
+});
+test('a helper host that never writes a heartbeat fails the handoff and stays retryable',async t=>{
+ const {AppUpdate,replacementPlan}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto'),{EventEmitter}=require('node:events');
+ const {appDir,staging}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);
+ await fs.rename(path.dirname(staging),dir);const prepared=path.join(dir,'staging');
+ await fs.mkdir(path.join(dir,'backup'));
+ await fs.writeFile(path.join(dir,'plan.json'),JSON.stringify({...await replacementPlan(appDir,prepared),version:'1.0.0'}));
+ await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));
+ const host=()=>{const child=new EventEmitter();child.unref=()=>{};child.kill=()=>{};process.nextTick(()=>{child.emit('spawn');child.emit('exit',0,null);});return child;};
+ const service=new AppUpdate({appDir,version:'0.9.9',platform:'win32',spawnHelper:host});
+ await service.init();
+ await assert.rejects(service.handoff({packaged:true}),/更新助手提前退出（退出码 0，信号 无）[\s\S]*启动日志：/);
+ assert.equal(service.snapshot().status,'ready','the update stays ready so the user can retry');
+ assert.equal(await fs.readFile(path.join(dir,'started.txt'),'utf8').catch(()=>''),'');
+ await fs.access(path.join(dir,'launch.json'));
+ // 第二次交接遇到一个真的会写心跳的宿主，应当成功。
+ service.spawnHelper=(command,args,options)=>{const child=new EventEmitter();child.unref=()=>{};child.kill=()=>{};process.nextTick(()=>{const launch=JSON.parse(require('node:fs').readFileSync(path.join(dir,'launch.json'),'utf8'));require('node:fs').writeFileSync(path.join(dir,'started.txt'),launch.token);require('node:fs').writeFileSync(path.join(dir,'ready'),'ready');child.emit('spawn');});return child;};
+ await service.handoff({packaged:true});
+ assert.equal(service.snapshot().status,'handoff');
+});
+test('handoff refuses to overwrite an unrelated recovery script',async t=>{
+ const {AppUpdate,replacementPlan}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');
+ const {appDir,staging}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);
+ await fs.rename(path.dirname(staging),dir);const prepared=path.join(dir,'staging');
+ await fs.mkdir(path.join(dir,'backup'));
+ await fs.writeFile(path.join(dir,'plan.json'),JSON.stringify({...await replacementPlan(appDir,prepared),version:'1.0.0'}));
+ await fs.writeFile(path.join(appDir,'HoYoMod-Recover.cmd'),'@echo off\r\nrem something else');
+ await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));
+ const service=new AppUpdate({appDir,version:'0.9.9',platform:'win32'});
+ await service.init();
+ await assert.rejects(service.handoff({packaged:true}),/恢复脚本名称已被其他文件占用/);
+});

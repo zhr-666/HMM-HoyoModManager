@@ -19,9 +19,10 @@ const disk=require('original-fs').promises,fs=require('node:fs/promises');
   const plan=JSON.parse(await disk.readFile(path.join(service.job,'plan.json'),'utf8'));
   await replacementPlan(appDir,plan.staging,[data,gimi]);
   assert.equal(await disk.readFile(path.join(data,'state.json'),'utf8'),'preserve configuration exactly');assert.equal(await disk.readFile(path.join(gimi,'mod.ini'),'utf8'),'preserve mod exactly');assert.equal(await physicalDigest(existing),oldDigest);
-  assert.ok((await disk.readFile(path.join(service.job,'update.ps1'),'utf8')).includes('PlanFile'),'bundled helper remains readable from ASAR');
+  assert.ok((await disk.readFile(path.join(service.job,'update.ps1'),'utf8')).includes('PlanFile'),'bundled PowerShell fallback helper remains readable from ASAR');
+  const engine=path.join(path.dirname(modulePath),'update-run.cjs');assert.equal(await disk.readFile(path.join(service.job,'update-run.cjs'),'utf8'),await fs.readFile(engine,'utf8'),'bundled update engine is copied out of ASAR byte for byte');
   await disk.unlink(path.join(plan.staging,'resources','app.asar'));await disk.mkdir(path.join(plan.staging,'resources','app.asar'));
   await assert.rejects(replacementPlan(appDir,plan.staging,[data,gimi]),/缺少程序资源/);
-  console.log('Real ZIP update preparation passed under Electron: physical ASAR, ready state, revalidation, bundled helper, unchanged configuration and mods; directory impostor rejected.');
+  console.log('Real ZIP update preparation passed under Electron: physical ASAR, ready state, revalidation, bundled engine and fallback helper, unchanged configuration and mods; directory impostor rejected.');
  }finally{await disk.rm(root,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1});

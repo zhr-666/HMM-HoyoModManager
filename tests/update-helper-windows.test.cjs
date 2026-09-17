@@ -1,100 +1,110 @@
-const test=require('node:test');
-const assert=require('node:assert/strict');
-const fs=require('node:fs/promises');
-const path=require('node:path');
-const os=require('node:os');
-const {execFile}=require('node:child_process');
-const {promisify}=require('node:util');
-const run=promisify(execFile);
-const powershell=path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
+const test=require('node:test'),assert=require('node:assert/strict'),nodeFs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{randomUUID}=require('node:crypto'),{spawn}=require('node:child_process');
+const fs=process.versions.electron?require('original-fs').promises:nodeFs;
+const electronExe=require('electron');
 const helperModule=path.resolve(__dirname,'../src/core/update-helper.cjs');
-
-async function waitFor(file,timeout=10000){
-  const end=Date.now()+timeout;
-  while(Date.now()<end){
-    try{return await fs.readFile(file,'utf8');}catch(e){if(e.code!=='ENOENT')throw e;}
-    await new Promise(resolve=>setTimeout(resolve,100));
-  }
-  throw Error('Timed out waiting for '+path.basename(file));
+const engineModule=path.resolve(__dirname,'../src/core/update-run.cjs');
+const waitFor=async(file,timeout=90000)=>{
+ const deadline=Date.now()+timeout;
+ while(Date.now()<deadline){try{return await fs.readFile(file,'utf8');}catch(e){if(!['ENOENT','EBUSY','EPERM'].includes(e.code))throw e;}await new Promise(resolve=>setTimeout(resolve,200));}
+ throw Error('Timed out waiting for '+path.basename(file));
+};
+// 最小 asar 封装：这里要的是「Electron 真能从 app.asar 启动」，不为测试引入新依赖。
+// 布局与 @electron/asar 一致：size pickle + header pickle（offset 是字符串）+ 文件数据。
+const u32=value=>{const buffer=Buffer.alloc(4);buffer.writeUInt32LE(value,0);return buffer;};
+function buildAsar(files){
+ const names=Object.keys(files).sort(),header={files:{}},payloads=[];
+ let offset=0;
+ for(const name of names){const data=Buffer.from(files[name],'utf8');header.files[name]={size:data.length,offset:String(offset)};offset+=data.length;payloads.push(data);}
+ const json=Buffer.from(JSON.stringify(header),'utf8'),padding=(4-json.length%4)%4;
+ const headerPickle=Buffer.concat([u32(4+json.length+padding),u32(json.length),json,Buffer.alloc(padding)]);
+ const sizePickle=Buffer.concat([u32(4),u32(headerPickle.length)]);
+ return Buffer.concat([sizePickle,headerPickle,...payloads]);
 }
-
-test('Windows helper continues after its real Electron parent exits', {skip:process.platform!=='win32',timeout:30000},async t=>{
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-helper-lifetime-'));
-  t.after(async()=>{
-    const pid=await fs.readFile(path.join(dir,'helper.pid'),'utf8').catch(()=>null);
-    if(pid){try{process.kill(Number(pid));}catch{}}
-    await fs.rm(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100});
-  });
-  const script=path.join(dir,'helper.ps1');
-  await fs.writeFile(script,`param([int]$ParentId,[string]$Job)
-$ErrorActionPreference='Stop'
-[IO.File]::WriteAllText((Join-Path $Job 'helper.pid'),[string]$PID)
-[IO.File]::WriteAllText((Join-Path $Job 'ready'),'ready')
-$deadline=(Get-Date).AddSeconds(15)
-while(Get-Process -Id $ParentId -ErrorAction SilentlyContinue){
- if((Get-Date) -gt $deadline){throw 'Parent never exited'}
- Start-Sleep -Milliseconds 100
+function applicationPackage(marker){
+ return buildAsar({
+  'package.json':JSON.stringify({name:'hoyomod-update-fixture',version:'1.0.0',main:'index.js'}),
+  'index.js':`const fs=require('node:fs'),path=require('node:path');\nfs.writeFileSync(path.join(path.dirname(process.execPath),${JSON.stringify(marker)}),'application started');\nprocess.exit(0);\n`
+ });
 }
-Start-Sleep -Milliseconds 500
-[IO.File]::WriteAllText((Join-Path $Job 'survived'),'parent exited; helper still running')
-`);
-  const parent=path.join(dir,'parent.cjs');
-  await fs.writeFile(parent,`const fs=require('node:fs/promises');
-const {startHelper}=require(${JSON.stringify(helperModule)});
+async function linkOrCopy(source,destination){
+ try{await fs.link(source,destination);}catch{await fs.copyFile(source,destination);}
+}
+async function fixture(t){
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-windows-update-'));
+ t.after(()=>fs.rm(root,{recursive:true,force:true,maxRetries:30,retryDelay:200}));
+ const appDir=path.join(root,'HoYoMod'),job=path.join(appDir,'.hoyo-updates',randomUUID()),staging=path.join(job,'staging');
+ for(const dir of [path.join(appDir,'resources'),path.join(appDir,'data'),path.join(appDir,'GIMI','Mods'),path.join(staging,'resources'),path.join(job,'backup')])await fs.mkdir(dir,{recursive:true});
+ const oldPackage=applicationPackage('ran-old.txt'),newPackage=applicationPackage('ran-new.txt');
+ // 程序自身的可执行文件既是应用也是引擎宿主：这正是生产里的真实形态。
+ await linkOrCopy(electronExe,path.join(appDir,'HoYoMod.exe'));
+ await linkOrCopy(electronExe,path.join(staging,'HoYoMod.exe'));
+ await fs.writeFile(path.join(appDir,'resources','app.asar'),oldPackage);
+ await fs.writeFile(path.join(staging,'resources','app.asar'),newPackage);
+ await fs.writeFile(path.join(appDir,'data','state.json'),'keep-configuration');
+ await fs.writeFile(path.join(appDir,'GIMI','Mods','mod.ini'),'keep-mod');
+ await fs.copyFile(engineModule,path.join(job,'update-run.cjs'));
+ await fs.copyFile(path.resolve(__dirname,'../src/core/app-update.ps1'),path.join(job,'update.ps1'));
+ const {replacementPlan}=require('../src/core/app-update.cjs');
+ const plan={...await replacementPlan(appDir,staging,[path.join(appDir,'data'),path.join(appDir,'GIMI')]),version:'1.0.0'};
+ const planFile=path.join(job,'plan.json');
+ await fs.writeFile(planFile,JSON.stringify(plan));
+ const stagedExe=await fs.readFile(path.join(staging,'HoYoMod.exe')),previousExe=await fs.readFile(path.join(appDir,'HoYoMod.exe'));
+ return {root,appDir,job,staging,planFile,oldPackage,newPackage,stagedExe,previousExe};
+}
+async function parentScript(file,{appDir,job,planFile,token,engine}){
+ await fs.writeFile(file,`const fs=require('node:fs'),path=require('node:path');
+const {startHelper,helperAttempts}=require(${JSON.stringify(helperModule)});
 (async()=>{
- await startHelper({command:${JSON.stringify(powershell)},args:['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',${JSON.stringify(script)},'-ParentId',String(process.pid),'-Job',${JSON.stringify(dir)}],job:${JSON.stringify(dir)},isReady:()=>fs.access(${JSON.stringify(path.join(dir,'ready'))}).then(()=>true,()=>false)});
+ const plan=JSON.parse(fs.readFileSync(${JSON.stringify(planFile)},'utf8'));
+ plan.parentPid=process.pid;
+ fs.writeFileSync(${JSON.stringify(planFile)},JSON.stringify(plan));
+ const attempts=helperAttempts({appDir:${JSON.stringify(appDir)},job:${JSON.stringify(job)},planFile:${JSON.stringify(planFile)},token:${JSON.stringify(token)}})${engine==='fallback'?'.slice(1)':''};
+ await startHelper({attempts,job:${JSON.stringify(job)},isStarted:async()=>fs.readFileSync(path.join(${JSON.stringify(job)},'started.txt'),'utf8').catch(()=>'')===${JSON.stringify(token)},isReady:async()=>fs.existsSync(path.join(${JSON.stringify(job)},'ready'))});
  process.exit(0);
-})().catch(e=>{console.error(e);process.exit(1)});
+})().catch(error=>{try{fs.writeFileSync(path.join(${JSON.stringify(job)},'parent-error.txt'),String(error&&error.stack||error));}catch{}process.exit(1);});
 `);
-  await run(require('electron'),[parent],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},timeout:15000,windowsHide:true});
-  assert.equal(await fs.readFile(path.join(dir,'ready'),'utf8'),'ready');
-  assert.equal(await waitFor(path.join(dir,'survived')),'parent exited; helper still running');
+}
+async function diagnostics(f){
+ return [
+  await fs.readFile(path.join(f.job,'parent-error.txt'),'utf8').catch(()=>'(no parent error)'),
+  await fs.readFile(path.join(f.job,'helper-startup.log'),'utf8').catch(()=>'(no helper startup log)'),
+  await fs.readFile(path.join(f.job,'update.log'),'utf8').catch(()=>'(no update log)'),
+  await fs.readFile(path.join(f.job,'status.txt'),'utf8').catch(()=>'(no status)')
+ ].join('\n---\n');
+}
+const readText=(appDir,...parts)=>fs.readFile(path.join(appDir,...parts),'utf8');
+// detached 启动父进程：它自己没有控制台，和用户双击启动的 GUI 程序一致。
+function launchParent(parent){return spawn(electronExe,[parent],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},windowsHide:true,detached:true,stdio:'ignore'});}
+test('the detached update engine survives a console-less parent and replaces the program itself',{skip:process.platform!=='win32',timeout:180000},async t=>{
+ const f=await fixture(t);
+ const parent=path.join(f.root,'application.cjs');
+ await parentScript(parent,{appDir:f.appDir,job:f.job,planFile:f.planFile,token:'e2e-token'});
+ const running=launchParent(parent);
+ try{
+  try{assert.equal(await waitFor(path.join(f.job,'status.txt')),'complete');}
+  catch(e){e.message+='\n'+await diagnostics(f);throw e;}
+  assert.equal((await fs.readFile(path.join(f.appDir,'HoYoMod.exe'))).equals(f.stagedExe),true,'the running executable was replaced by the staged one');
+  assert.equal((await fs.readFile(path.join(f.appDir,'resources','app.asar'))).equals(f.newPackage),true);
+  assert.equal((await fs.readFile(path.join(f.job,'backup','resources','app.asar'))).equals(f.oldPackage),true);
+  assert.equal((await fs.readFile(path.join(f.job,'backup','HoYoMod.exe'))).equals(f.previousExe),true,'the previous executable was kept in the backup');
+  assert.equal(await readText(f.appDir,'data','state.json'),'keep-configuration');
+  assert.equal(await readText(f.appDir,'GIMI','Mods','mod.ini'),'keep-mod');
+  assert.equal(await waitFor(path.join(f.appDir,'ran-new.txt'),30000),'application started','the updated application was started after replacement');
+  assert.match(await readText(f.job,'update.log'),/Update completed; data directory was untouched/);
+  assert.doesNotMatch(await readText(f.job,'helper-startup.log'),/Launch failed/);
+ }finally{try{process.kill(running.pid);}catch{}}
 });
-
-test('Windows handoff replaces files and starts the new executable after the old app exits', {skip:process.platform!=='win32',timeout:60000},async t=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-real-handoff-'));
-  t.after(()=>fs.rm(root,{recursive:true,force:true,maxRetries:20,retryDelay:200}));
-  const appDir=path.join(root,'应用 & 测试 [1]');
-  const jobId=require('node:crypto').randomUUID(),job=path.join(appDir,'.hoyo-updates',jobId),staging=path.join(job,'staging');
-  for(const dir of ['resources','data','GIMI/Mods'])await fs.mkdir(path.join(appDir,dir),{recursive:true});
-  await fs.mkdir(path.join(staging,'resources'),{recursive:true});
-  await fs.mkdir(path.join(job,'backup'));
-  await fs.copyFile(process.execPath,path.join(appDir,'HoYoMod.exe'));
-  await fs.writeFile(path.join(appDir,'resources','app.asar'),'old-resources');
-  await fs.writeFile(path.join(staging,'resources','app.asar'),'new-resources');
-  await fs.writeFile(path.join(appDir,'data','state.json'),'keep-configuration');
-  await fs.writeFile(path.join(appDir,'GIMI','Mods','mod.ini'),'keep-mod');
-  const compile=path.join(root,'compile.ps1');
-  await fs.writeFile(compile,`param([string]$Output)
-$ErrorActionPreference='Stop'
-Add-Type -TypeDefinition @'
-using System;
-using System.IO;
-public class NewApplication {
- public static void Main() { File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"restarted.txt"),"new application started"); }
-}
-'@ -OutputAssembly $Output -OutputType WindowsApplication -CompilerOptions '/platform:x64'
-`);
-  await run(powershell,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',compile,'-Output',path.join(staging,'HoYoMod.exe')],{timeout:20000,windowsHide:true});
-  await fs.copyFile(path.resolve(__dirname,'../src/core/app-update.ps1'),path.join(job,'update.ps1'));
-  const {replacementPlan}=require('../src/core/app-update.cjs');
-  await fs.writeFile(path.join(job,'plan.json'),JSON.stringify({...await replacementPlan(appDir,staging,[path.join(appDir,'GIMI')]),version:'0.9.6'}));
-  await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job:jobId}));
-  const parent=path.join(root,'application.cjs');
-  await fs.writeFile(parent,`const {AppUpdate}=require(${JSON.stringify(path.resolve(__dirname,'../src/core/app-update.cjs'))});
-(async()=>{
- const updater=new AppUpdate({appDir:${JSON.stringify(appDir)},version:'0.9.5'});
- if((await updater.init()).status!=='ready')throw Error('Fixture is not ready');
- await updater.handoff({packaged:true});
- process.exit(0);
-})().catch(e=>{console.error(e);process.exit(1)});
-`);
-  await run(path.join(appDir,'HoYoMod.exe'),[parent],{timeout:20000,windowsHide:true});
-  try{assert.equal(await waitFor(path.join(appDir,'restarted.txt'),15000),'new application started');}
-  catch(e){e.message+='\n'+await fs.readFile(path.join(job,'update.log'),'utf8').catch(()=>'(no update log)');throw e;}
-  assert.equal(await fs.readFile(path.join(job,'status.txt'),'utf8'),'complete');
-  assert.equal(await fs.readFile(path.join(appDir,'resources','app.asar'),'utf8'),'new-resources');
-  assert.equal(await fs.readFile(path.join(job,'backup','resources','app.asar'),'utf8'),'old-resources');
-  assert.equal(await fs.readFile(path.join(appDir,'data','state.json'),'utf8'),'keep-configuration');
-  assert.equal(await fs.readFile(path.join(appDir,'GIMI','Mods','mod.ini'),'utf8'),'keep-mod');
+test('the headless console PowerShell fallback also starts from a console-less parent',{skip:process.platform!=='win32',timeout:180000},async t=>{
+ const f=await fixture(t);
+ const parent=path.join(f.root,'application.cjs');
+ await parentScript(parent,{appDir:f.appDir,job:f.job,planFile:f.planFile,token:'fallback-token',engine:'fallback'});
+ const running=launchParent(parent);
+ try{
+  try{assert.equal(await waitFor(path.join(f.job,'status.txt')),'complete');}
+  catch(e){e.message+='\n'+await diagnostics(f);throw e;}
+  assert.equal((await fs.readFile(path.join(f.appDir,'resources','app.asar'))).equals(f.newPackage),true);
+  assert.equal((await fs.readFile(path.join(f.job,'backup','resources','app.asar'))).equals(f.oldPackage),true);
+  assert.equal(await readText(f.appDir,'data','state.json'),'keep-configuration');
+  assert.equal(await waitFor(path.join(f.appDir,'ran-new.txt'),30000),'application started');
+ }finally{try{process.kill(running.pid);}catch{}}
 });
