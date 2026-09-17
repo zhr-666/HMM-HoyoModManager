@@ -4,7 +4,7 @@ const fs=process.versions.electron?require('original-fs').promises:nodeFs;
 const {main,validatePlan,parseArgs,allowed}=require('../src/core/update-run.cjs');
 // 本机 PATH 上的 node 可能是 Electron 垫片，长驻子进程要显式带上 Node 模式变量。
 const runNode=args=>spawn(process.execPath,args,{stdio:'ignore',env:{...process.env,...(process.versions.electron?{ELECTRON_RUN_AS_NODE:'1'}:{})}});
-const script=marker=>`#!/bin/sh\nprintf '%s' '${marker}' > "$0.started"\n`;
+const script=marker=>`#!/bin/sh\nprintf '%s' '${marker}:'"\${ELECTRON_RUN_AS_NODE:-none}" > "$0.started"\n`;
 const waitFor=async(file,timeout=15000)=>{
  const deadline=Date.now()+timeout;
  while(Date.now()<deadline){try{return await fs.readFile(file,'utf8');}catch(e){if(e.code!=='ENOENT')throw e;}await new Promise(resolve=>setTimeout(resolve,50));}
@@ -27,6 +27,14 @@ async function fixture(t,{parentPid=999999,entries}={}){
 }
 // 重启的新程序写在 exe 旁边的 .started 文件；Windows 无法执行 shell 脚本，只在 POSIX 断言。
 const restarted=async f=>{if(process.platform==='win32')return null;return waitFor(path.join(f.appDir,'HoYoMod.exe.started'));};
+test('the restarted application never inherits Node mode from the engine',async t=>{
+ const f=await fixture(t),previous=process.env.ELECTRON_RUN_AS_NODE;
+ process.env.ELECTRON_RUN_AS_NODE='1';
+ t.after(()=>{if(previous===undefined)delete process.env.ELECTRON_RUN_AS_NODE;else process.env.ELECTRON_RUN_AS_NODE=previous;});
+ assert.equal(await main(['--plan',f.planFile,'--token','token-node']),0);
+ if(process.platform==='win32')assert.match(await fs.readFile(path.join(f.job,'update.log'),'utf8'),/Starting /);
+ else assert.equal(await restarted(f),'new-app:none');
+});
 test('engine replaces program files, keeps configuration, and restarts the new program',async t=>{
  const f=await fixture(t);
  assert.equal(await main(['--plan',f.planFile,'--token','token-1']),0);
@@ -38,7 +46,7 @@ test('engine replaces program files, keeps configuration, and restarts the new p
  assert.equal(await fs.readFile(path.join(f.data,'state.json'),'utf8'),'keep-exact');
  assert.match(await fs.readFile(path.join(f.job,'update.log'),'utf8'),/Update completed; data directory was untouched/);
  await assert.rejects(fs.access(path.join(f.job,'helper.lock')));
- if(process.platform!=='win32'){assert.equal(await restarted(f),'new-app');assert.equal(await fs.readFile(path.join(f.job,'backup','HoYoMod.exe'),'utf8'),script('old-app'));}
+ if(process.platform!=='win32'){assert.equal(await restarted(f),'new-app:none');assert.equal(await fs.readFile(path.join(f.job,'backup','HoYoMod.exe'),'utf8'),script('old-app'));}
 });
 test('engine waits for the application process to exit before touching program files',async t=>{
  const f=await fixture(t);
@@ -53,7 +61,7 @@ test('engine waits for the application process to exit before touching program f
  assert.equal(await fs.readFile(path.join(f.appDir,'HoYoMod.exe'),'utf8'),script('old-app'));
  assert.equal(await running,0);
  assert.equal(await fs.readFile(path.join(f.appDir,'resources','app.asar'),'utf8'),'new-asar');
- if(process.platform!=='win32')assert.equal(await restarted(f),'new-app');
+ if(process.platform!=='win32')assert.equal(await restarted(f),'new-app:none');
 });
 test('engine rolls back every replaced entry when a later entry is missing',async t=>{
  const f=await fixture(t,{entries:[{name:'HoYoMod.exe',hadOld:true},{name:'resources',hadOld:true},{name:'LICENSES.chromium.html',hadOld:false}]});
@@ -78,7 +86,7 @@ test('recover-only restores the backup, restarts the old program, and leaves sta
  assert.equal(await fs.readFile(path.join(f.appDir,'HoYoMod.exe'),'utf8'),script('old-app'));
  assert.equal(await fs.readFile(path.join(f.staging,'resources','app.asar'),'utf8'),'new-asar');
  assert.match(await fs.readFile(path.join(f.job,'update.log'),'utf8'),/Recovered prior application files/);
- if(process.platform!=='win32')assert.equal(await restarted(f),'old-app');
+ if(process.platform!=='win32')assert.equal(await restarted(f),'old-app:none');
 });
 test('engine refuses a workspace outside .hoyo-updates and protected overlaps without changing files',async t=>{
  const f=await fixture(t);

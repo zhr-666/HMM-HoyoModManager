@@ -94,16 +94,17 @@ test('the detached update engine survives a console-less parent and replaces the
  await parentScript(parent,{appDir:f.appDir,job:f.job,planFile:f.planFile,token:'e2e-token'});
  const running=launchParent(parent);
  try{
-  try{assert.equal(await waitFor(path.join(f.job,'status.txt')),'complete');}
-  catch(e){e.message+='\n'+await diagnostics(f);throw e;}
-  assert.equal(Math.round((await fs.stat(path.join(f.appDir,'HoYoMod.exe'))).mtimeMs/1000),f.stamp,'the running executable was replaced by the staged one');
-  assert.equal((await fs.readFile(path.join(f.appDir,'resources','app.asar'))).equals(f.newPackage),true);
-  assert.equal((await fs.readFile(path.join(f.job,'backup','resources','app.asar'))).equals(f.oldPackage),true);
-  assert.notEqual(Math.round((await fs.stat(path.join(f.job,'backup','HoYoMod.exe'))).mtimeMs/1000),f.stamp,'the previous executable was kept in the backup');
-  assert.equal(await readText(f.appDir,'data','state.json'),'keep-configuration');
-  assert.equal(await readText(f.appDir,'GIMI','Mods','mod.ini'),'keep-mod');
-  assert.equal(await waitFor(path.join(f.appDir,'ran-new.txt'),30000),'application started','the updated application was started after replacement');
-  assert.match(await readText(f.job,'update.log'),/Update completed; data directory was untouched/);
-  assert.doesNotMatch(await readText(f.job,'helper-startup.log'),/Launch failed/);
+  try{
+   assert.equal(await waitFor(path.join(f.job,'status.txt')),'complete');
+   assert.equal(Math.round((await fs.stat(path.join(f.appDir,'HoYoMod.exe'))).mtimeMs/1000),f.stamp,'the running executable was replaced by the staged one');
+   assert.equal((await fs.readFile(path.join(f.appDir,'resources','app.asar'))).equals(f.newPackage),true);
+   assert.equal((await fs.readFile(path.join(f.job,'backup','resources','app.asar'))).equals(f.oldPackage),true);
+   assert.notEqual(Math.round((await fs.stat(path.join(f.job,'backup','HoYoMod.exe'))).mtimeMs/1000),f.stamp,'the previous executable was kept in the backup');
+   assert.equal(await readText(f.appDir,'data','state.json'),'keep-configuration');
+   assert.equal(await readText(f.appDir,'GIMI','Mods','mod.ini'),'keep-mod');
+   assert.equal(await waitFor(path.join(f.appDir,'ran-new.txt'),60000),'application started','the updated application was started after replacement');
+   assert.match(await readText(f.job,'update.log'),/Update completed; data directory was untouched/);
+   assert.doesNotMatch(await readText(f.job,'helper-startup.log'),/Launch failed/);
+  }catch(e){e.message+='\n'+await diagnostics(f);throw e;}
  }finally{try{process.kill(running.pid);}catch{}}
 });

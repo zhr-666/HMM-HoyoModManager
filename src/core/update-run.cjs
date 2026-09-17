@@ -93,9 +93,13 @@ async function main(argv=process.argv.slice(2)){
  const restart=appDir=>{
   const exe=path.join(appDir,'HoYoMod.exe');
   log('Starting '+exe);
+  // 引擎自己是 ELECTRON_RUN_AS_NODE 模式；新版必须回到普通 GUI 模式，
+  // 否则它会以 Node 模式启动、没有脚本可跑，用户看到的就是“更新后程序没起来”。
+  const env={...process.env};
+  delete env.ELECTRON_RUN_AS_NODE;
   // 启动失败只记日志：替换结果已经落盘，不能因为拉不起来就把成功当失败。
   try{
-   const child=spawn(exe,[],{cwd:appDir,detached:true,stdio:'ignore',windowsHide:false});
+   const child=spawn(exe,[],{cwd:appDir,detached:true,stdio:'ignore',windowsHide:false,env});
    child.on('error',e=>log('Restart failed: '+e.message));
    child.unref();
   }catch(e){log('Restart failed: '+e.message);}
