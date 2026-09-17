@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld('hoyo',{
   onDownloads:callback=>{const listener=(_,v)=>callback(v);ipcRenderer.on('hoyo:downloads',listener);return()=>ipcRenderer.removeListener('hoyo:downloads',listener);},
   onProgress:callback=>{const listener=(_,v)=>callback(v);ipcRenderer.on('hoyo:progress',listener);return()=>ipcRenderer.removeListener('hoyo:progress',listener);},
   onState:callback=>{const listener=(_,v)=>callback(v);ipcRenderer.on('hoyo:state',listener);return()=>ipcRenderer.removeListener('hoyo:state',listener);},
-  onNotice:callback=>{const listener=(_,v)=>callback(v);ipcRenderer.on('hoyo:notice',listener);return()=>ipcRenderer.removeListener('hoyo:notice',listener);}
+  onNotifications:callback=>{const listener=(_,v)=>callback(v);ipcRenderer.on('hoyo:notifications',listener);return()=>ipcRenderer.removeListener('hoyo:notifications',listener);},
+  onNotificationPopups:callback=>{const listener=(_,v)=>callback(v);ipcRenderer.on('hoyo:notification-popups',listener);return()=>ipcRenderer.removeListener('hoyo:notification-popups',listener);}
 });
