@@ -439,23 +439,27 @@ document.addEventListener('contextmenu',event=>{
  event.preventDefault();const menu=$('#context-menu');$$('.mod-context-action',menu).forEach(b=>b.remove());$('#context-refresh').hidden=false;menu.hidden=false;menu.dataset.scrollX=scrollX;menu.dataset.scrollY=scrollY;menu.style.left=Math.min(event.clientX,innerWidth-170)+'px';menu.style.top=Math.min(event.clientY,innerHeight-55)+'px';$('#context-refresh').focus({preventScroll:true});
 });
 document.addEventListener('pointerdown',event=>{if(!event.target.closest('#context-menu'))hideContextMenu();});
+// 滚动条只在滑动时显形，停下约 0.7 秒后淡回几乎透明。
+let scrollIdleTimer;document.addEventListener('scroll',()=>{document.documentElement.dataset.scrolling='true';clearTimeout(scrollIdleTimer);scrollIdleTimer=setTimeout(()=>{delete document.documentElement.dataset.scrolling},700)},{capture:true,passive:true});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')hideContextMenu();});window.addEventListener('scroll',()=>{const menu=$('#context-menu');if(!menu.hidden&&(Number(menu.dataset.scrollY)!==scrollY||Number(menu.dataset.scrollX)!==scrollX))hideContextMenu();});
-const hintSelector='.setting-row p:not(#mods-path):not(#program-path):not(#data-root):not(#proxy-result):not(#software-update-status),#modal-subtitle,.dialog-body > p.meta,#home-storage-note,.help-note';
+// 说明只在真正需要解释后果时才折叠成问号：HTML 里显式标了 data-tip 的条目，以及已有的 .help-note。
+const hintSelector='[data-tip],.help-note';
 function prepareHints(){
- const subtitle=$('#page-subtitle');subtitle.hidden=!['workshop','settings'].includes(activePage);subtitle.classList.toggle('help-note',activePage==='settings');
- for(const el of $$(hintSelector)){
-  if(!el.classList.contains('help-note')){
-   el.classList.add('help-note');
-   if(el.matches('.dialog-body > p.meta')){const previous=el.previousElementSibling;if(previous?.matches('p,h3,h4,label'))previous.append(el);else {el.classList.add('body-hint');const heading=el.closest('dialog')?.querySelector('[id$="modal-title"]');if(heading)heading.parentElement.append(el);}}
+  const subtitle=$('#page-subtitle');subtitle.hidden=!['workshop','settings'].includes(activePage);
+  for(const el of $$(hintSelector)){
+   if(!el.classList.contains('help-note')){
+    el.classList.add('help-note');
+    if(el.matches('.dialog-body > p.meta')){const previous=el.previousElementSibling;if(previous?.matches('p,h3,h4,label'))previous.append(el);else {el.classList.add('body-hint');const heading=el.closest('dialog')?.querySelector('[id$="modal-title"]');if(heading)heading.parentElement.append(el);}}
+   }
+   el.removeAttribute('data-tip');
+   el.tabIndex=0;el.setAttribute('role','button');const text=el.textContent.trim();if(el.getAttribute('aria-label')!==text)el.setAttribute('aria-label',text);
   }
-  el.tabIndex=0;el.setAttribute('role','button');const text=el.textContent.trim();if(el.getAttribute('aria-label')!==text)el.setAttribute('aria-label',text);
- }
- if(activePage!=='settings'){subtitle.removeAttribute('tabindex');subtitle.removeAttribute('role');subtitle.removeAttribute('aria-label');}
+  if(activePage!=='settings'){subtitle.removeAttribute('tabindex');subtitle.removeAttribute('role');subtitle.removeAttribute('aria-label');}
 }
 new MutationObserver(prepareHints).observe(document.body,{childList:true,characterData:true,subtree:true});prepareHints();
-function showHelp(event){const el=event.target.closest('.help-note');if(!el)return;const tip=$('#help-tooltip'),host=el.closest('dialog')||document.body;if(tip.parentElement!==host)host.append(tip);tip.textContent=el.textContent;tip.hidden=false;const r=el.getBoundingClientRect();tip.style.left=Math.max(8,Math.min(r.left,innerWidth-370))+'px';tip.style.top=Math.min(r.bottom+8,innerHeight-tip.offsetHeight-8)+'px';}
+function showHelp(event){const el=event.target.closest('.help-note,[data-tip-text]');if(!el)return;const tip=$('#help-tooltip'),host=el.closest('dialog')||document.body;if(tip.parentElement!==host)host.append(tip);tip.textContent=el.dataset.tipText||el.textContent;tip.hidden=false;const r=el.getBoundingClientRect();tip.style.left=Math.max(8,Math.min(r.left,innerWidth-370))+'px';tip.style.top=Math.min(r.bottom+8,innerHeight-tip.offsetHeight-8)+'px';}
 document.addEventListener('pointerover',showHelp);document.addEventListener('focusin',showHelp);
-document.addEventListener('pointerout',event=>{if(event.target.closest('.help-note'))$('#help-tooltip').hidden=true;});document.addEventListener('focusout',()=>$('#help-tooltip').hidden=true);
+document.addEventListener('pointerout',event=>{if(event.target.closest('.help-note,[data-tip-text]'))$('#help-tooltip').hidden=true;});document.addEventListener('focusout',()=>$('#help-tooltip').hidden=true);
 $('#app-background').onerror=()=>{const img=$('#app-background');if(img.getAttribute('src')!=='home-background.jpg'){img.src='home-background.jpg';notice('自定义背景无法读取，已使用默认背景。',true);}};
 document.documentElement.dataset.mode='launcher';
 document.documentElement.dataset.page='home';

@@ -16,6 +16,8 @@ protocol.registerSchemesAsPrivileged([{scheme:'hoyo',privileges:{standard:true,s
 const OFFICIAL_BACKGROUND_API='https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1';
 const OFFICIAL_BACKGROUND_GAME='hk4e_cn';
 const root=process.env.HOYOMOD_DATA || path.join(app.isPackaged?path.dirname(app.getPath('exe')):path.dirname(__dirname),'data');
+// 窗口与任务栏图标：打包后提供多尺寸 build/icon.ico，开发环境退回界面用的 PNG。
+function appIcon(){const ico=path.join(app.isPackaged?process.resourcesPath:path.dirname(__dirname),'build','icon.ico');return require('node:fs').existsSync(ico)?ico:path.join(__dirname,'ui','app-icon.png');}
 app.setPath('userData',path.join(root,'session'));
 app.setPath('sessionData',path.join(root,'session'));
 const lock=app.requestSingleInstanceLock();
@@ -317,7 +319,7 @@ if(lock)app.whenReady().then(async()=>{
     if(url.hostname!=='app'||!['home-background.jpg','genshin-icon.png','index.html','app.js','library-categories.js','dialog-stack.js','style.css'].includes(name))return new Response('Not found',{status:404});
     return net.fetch(pathToFileURL(path.join(__dirname,'ui',name)).href);
   });
-  win=new BrowserWindow({width:1260,height:860,minWidth:980,minHeight:650,title:'HoYoMod · 原神模组管理',backgroundColor:'#f5f7fa',autoHideMenuBar:true,...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{color:'#00000000',symbolColor:'#202733',height:40}}:{}),webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  win=new BrowserWindow({icon:appIcon(),width:1260,height:860,minWidth:980,minHeight:650,title:'HMM · 原神模组管理',backgroundColor:'#f5f7fa',autoHideMenuBar:true,...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{color:'#00000000',symbolColor:'#202733',height:40}}:{}),webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   applyAppearance();nativeTheme.on('updated',()=>{applyAppearance();send('state',snapshot());});
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',(event,url)=>{if(url!=='hoyo://app/index.html')event.preventDefault();});
@@ -336,6 +338,6 @@ if(lock)app.whenReady().then(async()=>{
   setTimeout(()=>{if(lib.snapshot().settings.autoCheckAppUpdates&&!updateHandoff)appUpdater.check().then(result=>{if(result.status==='available')notify('软件有新版本，可在设置中查看更新。');}).catch(()=>{});},8000).unref();
   const periodic=()=>{if(!busy&&lib.snapshot().settings.autoCheckUpdates&&lib.snapshot().mods.some(m=>m.sourceId))exclusive(()=>checkUpdates(true)).catch(e=>notify(e.message));};
   setTimeout(periodic,20000).unref();updateTimer=setInterval(periodic,6*60*60*1000);updateTimer.unref();
-}).catch(e=>{dialog.showErrorBox('HoYoMod 无法启动','请将便携版放在可写入的文件夹。\n'+e.message);app.quit();});
+}).catch(e=>{dialog.showErrorBox('HMM 无法启动','请将便携版放在可写入的文件夹。\n'+e.message);app.quit();});
 app.on('second-instance',()=>{if(win){if(win.isMinimized())win.restore();win.focus();}});
 app.on('window-all-closed',()=>app.quit());

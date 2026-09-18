@@ -15,6 +15,7 @@
     "check:syntax": "node scripts/check-syntax.cjs",
     "check": "pnpm check:syntax && pnpm test",
     "pack:win": "electron-builder --win zip --x64",
+    "icon:win": "node scripts/make-app-icon.cjs",
     "pack:mac": "electron-builder --mac dir"
   },
   "dependencies": {
@@ -33,6 +34,7 @@
     },
     "files": [
       "src/**/*",
+      "build/icon.ico",
       "package.json"
     ],
     "extraFiles": [
@@ -58,6 +60,7 @@
       "node_modules/node-unrar-js/**/*.wasm"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "zip"
       ],
