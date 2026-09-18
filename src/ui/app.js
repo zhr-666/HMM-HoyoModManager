@@ -2,7 +2,7 @@
 const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const api = window.hoyo;
-let state={settings:{},mods:[],presets:[],runtime:{}}, categories=[], taxonomy=[], libraryNavigation=[], category='', page=1, query='', total=0, busyCount=0, progressRevision=0, browseRevision=0;
+let state={settings:{},mods:[],presets:[],runtime:{}}, categories=[], taxonomy=[], libraryNavigation=[], category='', page=1, query='', total=0, busyCount=0, browseRevision=0;
 let activePage='home', downloads=[], downloadError='';
 // 已接入的游戏按添加顺序排列，越早添加越靠上；拉取到新游戏时追加到数组末尾即可。
 const GAMES=[{id:'genshin',name:'原神',icon:'genshin-icon.png'}];
@@ -32,9 +32,15 @@ function renderNotifications(){
     const item=document.createElement('article');item.className='notification-item'+(entry.tone==='error'?' error':'');item.dataset.unread=String(!entry.read);item.dataset.notificationId=entry.id;if(entry.target)item.dataset.target=entry.target;
     item.innerHTML=`<span class="notification-item-icon" aria-hidden="true">${entry.tone==='error'?'⚠':'🔔'}</span><div class="notification-item-body">${entry.title?`<strong>${esc(entry.title)}</strong>`:''}<p>${esc(entry.text)}</p><time datetime="${new Date(Number(entry.createdAt)||Date.now()).toISOString()}">${esc(notificationTime(entry.createdAt))}</time></div><button type="button" class="notification-item-remove" aria-label="删除这条消息" title="删除">×</button>`;
     $('.notification-item-remove',item).onclick=()=>call('removeNotification',{id:entry.id},{silent:true}).then(applyNotifications).catch(()=>{});
-    if(entry.target)item.onclick=event=>{if(event.target.closest('.notification-item-remove'))return;toggleNotificationPanel(false);showPage('settings');$('#software-update-card').scrollIntoView({block:'start'})};
+    if(entry.target)item.onclick=event=>{if(event.target.closest('.notification-item-remove'))return;toggleNotificationPanel(false);openNotificationTarget(entry.target)};
     list.append(item);
   }
+}
+// 通知条目点进去要落到对应界面：模组更新打开结果窗口，软件更新回到设置里的更新卡片。
+function openNotificationTarget(target){
+  if(target==='modUpdates'){openUpdateSummary();return}
+  if(target==='appUpdate')markAppUpdateSeen();
+  showPage('settings');$('#software-update-card').scrollIntoView({block:'start'});
 }
 function applyNotifications(snapshot){
   if(Array.isArray(snapshot?.entries)){notificationEntries=snapshot.entries;}
@@ -140,7 +146,7 @@ function renderLibraryFolders(){
   const ids=new Set(current?.directModIds||[]);
   return {mods:state.mods.filter(mod=>ids.has(mod.id)),folderCount:children.length};
 }
-function renderLibrary(){const {mods:visibleMods,folderCount}=renderLibraryFolders();const box=$('#library-grid'),empty=$('#library-empty');const view=state.settings.libraryView==='grid'?'grid':'list';box.dataset.view=view;$('#library-view-list').setAttribute('aria-pressed',String(view==='list'));$('#library-view-grid').setAttribute('aria-pressed',String(view==='grid'));box.innerHTML='';const hasLibrary=state.mods.length>0||(state.folders||[]).length>0;empty.hidden=visibleMods.length>0||folderCount>0;empty.innerHTML=hasLibrary?'<strong>这个文件夹里还没有模组</strong>之后从 GameBanana 下载该分类的模组会自动存到这里。':'<strong>还没有本机模组</strong>从模组工坊安装，或导入 ZIP、7Z、RAR 文件。';for(const m of visibleMods){const el=document.createElement('article');el.className='library-item';el.dataset.testid='installed-mod';el.innerHTML=`<div class="library-thumb">${imageMarkup(m.preview,m.name,false)}</div><div class="library-details"><div class="eyebrow">${esc(m.characterName)}</div><h3>${esc(m.name)}</h3><p class="meta">${esc(m.author||'本地导入')} · ${m.active?'<span class="active-badge">● 已启用</span>':'<span class="active-badge inactive-badge">未启用</span>'} ${updateStatusMarkup(m.updateStatus)}</p></div><div class="item-actions"><button class="button secondary hotkeys">查看热键</button><label class="switch mod-switch"><input class="toggle" type="checkbox" role="switch" aria-label="${esc(m.name)} 启用状态" ${m.active?'checked':''}><span></span></label>${m.updateStatus?.status==='update'?'<button class="button secondary update-one">查看更新</button>':''}</div>`;$('.library-thumb',el).onclick=()=>revealNsfw(el);el.dataset.modId=m.id;el.oncontextmenu=e=>showModContext(e,m);$('.hotkeys',el).onclick=()=>showHotkeys(m);$('.toggle',el).onchange=async e=>{const input=e.target;input.disabled=true;const result=await mutate(input.checked?'enable':'disable',{id:m.id});if(!result)input.checked=!!m.active;input.disabled=false};$('.update-one',el)?.addEventListener('click',checkUpdates);box.append(el)}}
+function renderLibrary(){const {mods:visibleMods,folderCount}=renderLibraryFolders();const box=$('#library-grid'),empty=$('#library-empty');const view=state.settings.libraryView==='grid'?'grid':'list';box.dataset.view=view;$('#library-view-list').setAttribute('aria-pressed',String(view==='list'));$('#library-view-grid').setAttribute('aria-pressed',String(view==='grid'));box.innerHTML='';const hasLibrary=state.mods.length>0||(state.folders||[]).length>0;empty.hidden=visibleMods.length>0||folderCount>0;empty.innerHTML=hasLibrary?'<strong>这个文件夹里还没有模组</strong>之后从 GameBanana 下载该分类的模组会自动存到这里。':'<strong>还没有本机模组</strong>从模组工坊安装，或导入 ZIP、7Z、RAR 文件。';for(const m of visibleMods){const el=document.createElement('article');el.className='library-item';el.dataset.testid='installed-mod';el.innerHTML=`<div class="library-thumb">${imageMarkup(m.preview,m.name,false)}</div><div class="library-details"><div class="eyebrow">${esc(m.characterName)}</div><h3>${esc(m.name)}</h3><p class="meta">${esc(m.author||'本地导入')} · ${m.active?'<span class="active-badge">● 已启用</span>':'<span class="active-badge inactive-badge">未启用</span>'} ${updateStatusMarkup(m.updateStatus)}</p></div><div class="item-actions"><button class="button secondary hotkeys">查看热键</button><label class="switch mod-switch"><input class="toggle" type="checkbox" role="switch" aria-label="${esc(m.name)} 启用状态" ${m.active?'checked':''}><span></span></label>${m.updateStatus?.status==='update'?'<button class="button secondary update-one">查看更新</button>':''}</div>`;$('.library-thumb',el).onclick=()=>revealNsfw(el);el.dataset.modId=m.id;el.oncontextmenu=e=>showModContext(e,m);$('.hotkeys',el).onclick=()=>showHotkeys(m);$('.toggle',el).onchange=async e=>{const input=e.target;input.disabled=true;const result=await mutate(input.checked?'enable':'disable',{id:m.id});if(!result)input.checked=!!m.active;input.disabled=false};$('.update-one',el)?.addEventListener('click',checkUpdatesButton);box.append(el)}}
 function renderPresets(){const box=$('#preset-grid'),empty=$('#preset-empty');box.innerHTML='';empty.hidden=state.presets.length>0;empty.innerHTML='<strong>还没有搭配方案</strong>先在“我的模组”启用喜欢的组合，再保存为方案。';for(const p of state.presets){const names=(p.modIds||[]).map(id=>state.mods.find(m=>m.id===id)).filter(Boolean).map(m=>m.characterName+' · '+m.name);const el=document.createElement('article');el.className='preset-item';el.innerHTML=`<div><h3>${esc(p.name)}</h3><p>${names.length?esc(names.join('、')):'空搭配 · 将停用所有模组'}</p></div><div class="item-actions"><button class="button primary apply">应用</button><button class="button danger delete">删除</button></div>`;$('.apply',el).onclick=()=>mutate('applyPreset',{id:p.id});$('.delete',el).onclick=()=>confirmDeletePreset(p);box.append(el)}}
 async function mutate(action,payload){try{return await call(action,payload,{reload:true})}catch{return null}}
 function setMode(mode){if(document.documentElement.dataset.mode!==mode)document.documentElement.dataset.mode=mode}
@@ -242,6 +248,7 @@ const dialogStack=new DialogStack(['modal','dependency-modal']);
 function modal(title,subtitle,body,actions){
  const dialog=dialogStack.open('modal');
  $$('.body-hint',dialog).forEach(el=>el.remove());$('#modal-title',dialog).textContent=title;$('#modal-subtitle',dialog).textContent=subtitle||'';$('#modal-body',dialog).innerHTML=body;$('#modal-actions',dialog).innerHTML=actions;
+ const slot=$('#inline-progress',dialog);if(slot){slot.hidden=true;slot.textContent=''}
  return dialog;
 }
 function closeModal(){const dialog=$('#modal');if(dialog?.open)dialogStack.back(dialog);}
@@ -300,7 +307,45 @@ function confirmRemove(m){modal('移除模组','此操作会删除本机保存�
 function confirmDeletePreset(p){modal('删除搭配方案','不会删除其中的模组。',`<p>确定删除“${esc(p.name)}”吗？</p>`,`<button class="button secondary" value="cancel">取消</button><button type="button" class="button danger" id="delete-confirm">确认删除</button>`);$('#delete-confirm').onclick=()=>{closeModal();mutate('deletePreset',{id:p.id})}}
 function savePreset(){modal('保存当前搭配','记录现在启用的所有角色模组。',`<div class="field"><label for="preset-name">方案名称</label><input id="preset-name" maxlength="50" autofocus placeholder="例如：日常探索"></div>`,`<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary" id="preset-confirm">保存</button>`);$('#preset-confirm').onclick=()=>{const name=$('#preset-name').value.trim();if(!name)return notify('请输入方案名称。',true);closeModal();mutate('savePreset',{name})}}
 function updateSummaryBody(result){const updates=result.updates||[],failures=result.failures||[],unknown=result.unknown||[];const updateRows=updates.map((u,i)=>`<div class="update-result"><div class="update-title"><div><strong>${esc(u.name)}</strong><small>当前 ${esc(formatDate(u.baselineAt)||'日期未知')} → 最新 ${esc(formatDate(u.latestAt)||'日期未知')}</small></div><button class="link-button update-source" type="button" data-source="${esc(u.sourceId||'')}">打开来源</button></div><div class="update-files">${(u.files||[]).map(f=>`<label class="file-option"><input type="radio" name="update-${i}" value="${esc(f.id)}"><span><strong>${esc(f.name)}</strong><small>${esc(formatDate(f.uploadedAt)||'时间未知')} · ${esc(formatSize(f.size))}</small></span></label>`).join('')||'<p class="meta">未找到可安装文件</p>'}</div></div>`).join('');const issues=[...failures.map(x=>({...x,type:'检查失败'})),...unknown.map(x=>({...x,type:'无法判断'}))];return `<p class="meta update-window-note">可选文件来自作者最新上传时间起向前 72 小时内的同批文件；请选择适合你的版本。</p>${updateRows||'<div class="summary-ok">没有发现明确可用的更新。</div>'}${issues.length?`<div class="update-issues"><strong>需要留意</strong>${issues.map(x=>`<p><b>${esc(x.name)}</b> · ${esc(x.type)}：${esc(x.error||x.reason||'原因未知')}</p>`).join('')}</div>`:''}`}
-async function checkUpdates(){try{const result=await call('checkUpdates'),updates=result.updates||[];modal('更新检查结果',`已检查 ${result.checked??result.total??state.mods.length} 个模组 · ${updates.length} 个有更新`,updateSummaryBody(result),`<button class="button secondary" value="cancel">关闭</button>${updates.length?'<button type="button" class="button primary" id="update-confirm">安装所选更新</button>':''}`);$$('.update-source').forEach(b=>b.onclick=()=>openSourceItem({sourceId:b.dataset.source}));$('#update-confirm')?.addEventListener('click',async()=>{const choices=updates.map((u,i)=>({u,fileId:$(`input[name="update-${i}"]:checked`)?.value})).filter(x=>x.fileId);if(!choices.length)return notify('请先为至少一个模组选择更新文件。',true);closeModal();for(const x of choices)await enqueue('updateMod',{id:x.u.id,fileId:x.fileId})})}catch{}}
+// 后台检查更新的状态。检查只发右下角通知 + 点亮按钮红点，结果缓存在这里，
+// 等用户点那条通知或再点一次按钮，才打开结果窗口。
+let updateSummary=null,updateSummaryUnviewed=false,updateCheckRunning=false,appUpdateUnviewed=false;
+function renderUpdateDots(){
+  for(const id of ['#check-updates','#check-updates-library']){const dot=$(`${id} .button-dot`);if(dot)dot.hidden=!updateSummaryUnviewed}
+  const softwareDot=$('#software-check .button-dot');if(softwareDot)softwareDot.hidden=!appUpdateUnviewed;
+}
+function markAppUpdateSeen(){if(!appUpdateUnviewed)return;appUpdateUnviewed=false;renderUpdateDots()}
+// 未查看标记只增不减：自动检查没查到更新时不能把用户还没看过的红点抹掉。
+function applyUpdateSummary(payload){
+  if(payload?.summary)updateSummary=payload.summary;
+  if(payload?.unviewed)updateSummaryUnviewed=true;
+  renderUpdateDots();
+}
+async function startUpdateCheck(){
+  if(updateCheckRunning)return;
+  updateCheckRunning=true;
+  try{
+    const result=await call('checkUpdates',{},{foreground:false,silent:true});
+    if(result)applyUpdateSummary({summary:result,unviewed:true});
+  }catch(e){notify(e?.message||'检查更新失败。',true)}
+  finally{updateCheckRunning=false}
+}
+// 点「检查更新」：有还没看过的结果就直接打开，否则先跑一次后台检查（首次也不弹窗）。
+function checkUpdatesButton(){if(updateSummaryUnviewed&&updateSummary)return openUpdateSummary();return startUpdateCheck()}
+// 结果窗口只从缓存渲染，不重新请求网络。重启后内存里没有了，就先向主进程要一份
+// （主进程用模组库里已落盘的检查结果重建），这样点历史里的通知依然打得开。
+async function openUpdateSummary(){
+  if(!updateSummary){
+    try{const restored=await call('updateSummary',{},{silent:true,foreground:false});if(restored)updateSummary=restored}catch{}
+  }
+  const result=updateSummary;
+  if(!result)return startUpdateCheck();
+  updateSummaryUnviewed=false;renderUpdateDots();
+  const updates=result.updates||[];
+  modal('更新检查结果',`已检查 ${result.checked??result.total??state.mods.length} 个模组 · ${updates.length} 个有更新`,updateSummaryBody(result),`<button class="button secondary" value="cancel">关闭</button>${updates.length?'<button type="button" class="button primary" id="update-confirm">安装所选更新</button>':''}`);
+  $$('.update-source').forEach(b=>b.onclick=()=>openSourceItem({sourceId:b.dataset.source}));
+  $('#update-confirm')?.addEventListener('click',async()=>{const choices=updates.map((u,i)=>({u,fileId:$(`input[name="update-${i}"]:checked`)?.value})).filter(x=>x.fileId);if(!choices.length)return notify('请先为至少一个模组选择更新文件。',true);closeModal();for(const x of choices)await enqueue('updateMod',{id:x.u.id,fileId:x.fileId})});
+}
 const downloadStatus={queued:'等待中',downloading:'下载中',installing:'安装中',downloaded:'已下载',installed:'已安装',failed:'失败',cancelled:'已取消'};
 async function loadDownloads(){try{downloads=await api.call('downloads');renderDownloads()}catch(e){downloadError=e?.message||String(e);renderDownloads()}}
 function renderDownloads(){const box=$('#download-list');$('#download-empty').hidden=downloads.length>0;$('#download-error').hidden=!downloadError;$('#download-error').textContent=downloadError;$('#clear-downloads').disabled=!downloads.some(row=>!['queued','downloading','installing'].includes(row.status));box.innerHTML='';for(const row of downloads){const el=document.createElement('article'),p=row.progress||{},received=Number(p.received)||0,total=Number(p.total)||0,running=['downloading','installing'].includes(row.status);el.className='download-row';el.dataset.testid='download-row';el.innerHTML=`<div class="download-heading"><div><h3>${esc(row.name||'模组下载')}</h3><p class="meta">${esc(row.sourceFileName||'')}${row.createdAt?' · '+esc(formatDate(row.createdAt)):''}</p></div><span class="history-status ${esc(row.status)}">${esc(downloadStatus[row.status]||row.status)}</span></div>${running?`<div class="download-progress"><div><span>${esc(p.label||downloadStatus[row.status])}</span><span>${total?Math.min(100,Math.round(received/total*100))+'% · ':''}${esc(formatSize(received))}${total?' / '+esc(formatSize(total)):''}${p.speed?' · '+esc(formatSize(p.speed))+'/s':''}</span></div><progress max="${total||1}" ${total?'value="'+Math.min(received,total)+'"':''}></progress></div>`:''}${row.error?`<p class="download-failure">${esc(row.error)}</p>`:row.message?`<p class="meta">${esc(row.message)}</p>`:''}<div class="row-actions">${row.sourceId?'<button class="link-button download-source">来源</button>':''}${row.key?'<button class="link-button download-folder">打开位置</button>':''}${row.status==='failed'?'<button class="button secondary download-retry">重试</button>':''}${!['queued','downloading','installing'].includes(row.status)?'<button class="button secondary download-remove">删除记录</button>':''}${row.status==='queued'?'<button class="button secondary download-cancel">移出队列</button>':''}</div>`;$('.download-remove',el)?.addEventListener('click',()=>enqueue('removeDownload',{id:row.id}));$('.download-source',el)?.addEventListener('click',()=>openSourceItem(row));$('.download-folder',el)?.addEventListener('click',()=>call('openDownloadFolder',{key:row.key},{foreground:false}).catch(()=>{}));$('.download-retry',el)?.addEventListener('click',()=>enqueue('retryDownload',row.id?{id:row.id}:{key:row.key}));$('.download-cancel',el)?.addEventListener('click',()=>enqueue('cancelDownload',{id:row.id}));box.append(el)}}
@@ -315,10 +360,20 @@ for(const card of $$('.game-card[data-game]')){const gameId=()=>card.dataset.gam
 syncGameTiles();
 $('#library-view-list').onclick=()=>setLibraryView('list');$('#library-view-grid').onclick=()=>setLibraryView('grid');
 $('#clear-downloads').onclick=()=>enqueue('clearDownloads',{});
-$$('.nav-item').forEach(b=>b.onclick=()=>showPage(b.dataset.page));$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};$('#prev-page').onclick=()=>{if(page>1){page--;browse()}};$('#next-page').onclick=()=>{page++;browse()};$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=()=>call('launch').catch(()=>{});$('#import-button').onclick=async()=>{let picked;try{picked=await call('import')}catch{return}if(!picked||picked.cancelled)return;chooseLibraryFolder({subtitle:picked.name,onConfirm:async node=>{try{const r=await call('importApply',{file:picked.file,characterId:node.id},{reload:true});if(!r?.cancelled)notify('本地模组导入完成。')}catch{}}}).catch(e=>notify(e.message,true))};$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods');$('#choose-program').onclick=()=>mutate('chooseProgram');$('#choose-background').onclick=()=>mutate('chooseBackground');$('#reset-background').onclick=()=>mutate('resetBackground');$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#check-updates').onclick=checkUpdates;$('#check-updates-library').onclick=checkUpdates;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
+$$('.nav-item').forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==='settings')markAppUpdateSeen()});$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};$('#prev-page').onclick=()=>{if(page>1){page--;browse()}};$('#next-page').onclick=()=>{page++;browse()};$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=()=>call('launch').catch(()=>{});$('#import-button').onclick=async()=>{let picked;try{picked=await call('import')}catch{return}if(!picked||picked.cancelled)return;chooseLibraryFolder({subtitle:picked.name,onConfirm:async node=>{try{const r=await call('importApply',{file:picked.file,characterId:node.id},{reload:true});if(!r?.cancelled)notify('本地模组导入完成。')}catch{}}}).catch(e=>notify(e.message,true))};$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods');$('#choose-program').onclick=()=>mutate('chooseProgram');$('#choose-background').onclick=()=>mutate('chooseBackground');$('#reset-background').onclick=()=>mutate('resetBackground');$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#check-updates').onclick=checkUpdatesButton;$('#check-updates-library').onclick=checkUpdatesButton;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
 $('#blur-nsfw').onchange=async e=>{await mutate('settings',{blurNsfw:e.target.checked});refreshWorkshopBlur()};$('#use-links').onchange=e=>mutate('settings',{useLinks:e.target.checked});$('#theme-select').onchange=e=>mutate('settings',{theme:e.target.value});$('#material-select').onchange=e=>mutate('settings',{material:e.target.value});$('#proxy-mode').onchange=e=>{if(e.target.value==='manual'){ $('#proxy-url-row').hidden=false;if(state.settings.proxyUrl)mutate('settings',{proxyMode:'manual'});}else mutate('settings',{proxyMode:'system'})};$('#save-proxy').onclick=()=>mutate('settings',{proxyMode:$('#proxy-mode').value,proxyUrl:$('#proxy-url').value.trim()});$('#test-proxy').onclick=async()=>{try{const r=await call('proxyDiagnostics');$('#proxy-result').textContent=[r.message,r.route,r.apiRoute].filter(Boolean).join(' · ')}catch(e){$('#proxy-result').textContent=e.message}};window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(!state.runtime||typeof state.runtime.dark!=='boolean')renderAppearance()});for(const id of ['sort-select','sfw-filter','nsfw-filter'])$('#'+id).onchange=()=>{page=1;browse()};
-api?.onDownloads?.(rows=>{downloads=rows||[];renderDownloads()});api?.onProgress?.(p=>{const box=$('#progress'),bar=$('#progress-bar'),revision=++progressRevision;if(!p?.label){box.hidden=true;return}box.hidden=false;$('#progress-label').textContent=p.label;const total=Number(p.total)||0,received=Number(p.received)||0;bar.max=total||1;bar.removeAttribute('value');if(total){bar.value=received;const ratio=Math.min(100,Math.round(received/total*100));$('#progress-value').textContent=p.unit==='items'?`${received}/${total}`:`${ratio}%${p.speed?' · '+formatSize(p.speed)+'/s':''}`}else $('#progress-value').textContent=p.speed?formatSize(p.speed)+'/s':formatSize(received);if(total&&received>=total)setTimeout(()=>{if(progressRevision===revision)box.hidden=true},1200)});api?.onState?.(snapshot=>{state=snapshot;renderState()});
+api?.onDownloads?.(rows=>{downloads=rows||[];renderDownloads()});
+// 全局进度条取消了：长任务只在它自己打开的弹窗里报告进度，下载进度看「下载列表」的每一行。
+api?.onProgress?.(p=>{
+  const slot=$('#inline-progress');if(!slot)return;
+  const label=String(p?.label||'');
+  if(!$('#modal')?.open||!label){slot.hidden=true;slot.textContent='';return}
+  const total=Number(p.total)||0,received=Number(p.received)||0,suffix=total?`${received}/${total}`:p.speed?`${formatSize(p.speed)}/s`:received?formatSize(received):'';
+  slot.textContent=suffix?`${label} · ${suffix}`:label;slot.hidden=false;
+});
+api?.onState?.(snapshot=>{state=snapshot;renderState()});
 api?.onNotifications?.(value=>applyNotifications(value));
+api?.onUpdateSummary?.(payload=>applyUpdateSummary(payload));
 api?.onNotificationPopups?.(list=>{for(const payload of list||[])showNotificationPopup(payload?.entry||payload)});
 $('#notification-button').onclick=event=>{event.stopPropagation();toggleNotificationPanel()};
 $('#notification-read-all').onclick=()=>call('readNotifications',{}, {silent:true}).then(applyNotifications).catch(()=>{});
@@ -327,6 +382,8 @@ document.addEventListener('pointerdown',event=>{if(!event.target.closest('#notif
 document.addEventListener('keydown',event=>{if(event.key==='Escape')toggleNotificationPanel(false)});
 window.addEventListener('scroll',()=>toggleNotificationPanel(false));
 call('notifications',{}, {silent:true,foreground:false}).then(applyNotifications).catch(()=>{});
+call('updateSummary',{}, {silent:true,foreground:false}).then(result=>{if(result)updateSummary=result}).catch(()=>{});
+renderUpdateDots();
 (async()=>{try{await loadState();await Promise.all([loadDownloads(),loadCategories()])}catch(e){notify(e?.message||'初始化失败，请重新启动应用。',true)}})();
 
 async function showHotkeys(mod){
@@ -513,14 +570,17 @@ document.documentElement.dataset.page='home';
 
 let softwareUpdate={status:'idle'};
 function renderSoftwareUpdate(value){
+ const previous=softwareUpdate;
  softwareUpdate=value||softwareUpdate;const u=softwareUpdate,labels={idle:'尚未检查',checking:'正在检查 GitHub…',current:'当前已是最新版本',available:'发现新版本 '+(u.update?.version||''),downloading:'正在下载更新',preparing:'正在校验并准备更新',ready:'已准备好，重启后完成更新',handoff:'正在重启更新',recovery:'上次更新中断，需要恢复',error:'更新未完成'};
+ // 后台查到新版本时点亮「检查软件更新」的红点，只在状态真正变成 available 的那一刻亮一次。
+ if(u.status==='available'&&previous.status!=='available'){appUpdateUnviewed=true;renderUpdateDots()}
  $('#software-update-status').textContent=(labels[u.status]||u.status)+(u.error?'：'+u.error:'');
  const working=['checking','downloading','preparing','handoff'].includes(u.status);$('#software-check').disabled=working||['ready','recovery'].includes(u.status);
  const action=$('#software-action');action.hidden=!['available','ready','recovery'].includes(u.status)&&!(u.status==='error'&&u.update);action.disabled=working;action.textContent=u.status==='ready'?'重启并更新':u.status==='recovery'?'恢复旧程序并重启':'下载更新';
  $('#software-progress').hidden=!['downloading','preparing'].includes(u.status);const bar=$('#software-progress-bar');bar.max=u.total||1;if(u.total)bar.value=u.received||0;else bar.removeAttribute('value');$('#software-progress-text').textContent=formatSize(u.received||0)+(u.total?' / '+formatSize(u.total):'');
  $('#software-notes').hidden=!u.update?.notes;$('#software-notes-text').textContent=u.update?.notes||'';
 }
-$('#software-check').onclick=async()=>{try{renderSoftwareUpdate(await call('checkAppUpdate',{}, {foreground:false,silent:true}));}catch(e){renderSoftwareUpdate({...softwareUpdate,status:'error',error:e.message});}};
+$('#software-check').onclick=async()=>{markAppUpdateSeen();try{renderSoftwareUpdate(await call('checkAppUpdate',{}, {foreground:false,silent:true}));}catch(e){renderSoftwareUpdate({...softwareUpdate,status:'error',error:e.message});}};
 $('#software-action').onclick=async()=>{try{if(['ready','recovery'].includes(softwareUpdate.status))await call('installAppUpdate',{}, {foreground:false});else renderSoftwareUpdate(await call('downloadAppUpdate',{}, {foreground:false,silent:true}));}catch(e){if(!['ready','recovery'].includes(softwareUpdate.status))renderSoftwareUpdate({...softwareUpdate,status:'error',error:e.message});}};
 $('#auto-check-app-updates').onchange=e=>mutate('settings',{autoCheckAppUpdates:e.target.checked});
 api?.onAppUpdate?.(renderSoftwareUpdate);api?.call('appUpdateState').then(renderSoftwareUpdate).catch(()=>{});

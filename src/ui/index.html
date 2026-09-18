@@ -63,7 +63,6 @@
         <div><h1 id="page-title">首页</h1><p id="page-subtitle">准备好下一次冒险</p></div>
         <div class="top-actions"><button class="button secondary" id="open-library-button" hidden>安装库</button><button class="button secondary" id="open-mods-button" hidden>启用库</button><button class="button secondary" id="replace-hash" hidden>替换 Hash</button></div>
       </header>
-      <div id="progress" class="progress" aria-live="polite" hidden><div><span id="progress-label">处理中…</span><span id="progress-value"></span></div><progress id="progress-bar"></progress></div>
 
       <section id="page-home" class="page active launcher-page" data-testid="home-page">
         <div class="launcher-stage">
@@ -111,7 +110,7 @@
       </section>
 
       <section id="page-library" class="page" data-testid="library-page">
-        <div class="section-head"><div class="row-actions"><button class="button secondary" id="check-updates-library">检查更新</button><button class="button primary" id="import-button" data-tip-text="选择文件后选择安装位置">导入本地模组<span class="button-hint" aria-hidden="true">?</span></button></div></div>
+        <div class="section-head"><div class="row-actions"><button class="button secondary" id="check-updates-library">检查更新<span class="button-dot" aria-hidden="true" hidden></span></button><button class="button primary" id="import-button" data-tip-text="选择文件后选择安装位置">导入本地模组<span class="button-hint" aria-hidden="true">?</span></button></div></div>
         <div class="library-navigation"><button type="button" id="library-back" class="button secondary library-back" aria-label="返回上一级分类" disabled><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg> 返回</button><nav id="library-breadcrumb" class="library-breadcrumb" aria-label="模组分类路径"></nav><div class="library-view-switch" role="group" aria-label="模组显示方式"><button type="button" id="library-view-list" aria-pressed="true" title="横向列表"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg> 列表</button><button type="button" id="library-view-grid" aria-pressed="false" title="大图网格"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg> 网格</button></div></div><div id="library-folders" class="folder-grid"></div>
         <div id="library-grid" class="list-grid"></div><div id="library-empty" class="empty" hidden></div>
       </section>
@@ -129,7 +128,7 @@
 
       <section id="page-settings" class="page" data-testid="settings-page">
         <div id="software-update-card" class="settings-card">
-          <div class="setting-row"><div><strong>软件更新 <span id="software-version"></span></strong><p id="software-update-status" role="status">尚未检查</p></div><div class="row-actions"><button class="button secondary" id="software-check">检查软件更新</button><button class="button primary" id="software-action" hidden>下载更新</button></div></div>
+          <div class="setting-row"><div><strong>软件更新 <span id="software-version"></span></strong><p id="software-update-status" role="status">尚未检查</p></div><div class="row-actions"><button class="button secondary" id="software-check">检查软件更新<span class="button-dot" aria-hidden="true" hidden></span></button><button class="button primary" id="software-action" hidden>下载更新</button></div></div>
           <div id="software-progress" hidden><progress id="software-progress-bar"></progress><span id="software-progress-text"></span></div>
           <div id="software-notes" hidden><h3>更新内容</h3><pre id="software-notes-text" class="description"></pre></div>
           <div class="setting-row"><div><strong>启动时检查软件更新</strong><p data-tip>只检查 GitHub 正式版并提示，不自动下载；重启更新不会替换 data 或 GIMI 模组。</p></div><label class="switch"><input id="auto-check-app-updates" type="checkbox" aria-label="启动时检查软件更新"><span></span></label></div>
@@ -150,12 +149,12 @@
           <div class="setting-row" id="proxy-url-row" hidden><label for="proxy-url">代理地址</label><div class="row-actions"><input id="proxy-url" type="url" placeholder="http://127.0.0.1:7890" aria-label="代理地址"><button class="button secondary" id="save-proxy">保存</button></div></div>
           <div class="setting-row"><p id="proxy-result" role="status">测试当前网络连接与代理路由</p><button class="button secondary" id="test-proxy">测试连接</button></div>
         </div>
-        <div class="settings-card compact"><div class="setting-row"><div><strong>维护与诊断</strong><p id="data-root">数据位置加载中…</p></div><div class="row-actions"><button class="button secondary" id="open-data">打开数据目录</button><button class="button secondary" id="check-updates">检查更新</button></div></div></div>
+        <div class="settings-card compact"><div class="setting-row"><div><strong>维护与诊断</strong><p id="data-root">数据位置加载中…</p></div><div class="row-actions"><button class="button secondary" id="open-data">打开数据目录</button><button class="button secondary" id="check-updates">检查更新<span class="button-dot" aria-hidden="true" hidden></span></button></div></div></div>
       </section>
     </main>
   </div>
 
-  <dialog id="modal"><form method="dialog"><div class="dialog-head"><div><h2 id="modal-title"></h2><p id="modal-subtitle"></p></div><button class="icon-button" value="cancel" aria-label="关闭"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="modal-body" class="dialog-body"></div><div id="modal-actions" class="dialog-actions"></div></form></dialog>
+  <dialog id="modal"><form method="dialog"><div class="dialog-head"><div><h2 id="modal-title"></h2><p id="modal-subtitle"></p></div><button class="icon-button" value="cancel" aria-label="关闭"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="modal-body" class="dialog-body"></div><p id="inline-progress" class="inline-progress" role="status" aria-live="polite" hidden></p><div id="modal-actions" class="dialog-actions"></div></form></dialog>
   <dialog id="dependency-modal" aria-labelledby="dependency-title"><div class="dialog-head"><div><h2 id="dependency-title">前置模组提醒</h2><span class="help-note" tabindex="0" role="button">作者可能未列出全部依赖；手动安装的前置可能无法按来源编号识别。查看 GameBanana 前置时保留当前窗口；返回后可重新检查。其他网址由浏览器打开，需手动安装。</span></div><button type="button" class="icon-button" id="dependency-close" aria-label="关闭"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div class="dialog-body"><p id="dependency-name"></p><p id="dependency-status"></p><div id="dependency-list"></div><p id="dependency-error" class="notice error" role="status" hidden></p></div><div class="dialog-actions"><button type="button" class="button secondary" id="dependency-cancel">取消</button><button type="button" class="button primary" id="dependency-continue">仍然继续</button></div></dialog>
   <script src="library-categories.js"></script>
   <script src="dialog-stack.js"></script>

@@ -47,6 +47,45 @@ test('delivers each new message as a popup exactly once',async()=>{
   assert.equal(popups.length,2);
 });
 
+// 瞬时提示用于「开始检查更新」这类只弹一次的反馈：不进历史、不计未读、不落盘，
+// 窗口还没就绪时直接丢弃（而不是排队等下次启动补弹）。
+test('delivers an ephemeral message once and keeps it out of the history',async()=>{
+  const {file}=await workspace();
+  const popups=[],unread=[];
+  const center=new NotificationCenter(file,{onPopup:entry=>popups.push(entry),onChange:value=>unread.push(value)});
+  await center.init();
+  const entry=center.add({text:'开始检查更新',title:'检查更新',ephemeral:true});
+  assert.equal(entry.text,'开始检查更新');
+  assert.equal(popups.length,1);
+  assert.equal(popups[0].title,'检查更新');
+  await center.flush();
+  assert.deepEqual(center.snapshot().entries,[]);
+  assert.deepEqual(unread,[],'瞬时提示不该改变未读数');
+  await assert.rejects(()=>fs.readFile(file,'utf8'),/ENOENT/,'瞬时提示不该落盘');
+});
+
+test('drops an ephemeral message while the window is not ready',async()=>{
+  const {file}=await workspace();
+  const popups=[];
+  const center=new NotificationCenter(file,{onPopup:entry=>popups.push(entry.text)});
+  center.add({text:'开始检查更新',ephemeral:true});
+  await center.init();
+  const delivered=[];center.flushPending(entry=>delivered.push(entry.text));
+  assert.deepEqual(delivered,[],'瞬时提示不该进待发队列');
+  assert.deepEqual(popups,[]);
+  assert.deepEqual(center.snapshot().entries,[]);
+});
+
+test('keeps ephemeral messages out of the unread count',async()=>{
+  const {file}=await workspace();
+  const center=new NotificationCenter(file);
+  await center.init();
+  center.add({text:'开始检查更新',ephemeral:true});
+  center.add({text:'检查完成：2 个模组有更新',target:'modUpdates'});
+  assert.equal(center.unread(),1);
+  assert.deepEqual(center.snapshot().entries.map(e=>e.text),['检查完成：2 个模组有更新']);
+});
+
 test('reports the unread count whenever the history changes',async()=>{
   const {file}=await workspace();
   const seen=[];
