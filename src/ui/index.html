@@ -30,9 +30,9 @@
   <div class="app-backdrop" aria-hidden="true"><img id="app-background" src="home-background.jpg" alt=""></div>
   <div id="help-tooltip" class="help-tooltip" role="tooltip" hidden></div>
   <div id="context-menu" class="context-menu" role="menu" hidden><button id="context-refresh" role="menuitem" type="button"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>　刷新</button></div>
-  <div id="download-toast" class="download-toast" role="status" aria-live="polite" hidden></div>
-  <div id="notification-popups" class="notification-popups" aria-live="polite"></div>
   <section id="notification-center" class="notification-center">
+    <div id="download-toast" class="download-toast" role="status" aria-live="polite" hidden></div>
+    <div id="notification-popups" class="notification-popups" aria-live="polite"></div>
     <div id="notification-panel" class="notification-panel" role="region" aria-label="通知中心" hidden>
       <div class="notification-panel-head">
         <span class="notification-panel-title" aria-hidden="true"><svg class="icon"><use href="#i-message"/></svg><strong>消息</strong></span>
@@ -49,9 +49,6 @@
   <div class="window-titlebar" aria-hidden="true"></div>
   <div class="app-shell">
     <aside class="sidebar">
-      <nav class="rail rail-launcher" aria-label="游戏">
-        <div id="game-list" class="game-list"></div>
-      </nav>
       <nav class="rail rail-workspace" aria-label="模组工作空间">
         <button type="button" class="game-tile rail-back" id="rail-back" data-testid="rail-back" title="返回启动器首页" aria-label="返回启动器首页"><img src="genshin-icon.png" alt="" draggable="false"></button>
         <button class="nav-item" data-page="workshop" title="模组工坊" aria-label="模组工坊"><svg class="icon" aria-hidden="true"><use href="#i-workshop"/></svg></button>
@@ -60,6 +57,7 @@
         <button class="nav-item" data-page="downloads" title="下载列表" aria-label="下载列表"><svg class="icon" aria-hidden="true"><use href="#i-downloads"/></svg></button>
       </nav>
       <div class="rail-foot">
+        <div id="game-list" class="game-list rail-launcher" role="navigation" aria-label="游戏"></div>
         <span class="rail-separator" aria-hidden="true"></span>
         <button class="nav-item rail-games" data-page="games" title="全部游戏" aria-label="全部游戏"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg></button>
         <button class="nav-item settings-nav" data-page="settings" title="设置" aria-label="设置"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg></button>
