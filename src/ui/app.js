@@ -4,6 +4,10 @@ const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const api = window.hoyo;
 let state={settings:{},mods:[],presets:[],runtime:{}}, categories=[], taxonomy=[], libraryNavigation=[], category='', page=1, query='', total=0, busyCount=0, progressRevision=0, browseRevision=0;
 let activePage='home', downloads=[], downloadError='';
+// 已接入的游戏按添加顺序排列，越早添加越靠上；拉取到新游戏时追加到数组末尾即可。
+const GAMES=[{id:'genshin',name:'原神',icon:'genshin-icon.png'}];
+const gameById=id=>GAMES.find(game=>game.id===id)||GAMES[0];
+const gameTileLabel=name=>`${name} · 单击选中，双击进入模组工作空间`;
 const pageScroll={}, busyButtons=new Map();
 const titles={home:['首页','准备好下一次冒险'],games:['全部游戏','选择要进入模组工作空间的游戏'],downloads:['下载列表','管理下载队列与安装记录'],workshop:['模组工坊','从 GameBanana 浏览并安装各类模组'],library:['我的模组','管理本机已安装的模组'],presets:['搭配方案','保存并切换整套角色搭配'],settings:['设置','配置 GIMI、外部程序与外观']};
 const launcherPages=new Set(['home','games']);
@@ -102,8 +106,43 @@ function renderLibrary(){const {mods:visibleMods,folderCount}=renderLibraryFolde
 function renderPresets(){const box=$('#preset-grid'),empty=$('#preset-empty');box.innerHTML='';empty.hidden=state.presets.length>0;empty.innerHTML='<strong>还没有搭配方案</strong>先在“我的模组”启用喜欢的组合，再保存为方案。';for(const p of state.presets){const names=(p.modIds||[]).map(id=>state.mods.find(m=>m.id===id)).filter(Boolean).map(m=>m.characterName+' · '+m.name);const el=document.createElement('article');el.className='preset-item';el.innerHTML=`<div><h3>${esc(p.name)}</h3><p>${names.length?esc(names.join('、')):'空搭配 · 将停用所有模组'}</p></div><div class="item-actions"><button class="button primary apply">应用</button><button class="button danger delete">删除</button></div>`;$('.apply',el).onclick=()=>mutate('applyPreset',{id:p.id});$('.delete',el).onclick=()=>confirmDeletePreset(p);box.append(el)}}
 async function mutate(action,payload){try{return await call(action,payload,{reload:true})}catch{return null}}
 function setMode(mode){if(document.documentElement.dataset.mode!==mode)document.documentElement.dataset.mode=mode}
+function renderGameRails(){
+  const launcher=$('.rail-launcher'),back=$('#rail-back');if(!launcher||!back)return;
+  const image=game=>`<img src="${game.icon}" alt="" draggable="false">`;
+  launcher.innerHTML=GAMES.map(game=>`<button type="button" class="game-tile${game.id===activeGame?' active':''}" data-game="${game.id}" data-testid="game-tile" title="${esc(gameTileLabel(game.name))}" aria-label="${esc(gameTileLabel(game.name))}">${image(game)}</button>`).join('');
+  back.innerHTML=image(gameById(activeGame));
+  for(const tile of $$('.game-tile[data-game]',launcher)){
+    const pick=()=>{activeGame=tile.dataset.game;syncGameTiles();if(activePage!=='home')showPage('home')};
+    tile.onclick=pick;
+    tile.ondblclick=()=>enterWorkspace(tile.dataset.game,tile);
+    tile.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();enterWorkspace(tile.dataset.game,tile)}};
+  }
+}
 function syncGameTiles(){for(const el of $$('.game-tile[data-game],.game-card[data-game]'))el.classList.toggle('active',el.dataset.game===activeGame)}
-function showPage(name){if(!titles[name])return;if(name!=='settings')setMode(launcherPages.has(name)?'launcher':'workspace');document.documentElement.dataset.page=name;$('#open-mods-button').hidden=name!=='library';$('#open-library-button').hidden=name!=='library';hideContextMenu();pageScroll[activePage]=window.scrollY;activePage=name;$$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===name));$$('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+name));[$('#page-title').textContent,$('#page-subtitle').textContent]=titles[name];window.scrollTo(0,launcherPages.has(name)?0:(pageScroll[name]||0));syncGameTiles();if(name==='home')renderHome()}
+// 双击进入工作空间：图标从原位飞向左栏顶端，页面同时切换。
+// origin 是双击的游戏图标（左栏按钮或「全部游戏」卡片）：切换页面后它会被隐藏，
+// 所以起点的位置必须在切换之前量好。
+function enterWorkspace(game,origin){
+  const id=game||activeGame,source=origin?.querySelector?.('img')||$('.rail-launcher .game-tile[data-game] img');
+  const from=source?.getBoundingClientRect(),snapshot=origin?.getBoundingClientRect();
+  const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  activeGame=id;syncGameTiles();showPage('workshop');
+  if(reduced||!from?.width||!snapshot?.width)return;
+  const target=$('#rail-back img'),to=target?.getBoundingClientRect();
+  if(!to?.width)return;
+  const fly=document.createElement('img');
+  fly.className='game-icon-fly';fly.src=source.getAttribute('src')||gameById(id).icon;fly.alt='';fly.setAttribute('aria-hidden','true');
+  Object.assign(fly.style,{left:`${from.left}px`,top:`${from.top}px`,width:`${from.width}px`,height:`${from.height}px`,animation:'game-icon-fly .42s cubic-bezier(.2,.8,.25,1) both'});
+  fly.style.setProperty('--fly-x',`${snapshot.left-from.left}px`);
+  fly.style.setProperty('--fly-y',`${snapshot.top-from.top}px`);
+  fly.style.setProperty('--fly-scale',String(Math.min(1,Math.max(.5,snapshot.width/from.width))));
+  fly.style.setProperty('--fly-tx',`${to.left-from.left+(to.width-from.width)/2}px`);
+  fly.style.setProperty('--fly-ty',`${to.top-from.top+(to.height-from.height)/2}px`);
+  document.body.append(fly);
+  fly.addEventListener('animationend',()=>fly.remove(),{once:true});
+  setTimeout(()=>fly.remove(),900);
+}
+function showPage(name){if(!titles[name])return;if(name!=='settings')setMode(launcherPages.has(name)?'launcher':'workspace');document.documentElement.dataset.page=name;$('#open-mods-button').hidden=name!=='library';$('#open-library-button').hidden=name!=='library';$('#replace-hash').hidden=name!=='library';hideContextMenu();pageScroll[activePage]=window.scrollY;activePage=name;$$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===name));$$('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+name));[$('#page-title').textContent,$('#page-subtitle').textContent]=titles[name];window.scrollTo(0,launcherPages.has(name)?0:(pageScroll[name]||0));syncGameTiles();if(name==='home')renderHome()}
 function flattenCategories(nodes,path=[]){return nodes.flatMap(n=>[{...n,path:[...path,n.name]},...flattenCategories(n.children||[],[...path,n.name])])}
 function categoryPath(nodes,id){
   for(const node of nodes){
@@ -233,12 +272,12 @@ function refreshWorkshopBlur(){for(const card of $$('#browse-grid .mod-card[data
 
 $('#home-open-library').onclick=()=>showPage('library');$('#home-open-presets').onclick=()=>showPage('presets');$('#home-game-settings').onclick=()=>mutate('chooseProgram');
 $('#rail-back').onclick=()=>showPage('home');$('#fetch-background').onclick=async()=>{try{await call('fetchOfficialBackground',{},{reload:true});notice('已更新为米哈游官方最新背景。')}catch{}};
-function enterWorkspace(game){activeGame=game||activeGame;syncGameTiles();showPage('workshop')}
-for(const tile of $$('.game-tile[data-game],.game-card[data-game]')){const game=()=>tile.dataset.game;tile.onclick=()=>{activeGame=game();syncGameTiles();if(activePage!=='home')showPage('home')};tile.ondblclick=()=>enterWorkspace(game());tile.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();enterWorkspace(game())}}}
+renderGameRails();
+for(const card of $$('.game-card[data-game]')){const gameId=()=>card.dataset.game;card.onclick=()=>{activeGame=gameId();syncGameTiles()};card.ondblclick=()=>enterWorkspace(gameId(),card);card.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();enterWorkspace(gameId(),card)}}}
 syncGameTiles();
 $('#library-view-list').onclick=()=>setLibraryView('list');$('#library-view-grid').onclick=()=>setLibraryView('grid');
 $('#clear-downloads').onclick=()=>enqueue('clearDownloads',{});
-$$('.nav-item').forEach(b=>b.onclick=()=>showPage(b.dataset.page));$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};$('#prev-page').onclick=()=>{if(page>1){page--;browse()}};$('#next-page').onclick=()=>{page++;browse()};$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=async()=>{try{const r=await call('launch');if(r?.message)notice(r.message)}catch{}};$('#import-button').onclick=async()=>{let picked;try{picked=await call('import')}catch{return}if(!picked||picked.cancelled)return;chooseLibraryFolder({mode:'import',subtitle:picked.name,onConfirm:async node=>{try{const r=await call('importApply',{file:picked.file,characterId:node.id},{reload:true});if(!r?.cancelled)notice('本地模组导入完成。')}catch{}}}).catch(e=>notice(e.message,true))};$('#new-folder-button').onclick=()=>chooseLibraryFolder({mode:'create',subtitle:'按 GameBanana 分类创建空白文件夹',onConfirm:async node=>{try{await call('createLibraryFolder',{characterId:node.id},{reload:true});notice(`文件夹「${node.name}」已就绪，之后该分类的下载会自动存到这里。`)}catch{}}}).catch(e=>notice(e.message,true));$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods');$('#choose-program').onclick=()=>mutate('chooseProgram');$('#choose-background').onclick=()=>mutate('chooseBackground');$('#reset-background').onclick=()=>mutate('resetBackground');$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#check-updates').onclick=checkUpdates;$('#check-updates-library').onclick=checkUpdates;const disableAll=()=>mutate('disableAll');$('#disable-all-library').onclick=disableAll;$('#disable-all-settings').onclick=disableAll;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
+$$('.nav-item').forEach(b=>b.onclick=()=>showPage(b.dataset.page));$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};$('#prev-page').onclick=()=>{if(page>1){page--;browse()}};$('#next-page').onclick=()=>{page++;browse()};$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=async()=>{try{const r=await call('launch');if(r?.message)notice(r.message)}catch{}};$('#import-button').onclick=async()=>{let picked;try{picked=await call('import')}catch{return}if(!picked||picked.cancelled)return;chooseLibraryFolder({subtitle:picked.name,onConfirm:async node=>{try{const r=await call('importApply',{file:picked.file,characterId:node.id},{reload:true});if(!r?.cancelled)notice('本地模组导入完成。')}catch{}}}).catch(e=>notice(e.message,true))};$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods');$('#choose-program').onclick=()=>mutate('chooseProgram');$('#choose-background').onclick=()=>mutate('chooseBackground');$('#reset-background').onclick=()=>mutate('resetBackground');$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#check-updates').onclick=checkUpdates;$('#check-updates-library').onclick=checkUpdates;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
 $('#blur-nsfw').onchange=async e=>{await mutate('settings',{blurNsfw:e.target.checked});refreshWorkshopBlur()};$('#use-links').onchange=e=>mutate('settings',{useLinks:e.target.checked});$('#theme-select').onchange=e=>mutate('settings',{theme:e.target.value});$('#material-select').onchange=e=>mutate('settings',{material:e.target.value});$('#proxy-mode').onchange=e=>{if(e.target.value==='manual'){ $('#proxy-url-row').hidden=false;if(state.settings.proxyUrl)mutate('settings',{proxyMode:'manual'});}else mutate('settings',{proxyMode:'system'})};$('#save-proxy').onclick=()=>mutate('settings',{proxyMode:$('#proxy-mode').value,proxyUrl:$('#proxy-url').value.trim()});$('#test-proxy').onclick=async()=>{try{const r=await call('proxyDiagnostics');$('#proxy-result').textContent=[r.message,r.route,r.apiRoute].filter(Boolean).join(' · ')}catch(e){$('#proxy-result').textContent=e.message}};window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(!state.runtime||typeof state.runtime.dark!=='boolean')renderAppearance()});for(const id of ['sort-select','sfw-filter','nsfw-filter'])$('#'+id).onchange=()=>{page=1;browse()};
 api?.onDownloads?.(rows=>{downloads=rows||[];renderDownloads()});api?.onProgress?.(p=>{const box=$('#progress'),bar=$('#progress-bar'),revision=++progressRevision;if(!p?.label){box.hidden=true;return}box.hidden=false;$('#progress-label').textContent=p.label;const total=Number(p.total)||0,received=Number(p.received)||0;bar.max=total||1;bar.removeAttribute('value');if(total){bar.value=received;const ratio=Math.min(100,Math.round(received/total*100));$('#progress-value').textContent=p.unit==='items'?`${received}/${total}`:`${ratio}%${p.speed?' · '+formatSize(p.speed)+'/s':''}`}else $('#progress-value').textContent=p.speed?formatSize(p.speed)+'/s':formatSize(received);if(total&&received>=total)setTimeout(()=>{if(progressRevision===revision)box.hidden=true},1200)});api?.onState?.(snapshot=>{state=snapshot;renderState()});api?.onNotice?.(message=>{if(message)notice(message)});
 (async()=>{try{await loadState();await Promise.all([loadDownloads(),loadCategories()])}catch(e){notice(e?.message||'初始化失败，请重新启动应用。',true)}})();
@@ -252,30 +291,92 @@ async function showHotkeys(mod){
   }catch{}
 }
 
+// 「替换 Hash」是一个二级窗口：查找替换、替换记录、回溯记录三块放在同一个弹窗里用标签切换。
+// 替换记录回答「什么值换成了什么值」；回溯记录用来查看并执行「换回替换前」。
+const HASH_TABS=[['apply','查找替换'],['records','替换记录'],['rollback','回溯记录']];
+let hashTab='apply',hashInputs={old:'',new:''},hashPreview=null;
 function hashFileRows(files){return `<div class="hash-file-list">${files.map(f=>`<p><strong>${esc(f.modName)}</strong><br><small>${esc(f.file)} · ${f.count} 处</small></p>`).join('')}</div>`}
-function showHashReplace(){
-  modal('批量替换 Hash','扫描全部已安装模组（包含未启用模组）的 .ini',`<p class="meta">按完整值匹配，不区分大小写；包含注释中的匹配值。原文件编码和换行保留。</p><div class="field"><label for="old-hash">查找 Hash</label><input id="old-hash" maxlength="66" placeholder="例如 a1b2c3d4" spellcheck="false"></div><div class="field"><label for="new-hash">替换为</label><input id="new-hash" maxlength="66" placeholder="输入新的 hash" spellcheck="false"></div>`,'<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary" id="preview-hash">查找并预览</button>');
-  $('#preview-hash').onclick=async()=>{
-    try{const result=await call('previewHash',{oldHash:$('#old-hash').value,newHash:$('#new-hash').value});
-      closeModal();modal('确认批量替换',`${result.oldHash} → ${result.newHash}`,`<p>共 ${new Set(result.files.map(f=>f.modId)).size} 个模组、${result.files.length} 个文件、${result.count} 处匹配。</p><p class="meta">执行时保存受影响模组的完整备份，用于回滚；请预留相应磁盘空间。已启用模组会同步到游戏加载目录。</p>${hashFileRows(result.files)}`,'<button class="button secondary" value="cancel">取消</button>'+(result.count?'<button type="button" class="button primary" id="apply-hash">备份并替换</button>':''));
-      $('#apply-hash')?.addEventListener('click',async()=>{closeModal();try{const batch=await call('applyHash',{token:result.token},{reload:true});notice(`已替换 ${batch.count} 处，可在“替换记录”回滚。`)}catch{}});
-    }catch{}
+function openHashReplace(){
+  hashPreview=null;
+  const dialog=modal('替换 Hash','安装库内全部已安装模组（含未启用）的 .ini','<nav id="hash-tabs" class="dialog-tabs" role="tablist" aria-label="替换 Hash 分区"></nav><div id="hash-panel" class="hash-panel" role="tabpanel"></div>','<button class="button secondary" value="cancel">关闭</button>');
+  $('#hash-tabs',dialog).innerHTML=HASH_TABS.map(([id,name])=>`<button type="button" role="tab" class="dialog-tab" data-hash-tab="${id}">${name}</button>`).join('');
+  for(const button of $$('[data-hash-tab]',dialog))button.onclick=()=>{hashTab=button.dataset.hashTab;renderHashPanel(dialog)};
+  renderHashPanel(dialog);
+}
+function renderHashPanel(dialog){
+  if(!dialog.open)return;
+  for(const button of $$('[data-hash-tab]',dialog))button.setAttribute('aria-selected',String(button.dataset.hashTab===hashTab));
+  const panel=$('#hash-panel',dialog);if(!panel)return;
+  panel.replaceChildren();
+  if(hashTab==='records')return renderHashRecords(dialog,panel);
+  if(hashTab==='rollback')return renderHashRollback(dialog,panel);
+  return renderHashApply(dialog,panel);
+}
+function renderHashApply(dialog,panel){
+  panel.innerHTML=`<p class="meta">按完整值匹配，不区分大小写，包含注释中的匹配值；原文件编码、BOM 与换行保留。</p><div class="field"><label for="old-hash">查找 Hash</label><input id="old-hash" maxlength="66" spellcheck="false" placeholder="例如 a1b2c3d4"></div><div class="field"><label for="new-hash">替换为</label><input id="new-hash" maxlength="66" spellcheck="false" placeholder="输入新的 hash"></div><div class="row-actions hash-actions"><button type="button" class="button primary" id="preview-hash">查找并预览</button></div><div id="hash-preview"></div>`;
+  $('#old-hash',panel).value=hashInputs.old;$('#new-hash',panel).value=hashInputs.new;
+  if(hashPreview)renderHashPreview(dialog,panel,hashPreview);
+  $('#preview-hash',panel).onclick=async()=>{
+    const oldHash=$('#old-hash',panel).value,newHash=$('#new-hash',panel).value;
+    hashInputs={old:oldHash,new:newHash};
+    try{
+      const result=await call('previewHash',{oldHash,newHash});
+      if(!dialog.open||$('#hash-panel',dialog)!==panel)return;
+      hashPreview=result;renderHashPreview(dialog,panel,result);
+    }catch{hashPreview=null}
   };
 }
-async function showHashHistory(){
-  try{const rows=(await call('hashHistory')).reverse();modal('Hash 替换记录','按批次回滚；同一模组的连续替换请从最新批次开始',rows.length?rows.map((batch,i)=>`<article class="hotkey-entry"><h3>${esc(batch.oldHash)} → ${esc(batch.newHash)}</h3><p>${esc(new Date(batch.createdAt).toLocaleString('zh-CN'))} · ${batch.count} 处 · ${batch.status==='rolledBack'?'已回滚':'已替换'}</p><p>${batch.entries.map(e=>esc(e.name)).join('、')}</p>${batch.status==='applied'?`<button type="button" class="button secondary rollback-hash" data-index="${i}">回滚此批次</button>`:''}</article>`).join(''):'<p class="summary-ok">还没有批量替换记录。</p>','<button class="button secondary" value="cancel">关闭</button>');
-    $$('.rollback-hash').forEach(button=>button.onclick=()=>{const batch=rows[Number(button.dataset.index)];closeModal();modal('确认回滚',`${batch.oldHash} ← ${batch.newHash}`,`<p>将恢复以下模组在该批次替换前的文件：</p><p>${batch.entries.map(e=>esc(e.name)).join('、')}</p><p class="meta">若模组已更新、移除或文件后来被修改，将停止回滚以保留后来的更改。</p>`,'<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary" id="confirm-rollback-hash">恢复备份</button>');$('#confirm-rollback-hash').onclick=async()=>{closeModal();try{await call('rollbackHash',{id:batch.id},{reload:true});notice('该批次已回滚。');await showHashHistory()}catch{}};});
-  }catch{}
+function renderHashPreview(dialog,panel,result){
+  const box=$('#hash-preview',panel);if(!box)return;
+  box.innerHTML=`<p>共 ${new Set(result.files.map(f=>f.modId)).size} 个模组、${result.files.length} 个文件、${result.count} 处匹配。</p>${result.count?'<p class="meta">执行时保存受影响模组的完整备份用于回溯，请预留相应磁盘空间；已启用模组会同步到游戏加载目录。</p>':''}${hashFileRows(result.files)}${result.count?'<div class="row-actions hash-actions"><button type="button" class="button primary" id="apply-hash">备份并替换</button></div>':''}`;
+  $('#apply-hash',box)?.addEventListener('click',async event=>{
+    const button=event.currentTarget;button.disabled=true;
+    try{
+      const batch=await call('applyHash',{token:result.token},{reload:true});
+      hashPreview=null;hashInputs={old:'',new:''};
+      notice(`已替换 ${batch.count} 处；可在“替换记录”查看，或在“回溯记录”换回替换前。`);
+      hashTab='records';renderHashPanel(dialog);
+    }catch{button.disabled=false}
+  });
 }
-$('#replace-hash').onclick=showHashReplace;$('#hash-history').onclick=showHashHistory;
+async function renderHashRecords(dialog,panel){
+  panel.innerHTML='<p class="meta">正在读取替换记录…</p>';
+  try{
+    const rows=(await call('hashHistory',{},{foreground:false})).slice().reverse();
+    if(!dialog.open||$('#hash-panel',dialog)!==panel||!panel.isConnected)return;
+    panel.innerHTML=rows.length?`<p class="meta">按时间倒序显示每次替换：把哪个 hash 换成了哪个 hash、影响了哪些模组。</p>${rows.map(batch=>`<article class="hotkey-entry"><h3>${esc(batch.oldHash)} → ${esc(batch.newHash)}</h3><p>${esc(new Date(batch.createdAt).toLocaleString('zh-CN'))} · ${batch.count} 处 · ${batch.status==='rolledBack'?'已回溯':'已替换'}</p><p>${batch.entries.map(entry=>esc(entry.name)).join('、')}</p></article>`).join('')}`:'<p class="summary-ok">还没有批量替换记录。</p>';
+  }catch(error){if(dialog.open&&panel.isConnected)panel.innerHTML=`<p class="notice error">${esc(error.message)}</p>`}
+}
+async function renderHashRollback(dialog,panel){
+  panel.innerHTML='<p class="meta">正在读取回溯记录…</p>';
+  try{
+    const rows=await call('hashHistory',{},{foreground:false}),pending=rows.filter(batch=>batch.status!=='rolledBack').slice().reverse(),done=rows.filter(batch=>batch.status==='rolledBack').slice().reverse();
+    if(!dialog.open||$('#hash-panel',dialog)!==panel||!panel.isConnected)return;
+    const batchLine=batch=>`<p>${esc(new Date(batch.createdAt).toLocaleString('zh-CN'))} · ${batch.count} 处 · 备份于“${esc(batch.entries.map(entry=>entry.name).join('、'))}”</p>`;
+    panel.innerHTML=`${pending.length?`<h3 class="hash-heading">可以回溯的替换</h3>${pending.map(batch=>`<article class="hotkey-entry"><h3>${esc(batch.oldHash)} ← ${esc(batch.newHash)}</h3>${batchLine(batch)}<div class="row-actions hash-actions"><button type="button" class="button secondary hash-rollback" data-batch="${esc(batch.id)}">回溯到替换前</button></div></article>`).join('')}`:'<p class="summary-ok">当前没有可以回溯的替换。</p>'}${done.length?`<h3 class="hash-heading">回溯记录</h3>${done.map(batch=>`<article class="hotkey-entry"><h3>${esc(batch.oldHash)} ← ${esc(batch.newHash)}</h3>${batchLine(batch)}<p class="meta">已于 ${esc(new Date(batch.rolledBackAt||batch.createdAt).toLocaleString('zh-CN'))} 回溯到替换前。</p></article>`).join('')}`:''}<p class="meta">回溯按完整批次恢复替换前的文件，不做新值到旧值的反向替换；同一模组的连续替换请从最新批次开始回溯。模组之后更新、移除或被手动改动时程序会停止回溯，避免覆盖后来的内容。</p>`;
+    $$('.hash-rollback',panel).forEach(button=>button.onclick=()=>confirmHashRollback(dialog,panel,rows.find(batch=>batch.id===button.dataset.batch)));
+  }catch(error){if(dialog.open&&panel.isConnected)panel.innerHTML=`<p class="notice error">${esc(error.message)}</p>`}
+}
+function confirmHashRollback(dialog,panel,batch){
+  const entry=$$('.hotkey-entry',panel).find(item=>$('.hash-rollback',item)?.dataset.batch===batch.id),box=$('.hash-actions',entry||panel);
+  if(!box)return;
+  box.innerHTML=`<p class="meta">将恢复“${esc(batch.entries.map(item=>item.name).join('、'))}”在该批次替换前的文件。</p><button type="button" class="button secondary hash-rollback-cancel">取消</button><button type="button" class="button primary hash-rollback-confirm">确认回溯</button>`;
+  $('.hash-rollback-cancel',box).onclick=()=>renderHashPanel(dialog);
+  $('.hash-rollback-confirm',box).onclick=async event=>{
+    const button=event.currentTarget;button.disabled=true;
+    try{await call('rollbackHash',{id:batch.id},{reload:true});notice('已回溯到该批次替换前的文件。');renderHashPanel(dialog)}
+    catch{button.disabled=false}
+  };
+}
+$('#replace-hash').onclick=()=>{hashTab='apply';openHashReplace()};
 
 async function ensureTaxonomy(){if(!taxonomy.length){try{taxonomy=await call('taxonomy',{},{foreground:false})}catch{}}return taxonomy}
-// 逐层浏览本机库的分类文件夹：可以选一个已有的文件夹存放，也可以进入还没建过的
-// GameBanana 分类（例如某个角色）把它新建出来。
-async function chooseLibraryFolder({mode,subtitle,onConfirm}){
+// 逐层浏览本机库的分类文件夹，为选中的压缩包选一个存放位置：已有的文件夹直接存放，
+// 还没建过的 GameBanana 分类会自动创建。停在总分类上也行，模组直接放进大分类文件夹。
+async function chooseLibraryFolder({subtitle,onConfirm}){
   await ensureTaxonomy();
-  const body='<p class="meta">模组副本存放在本机库的这个文件夹；启用时仍按原来的步骤选择 GIMI Mods 里的安装位置。</p><nav id="location-breadcrumb" class="category-breadcrumb" aria-label="本机库文件夹路径"></nav><div class="character-head"><strong id="location-heading">选择大分类</strong><label class="mini-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="location-search" type="search" placeholder="查找当前层级分类" aria-label="查找当前层级分类"></label></div><div id="location-folders" class="folder-grid"></div><p id="location-empty" class="meta" hidden>当前层级没有匹配的分类。</p><p id="location-selection" class="meta"></p>';
-  const dialog=modal(mode==='import'?'选择存放位置':'新建角色文件夹',subtitle,body,'<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary" id="location-confirm" disabled>确定</button>');
+  const body='<p class="meta">模组副本（安装库）存放在这个分类文件夹；大分类也可以直接存放，还没有的文件夹会自动创建。</p><nav id="location-breadcrumb" class="category-breadcrumb" aria-label="本机库文件夹路径"></nav><div class="character-head"><strong id="location-heading">选择大分类</strong><label class="mini-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="location-search" type="search" placeholder="查找当前层级分类" aria-label="查找当前层级分类"></label></div><div id="location-folders" class="folder-grid"></div><p id="location-empty" class="meta" hidden>当前层级没有匹配的分类。</p><p id="location-selection" class="meta"></p>';
+  const dialog=modal('选择存放位置',subtitle,body,'<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary" id="location-confirm" disabled>确定</button>');
   const q=selector=>$(selector,dialog),confirm=q('#location-confirm');
   let trail=[],selection=null;
   function render(){
@@ -296,16 +397,17 @@ async function chooseLibraryFolder({mode,subtitle,onConfirm}){
     const box=q('#location-folders');box.replaceChildren();
     for(const node of visible){
       const button=document.createElement('button'),icon=safeImage(node.icon);button.type='button';button.className='folder-card';
-      const note=node.modIds.length?`${node.modIds.length} 个模组`:node.folder?'空文件夹':'可以新建为存放文件夹';
+      const note=node.modIds.length?`${node.modIds.length} 个模组`:node.folder?'空文件夹':'可以存放模组';
       button.innerHTML=`<span class="folder-icon" aria-hidden="true">${icon?`<img src="${esc(icon)}" alt=""><span hidden>${ICON('folder')}</span>`:`<span>${ICON('folder')}</span>`}</span><span><strong>${esc(node.name)}</strong><small>${note}</small></span><span aria-hidden="true">›</span>`;
       const img=$('img',button);if(img)img.onerror=()=>{img.hidden=true;img.nextElementSibling.hidden=false};
       button.onclick=()=>{trail.push(node.id);render()};box.append(button);
     }
     q('#location-empty').hidden=visible.length>0;
-    selection=current&&path.length>=2?current:null;
-    q('#location-selection').textContent=selection?`已选择：${path.map(node=>node.name).join(' / ')}${selection.folder?' · 已有文件夹':''}`:'继续进入具体角色或子分类后即可存放。';
+    // 任意一层都可以存放：大分类（总分类）也允许，分类不必选到最小子文件夹。
+    selection=current||null;
+    q('#location-selection').textContent=selection?`已选择：${path.map(node=>node.name).join(' / ')}${selection.folder?' · 已有文件夹':''}`:'选择任意一层分类后即可存放，还没有的文件夹会自动创建。';
     confirm.disabled=!selection;
-    confirm.textContent=selection?`${mode==='import'?'存到':'新建'}「${selection.name}」`:'确定';
+    confirm.textContent=selection?`存到「${selection.name}」`:'确定';
   }
   q('#location-search').oninput=render;
   confirm.onclick=()=>{if(!selection)return;const chosen=selection;closeModal();onConfirm(chosen)};

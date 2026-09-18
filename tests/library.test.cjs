@@ -674,6 +674,26 @@ test('unclassified local imports stay out of character exclusivity',async t=>{
  assert.deepEqual(library.snapshot().mods.filter(mod=>mod.active).map(mod=>mod.id).sort(),[first.id,second.id].sort());
 });
 
+test('a top-level category folder is a single level and holds mods directly',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ // resolveCategory 对总分类返回的就是这种形状：characterId 与 rootCategoryId 相同。
+ const skins={characterId:'17510',characterName:'Skins',rootCategoryId:'17510',rootCategoryName:'Skins',characterGroupId:null};
+ await library.createFolder(skins);
+ const saved=library.snapshot().folders[0];
+ assert.equal(saved.libraryPath.split('/').length,1,'总分类文件夹只应有一级');
+ const target=path.join(library.libraryRoot,saved.libraryPath);
+ assert.ok((await fs.stat(target)).isDirectory());
+ const first=await library.install(await modFolder('gb-skins-one'),{name:'大分类模组一',...skins});
+ const second=await library.install(await modFolder('gb-skins-two'),{name:'大分类模组二',...skins});
+ assert.equal(path.dirname(first.folder),target,'模组应直接放在大分类文件夹里');
+ assert.equal(path.dirname(second.folder),target);
+ await library.enable(first.id);await library.enable(second.id);
+ assert.deepEqual(library.snapshot().mods.filter(mod=>mod.active).map(mod=>mod.id).sort(),[first.id,second.id].sort(),'同一大分类里的模组不互斥');
+ const local=await library.importLocal(await modFolder('local-skins'),{name:'本地大分类',target:path.join(modsPath,'HoYoModManaged','BufferValues'),...skins});
+ assert.equal(path.dirname(local.folder),target,'本地导入同样直接落在大分类文件夹');
+ assert.equal(local.characterId,'17510');
+});
+
 test('removing a folder is refused while it holds mods or hand-placed files, and deletes only the empty folder',async t=>{
  const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
  await library.createFolder(amberFolder);

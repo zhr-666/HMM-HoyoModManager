@@ -111,16 +111,19 @@ async function main(){
   assert.match(String(emptyText),/这个文件夹里还没有模组/,'空文件夹应有说明：'+emptyText);
   console.log('✓ 进入空文件夹显示自动存放说明');
 
-  // 3. 新建文件夹弹窗：层级、搜索、确认按钮
-  await evaluate('libraryNavigation=[];renderLibrary();document.querySelector("#new-folder-button").click()');
-  await waitFor('!!document.querySelector("#location-confirm")','新建文件夹弹窗');
-  assert.equal(await evaluate('document.querySelector("#modal-title").textContent'),'新建角色文件夹');
-  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),true,'顶层不能直接确认');
+  // 3. 导入存放位置弹窗：任意一层都能确认、可搜索
+  //    （系统文件对话框无法自动化，这里直接进入选位置这一步。）
+  await evaluate('libraryNavigation=[];renderLibrary();window.__picked=null;chooseLibraryFolder({subtitle:"测试包",onConfirm:node=>{window.__picked=node}})');
+  await waitFor('!!document.querySelector("#location-confirm")','存放位置弹窗');
+  assert.equal(await evaluate('document.querySelector("#modal-title").textContent'),'选择存放位置');
+  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),true,'未选分类时不能确认');
   await clickByText('#location-folders .folder-card','Skins');
-  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),true,'大分类不能直接确认');
+  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),false,'大分类可以直接存放');
+  assert.equal(await evaluate('document.querySelector("#location-confirm").textContent'),'存到「Skins」');
+  assert.match(await evaluate('document.querySelector("#location-selection").textContent'),/已选择：Skins/);
   await clickByText('#location-folders .folder-card','Characters');
-  assert.deepEqual(await cards('#location-folders .folder-card'),['胡桃|空文件夹','钟离|1 个模组','甘雨|可以新建为存放文件夹']);
-  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),false,'角色层级应可确认');
+  assert.deepEqual(await cards('#location-folders .folder-card'),['胡桃|空文件夹','钟离|1 个模组','甘雨|可以存放模组']);
+  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),false,'子分类层也应可确认');
   await evaluate('(()=>{const input=document.querySelector("#location-search");input.value="钟";input.dispatchEvent(new Event("input"))})()');
   await sleep(150);
   assert.deepEqual(await cards('#location-folders .folder-card'),['钟离|1 个模组'],'搜索应过滤当前层级');
@@ -128,24 +131,26 @@ async function main(){
   await sleep(120);
   await clickByText('#location-folders .folder-card','甘雨');
   assert.match(await evaluate('document.querySelector("#location-selection").textContent'),/Skins \/ Characters \/ 甘雨/);
-  assert.equal(await evaluate('document.querySelector("#location-confirm").textContent'),'新建「甘雨」');
-  console.log('✓ 新建文件夹弹窗可逐层进入、可搜索、层级不足时禁用确认');
-
-  // 4. 真的新建一个角色文件夹
+  assert.equal(await evaluate('document.querySelector("#location-confirm").textContent'),'存到「甘雨」');
   await evaluate('document.querySelector("#location-confirm").click()');
   await waitFor('!document.querySelector("#modal").open','弹窗关闭');
-  await waitFor('window.hoyo.call("state").then(s=>s.folders.length===2)','文件夹已登记');
-  const created=await evaluate('window.hoyo.call("state").then(s=>s.folders.map(f=>f.id+"|"+f.name+"|"+f.libraryPath))');
-  assert.deepEqual(created.map(row=>row.split('|')[0]),['900001','900003'],'登记内容：'+JSON.stringify(created));
-  const createdDir=path.join(data,'library',created[1].split('|')[2]);
-  assert.ok((await fs.stat(createdDir)).isDirectory(),'新文件夹应真的建在磁盘上：'+createdDir);
-  await evaluate('libraryNavigation=["17510","18140"];renderLibrary()');
+  assert.equal(await evaluate('window.__picked&&window.__picked.id'),'900003','确认后应把选中的分类交回导入流程');
+  console.log('✓ 导入存放位置弹窗可在大分类或子分类确认、可搜索，并交回导入流程');
+
+  // 4. 大分类文件夹：磁盘上只有一级，模组直接放在里面
+  const created=await evaluate('window.hoyo.call("createLibraryFolder",{characterId:"17510"}).then(()=>window.hoyo.call("state")).then(s=>s.folders.map(f=>f.id+"|"+f.name+"|"+f.libraryPath))');
+  assert.deepEqual(created.map(row=>row.split('|')[0]),['900001','17510'],'登记内容：'+JSON.stringify(created));
+  const rootLibraryPath=created[1].split('|')[2];
+  assert.equal(rootLibraryPath.split('/').length,1,'总分类文件夹只应有一级：'+rootLibraryPath);
+  const createdDir=path.join(data,'library',rootLibraryPath);
+  assert.ok((await fs.stat(createdDir)).isDirectory(),'大分类文件夹应真的建在磁盘上：'+createdDir);
+  await evaluate('libraryNavigation=[];renderLibrary()');
   await sleep(250);
-  assert.deepEqual(await cards('#library-folders .folder-card'),['胡桃|空文件夹','钟离|1 个模组','甘雨|空文件夹']);
-  console.log('✓ 按角色新建空白文件夹（磁盘 + 状态 + 界面）');
+  assert.deepEqual(await cards('#library-folders .folder-card'),['Skins|1 个模组']);
+  console.log('✓ 大分类文件夹只有一级目录（磁盘 + 状态 + 界面）');
 
   // 5. 有模组的文件夹没有删除入口
-  await evaluate('(()=>{const card=[...document.querySelectorAll("#library-folders .folder-card")].find(b=>b.textContent.includes("钟离"));card.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,clientX:120,clientY:120}))})()');
+  await evaluate('showPage("library");libraryNavigation=["17510","18140"];renderLibrary();(()=>{const card=[...document.querySelectorAll("#library-folders .folder-card")].find(b=>b.textContent.includes("钟离"));card.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,clientX:120,clientY:120}))})()');
   await sleep(200);
   assert.equal(await evaluate('document.querySelector("#context-menu").hidden'),true,'有模组的文件夹不应给出删除入口');
   const refused=await evaluate('window.hoyo.call("createLibraryFolder",{characterId:"900002"}).then(()=>window.hoyo.call("removeLibraryFolder",{id:"900002"})).then(()=>"allowed",e=>e.message)');
@@ -156,15 +161,15 @@ async function main(){
   console.log('✓ 有模组的文件夹不允许删除');
 
   // 6. 右键删除空文件夹
-  await evaluate('(()=>{const card=[...document.querySelectorAll("#library-folders .folder-card")].find(b=>b.textContent.includes("甘雨"));card.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,clientX:120,clientY:120}))})()');
+  await evaluate('(()=>{const card=[...document.querySelectorAll("#library-folders .folder-card")].find(b=>b.textContent.includes("胡桃"));card.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,clientX:120,clientY:120}))})()');
   await waitFor('!document.querySelector("#context-menu").hidden','空文件夹右键菜单');
   assert.deepEqual(await cards('#context-menu .mod-context-action'),['undefined|删除空文件夹']);
   await evaluate('document.querySelector("#context-menu .mod-context-action").click()');
   await waitFor('window.hoyo.call("state").then(s=>s.folders.length===2)','删除生效');
   const remaining=await evaluate('window.hoyo.call("state").then(s=>s.folders.map(f=>f.id))');
-  assert.deepEqual(remaining,['900001','900002'],'其余文件夹应保留：'+JSON.stringify(remaining));
-  assert.ok(await fs.stat(createdDir).then(()=>false,()=>true),'空文件夹目录应被删除');
-  assert.deepEqual(await cards('#library-folders .folder-card'),['胡桃|空文件夹','钟离|1 个模组']);
+  assert.deepEqual(remaining,['17510','900002'],'其余文件夹应保留：'+JSON.stringify(remaining));
+  assert.ok(await fs.stat(hutaoFolder).then(()=>false,()=>true),'空文件夹目录应被删除');
+  assert.deepEqual(await cards('#library-folders .folder-card'),['钟离|1 个模组']);
   console.log('✓ 右键删除空文件夹（状态 + 磁盘 + 界面）');
 
   // 7. 导入入口仍可用（只验证按钮存在且未被禁用，系统对话框不在此自动化）

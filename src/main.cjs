@@ -87,7 +87,8 @@ function categoryPath(nodes,id,parents=[]){
   return null;
 }
 // 用户选定的库文件夹：优先用已登记的文件夹（离线也能用），否则在 GameBanana 分类树里
-// 查找，取它的顶层大分类作为库内第一层、节点自身作为第二层。
+// 查找，取它的顶层大分类作为库内第一层、节点自身作为第二层。停在总分类上也可以，这时
+// 库内只有一层，模组直接放在大分类文件夹里，不必强制选到最小子分类。
 async function resolveCategory(categoryId){
   const id=String(categoryId??'').trim();
   if(!/^\d+$/.test(id))throw new Error('无效的分类编号。');
@@ -95,7 +96,6 @@ async function resolveCategory(categoryId){
   if(registered)return {characterId:registered.id,characterName:registered.name,rootCategoryId:registered.rootCategoryId,rootCategoryName:registered.rootCategoryName,characterGroupId:registered.characterGroupId??null};
   const taxonomy=await taxonomyRows(),trail=categoryPath(taxonomy,id);
   if(!trail)throw new Error('找不到该分类，请联网打开模组工坊刷新分类后重试。');
-  if(trail.length<2)throw new Error('请进入具体角色或子分类后，再选择存放文件夹。');
   const root=trail[0],node=trail.at(-1),group=require('./core/character-groups.cjs').characterGroups(taxonomy).get(id);
   return {characterId:id,characterName:String(node.name||''),rootCategoryId:String(root.id),rootCategoryName:String(root.name||''),characterGroupId:group===undefined||group===null?null:String(group)};
 }

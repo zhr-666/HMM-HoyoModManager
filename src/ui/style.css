@@ -116,6 +116,16 @@ dialog form{margin:0}
 .hotkey-entry{padding:16px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.hotkey-entry h3{margin:0 0 8px}.hotkey-entry p{margin:8px 0}.hotkey-entry pre{white-space:pre-wrap;background:var(--inset);padding:10px;border-radius:6px}.hotkey-entry kbd{display:inline-block;border:1px solid var(--control-line);border-radius:5px;padding:3px 8px;background:var(--inset);font-family:inherit}.hotkey-entry small{color:#727c8d}
 
 #page-library .section-head{flex-wrap:wrap;gap:12px}#page-library .section-head .row-actions{flex-wrap:wrap}.hash-file-list{overflow-wrap:anywhere}
+/* 顶栏按钮里的问号指引：悬浮或聚焦时用 #help-tooltip 弹出说明。 */
+.button-hint{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:7px;border:1px solid currentColor;border-radius:50%;font-size:10px;font-weight:700;line-height:1;opacity:.8}
+/* 替换 Hash 二级窗口：标签 + 面板。 */
+.dialog-tabs{display:flex;gap:6px;margin:0 0 16px;padding:3px;border:1px solid var(--line);border-radius:8px;background:var(--inset)}
+.dialog-tab{flex:1;border:0;border-radius:6px;padding:8px 10px;background:transparent;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+.dialog-tab:hover{color:var(--text)}
+.dialog-tab[aria-selected="true"]{background:var(--surface);color:var(--text);font-weight:700;box-shadow:0 1px 4px #0000001a}
+.dialog-tab:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.hash-panel{min-height:120px}.hash-heading{margin:18px 0 0;font-size:13px;color:var(--text-secondary)}.hash-heading:first-child{margin-top:0}
+.hash-actions{margin-top:12px}#hash-preview{margin-top:4px}#hash-preview>p:first-child{font-weight:600}
 
 :root[data-theme="dark"]{color-scheme:dark;--text:#edf0f5;--text-secondary:#d0d6df;--bg:#191c22;--surface:#242830;--hover:#303640;--inset:#303640;--control-line:#4a515e;--blue:#7fb2ff;--blue-soft:#233958;--line:#3a414c;--muted:#a4adbb;--danger:#ff9a9a;--danger-bg:#43282d;--danger-line:#72434a;--success-bg:#223e31;--success:#8cdbad;--warning-bg:#493b22;--warning:#f4ca77}
 :root[data-material="mica"],:root[data-material="acrylic"]{background:transparent}

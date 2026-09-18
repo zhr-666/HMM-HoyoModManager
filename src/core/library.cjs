@@ -30,6 +30,14 @@ function categoryFolder(name,id) {
   return label+'-'+key;
 }
 
+// 分类文件夹在磁盘上的层级：选中的是角色或子分类时是「总分类/角色」两级；选中的就是
+// 总分类本身时只建一级，模组直接放在大分类文件夹里（分类不该被强制选到最底一层）。
+function classificationPieces({rootCategoryName,rootCategoryId,characterName,characterId}) {
+  const root=categoryFolder(rootCategoryName,rootCategoryId);
+  if(String(rootCategoryId)===String(characterId))return [root];
+  return [root,categoryFolder(characterName,characterId)];
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -176,7 +184,7 @@ class Library {
       }
       const id=characterId.trim();
       if(this.state.folders.some((folder)=>String(folder.id)===id))return this.snapshot();
-      const libraryPath=[categoryFolder(rootCategoryName.trim(),rootCategoryId.trim()),categoryFolder(characterName.trim(),id)].join('/');
+      const libraryPath=classificationPieces({rootCategoryName:rootCategoryName.trim(),rootCategoryId:rootCategoryId.trim(),characterName:characterName.trim(),characterId:id}).join('/');
       const pieces=validLibraryPath(libraryPath);
       if(!pieces)throw Error('文件夹名称无效。');
       await fs.mkdir(path.join(this.libraryRoot,...pieces),{recursive:true});
@@ -235,7 +243,12 @@ class Library {
       const parent=knownPath
         ?path.join(this.libraryRoot,...knownPath)
         :classification.rootCategoryId&&classification.rootCategoryName
-          ?path.join(this.libraryRoot,categoryFolder(classification.rootCategoryName,classification.rootCategoryId),categoryFolder(old?.characterName||metadata.characterName,old?.characterId||metadata.characterId)):this.libraryRoot;
+          ?path.join(this.libraryRoot,...classificationPieces({
+            rootCategoryName:classification.rootCategoryName,
+            rootCategoryId:classification.rootCategoryId,
+            characterName:old?.characterName||metadata.characterName,
+            characterId:old?.characterId||metadata.characterId,
+          })):this.libraryRoot;
       await fs.mkdir(parent,{recursive:true});
       const destination = path.join(parent, `${id}-${randomUUID()}`);
       await fs.cp(path.resolve(folder), destination, { recursive: true, errorOnExist: true, force: false });
