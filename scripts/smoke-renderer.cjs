@@ -35,7 +35,7 @@ const assert=require('node:assert/strict');
             return {records:Array.from({length:20},(_,i)=>({id:p.category*100+i,name:p.category===1?'旧请求 A':'最新请求 B',characterName:'角色',downloadCount:i===0?null:0,uploadedAt:1789089446,nsfw:true,preview:'https://images.gamebanana.com/img/ss/mods/test.jpg'})),total:80,page:p.page,hasMore:true};
           }
           throw new Error('Unexpected action '+action);
-        },onProgress(){},onState(){},onNotice(){},onDownloads(cb){onDownloads=cb}
+        },onProgress(){},onState(){},onNotifications(){},onNotificationPopups(){},onDownloads(cb){onDownloads=cb}
       };
     });
     await page.goto(require('node:url').pathToFileURL(path.resolve(__dirname,'../src/ui/index.html')).href);

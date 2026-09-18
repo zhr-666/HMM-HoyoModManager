@@ -1,7 +1,7 @@
 const {_electron}=require(process.env.PLAYWRIGHT_MODULE||'playwright'),assert=require('node:assert/strict'),path=require('node:path');
 (async()=>{const app=await _electron.launch({executablePath:require('electron'),args:[path.join(__dirname,'renderer-harness.cjs')]});try{
  const page=await app.firstWindow();await page.addInitScript(()=>{
-  window.finish={};window.hoyo={onState(){},onDownloads(){},onNotice(){},onProgress(){},call:async(action,p)=>{
+  window.finish={};window.hoyo={onState(){},onDownloads(){},onNotifications(){},onNotificationPopups(){},onProgress(){},call:async(action,p)=>{
    if(action==='state')return {settings:{modsPath:'C:/Mods'},mods:[],presets:[],runtime:{}};
    if(['taxonomy','downloads'].includes(action))return [];if(action==='browse')return {records:[]};
    if(action==='detail')return new Promise(resolve=>finish[p.id]=()=>resolve({id:p.id,name:'Mod '+p.id,files:[{id:p.id,name:p.id+'.zip'}]}));return {};

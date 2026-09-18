@@ -20,7 +20,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
     if(action==='settings'){Object.assign(state.settings,p);return structuredClone(state)}
     if(action==='enable'||action==='disable'){state.mods.find(m=>m.id===p.id).active=action==='enable';state.currentPresetId=null;return structuredClone(state)}
     throw Error('Unexpected action '+action);
-   },onState(){},onDownloads(){},onProgress(){},onNotice(){}};
+   },onState(){},onDownloads(){},onProgress(){},onNotifications(){},onNotificationPopups(){}};
   });
   await page.goto(require('node:url').pathToFileURL(path.resolve(__dirname,'../src/ui/index.html')).href);
   await page.locator('#page-home').waitFor({state:'visible'});

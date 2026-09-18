@@ -234,6 +234,44 @@ html[data-mode="launcher"][data-page="home"] .app-backdrop:after{background:line
 html[data-page="home"] .topbar{color:#fff;border-color:#ffffff35}
 html[data-page="home"] .topbar .help-note{color:#fff}
 html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex-direction:column;flex:1;min-height:0;justify-content:flex-end;animation-name:home-enter}
+/* Notification center: a floating bell in the bottom-right corner, a popup stack that
+   Windows-style toasts appear in, and the persisted message history behind the bell. */
+.notification-center{position:fixed;bottom:96px;right:32px;z-index:95;display:flex;flex-direction:column;align-items:flex-end;gap:10px;-webkit-app-region:no-drag}
+.notification-popups{display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}
+.notification-popup{pointer-events:auto;width:min(344px,calc(100vw - 56px));display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(14px);box-shadow:0 10px 28px #0003;animation:notification-enter .2s cubic-bezier(.2,.8,.2,1) both}
+.notification-popup.leaving{animation:notification-leave .18s ease-in both}
+.notification-popup-icon{flex:0 0 auto;font-size:15px;line-height:1.4}
+.notification-popup.error .notification-popup-icon{color:var(--danger)}
+.notification-popup-body{flex:1;min-width:0}.notification-popup-body strong{display:block;font-size:12px;margin-bottom:3px}.notification-popup-body p{margin:0;font-size:12.5px;line-height:1.6;overflow-wrap:anywhere;color:var(--text)}
+.notification-popup-close{flex:0 0 auto;border:0;background:transparent;color:var(--muted);font-size:15px;line-height:1;padding:2px 3px;border-radius:4px;cursor:pointer}
+.notification-popup-close:hover{background:var(--hover);color:var(--text)}
+@keyframes notification-enter{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:translateX(0)}}
+@keyframes notification-leave{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(18px)}}
+.notification-button{position:relative;width:44px;height:44px;flex:0 0 44px;border-radius:50%;border:1px solid var(--control-line);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(14px);color:var(--text);font-size:19px;display:grid;place-items:center;cursor:pointer;box-shadow:0 5px 18px #0002}
+.notification-button:hover{border-color:var(--blue);color:var(--blue)}
+.notification-button[aria-expanded="true"]{border-color:var(--blue);color:var(--blue);background:var(--blue-soft)}
+.notification-button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.notification-button.has-unread{animation:notification-pulse 2.4s ease-in-out infinite}
+.notification-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--danger);color:#fff;font-size:10.5px;font-weight:700;display:grid;place-items:center;border:1px solid var(--surface)}
+@keyframes notification-pulse{0%,100%{box-shadow:0 5px 18px #0002}50%{box-shadow:0 0 0 6px #1769e026}}
+.notification-panel{width:min(384px,calc(100vw - 56px));max-height:min(64vh,470px);display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--surface) 97%,transparent);backdrop-filter:blur(18px);box-shadow:0 14px 40px #0003;overflow:hidden;animation:notification-enter .16s ease-out both}
+.notification-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.notification-list{overflow:auto;padding:6px}
+.notification-item{display:flex;align-items:flex-start;gap:9px;padding:10px 10px;border-radius:8px}
+.notification-item:hover{background:var(--hover)}
+.notification-item[data-unread="true"]{background:color-mix(in srgb,var(--blue) 7%,transparent)}
+.notification-item-icon{flex:0 0 auto;font-size:14px;line-height:1.5}
+.notification-item.error .notification-item-icon{color:var(--danger)}
+.notification-item-body{flex:1;min-width:0}
+.notification-item-body strong{display:block;font-size:12px;margin-bottom:3px}
+.notification-item-body p{margin:0;font-size:12.5px;line-height:1.6;overflow-wrap:anywhere}
+.notification-item-body time{display:block;margin-top:5px;color:var(--muted);font-size:11px}
+.notification-item-remove{flex:0 0 auto;border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:3px 4px;border-radius:4px}
+.notification-item-remove:hover{background:var(--inset);color:var(--danger)}
+.notification-empty{margin:0;padding:26px 14px;text-align:center;color:var(--muted);font-size:12px}
+@media(max-width:1200px){.notification-center{bottom:90px;right:26px}}
+@media(prefers-reduced-motion:reduce){.notification-popup,.notification-panel{animation:none}.notification-button.has-unread{animation:none}}
+#page-home.active{display:flex;flex-direction:column;min-height:calc(100vh - 210px);animation-name:home-enter}
 @keyframes home-enter{from{opacity:0}to{opacity:1}}
 .home-gamebar{order:0;color:#fff}.home-summary{order:1;grid-template-columns:repeat(2,minmax(0,340px));margin-top:12px}
 .home-card{background:color-mix(in srgb,var(--surface) 90%,transparent);backdrop-filter:blur(16px);box-shadow:0 8px 30px #10203015}
@@ -288,7 +326,7 @@ dialog .help-note{display:inline-flex;margin:0 0 0 7px!important;vertical-align:
 #dependency-name{font-weight:600;overflow-wrap:anywhere}#dependency-status{line-height:1.6}
 #page-library>.section-head,#page-presets>.section-head{justify-content:flex-end}
 
-.app-update-banner{display:flex;align-items:center;justify-content:space-between;gap:16px}.app-update-banner .link-button{color:inherit}#software-version{color:var(--muted);font-size:12px;margin-left:8px}#software-notes{padding:0 0 18px}#software-notes h3{font-size:13px}#software-notes pre{font-family:inherit;font-size:12px;max-height:220px;overflow:auto}#software-progress{display:flex;gap:14px;align-items:center;padding-bottom:14px;font-size:12px}#software-progress progress{flex:1;accent-color:var(--blue)}
+#software-version{color:var(--muted);font-size:12px;margin-left:8px}#software-notes{padding:0 0 18px}#software-notes h3{font-size:13px}#software-notes pre{font-family:inherit;font-size:12px;max-height:220px;overflow:auto}#software-progress{display:flex;gap:14px;align-items:center;padding-bottom:14px;font-size:12px}#software-progress progress{flex:1;accent-color:var(--blue)}
 
 /* ===== 米哈游官方启动器风格：两级侧栏（启动器 / 模组工作空间）===== */
 .rail{display:grid;gap:5px;align-content:start}
@@ -323,7 +361,6 @@ html[data-mode="launcher"][data-page="home"] .app-shell{height:100%;min-height:0
 html[data-mode="launcher"][data-page="home"] main{display:flex;flex-direction:column;height:100%;min-height:0;max-width:none;padding:0 30px 26px;overflow:hidden}
 html[data-mode="launcher"][data-page="home"] .topbar,html[data-mode="launcher"][data-page="games"] .topbar{display:none}
 html[data-mode="launcher"][data-page="games"] main{padding:26px 30px 30px;max-width:none}
-html[data-mode="launcher"][data-page="home"] #app-update-banner,html[data-mode="launcher"][data-page="home"] #notice{margin-bottom:12px}
 
 .launcher-stage{display:flex;flex:1;min-height:0;align-items:flex-end;justify-content:space-between;gap:26px}
 .launcher-main{display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0}

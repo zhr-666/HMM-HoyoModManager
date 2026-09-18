@@ -19,7 +19,45 @@ const formatSize=n=>{n=Number(n)||0;return n>=1073741824?(n/1073741824).toFixed(
 // 图标来自 index.html 的 #i-* symbol 表，避免在 JS 里重复定义路径。
 const ICON=name=>`<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
-function notice(message,error=false){const n=$('#notice');n.textContent=message;n.className='notice'+(error?' error':'');n.hidden=!message;if(message)setTimeout(()=>{if(n.textContent===message)n.hidden=true},6500)}
+// 通知中心：除顶部小弹窗外的一切消息都写入这里，历史由主进程持久化。
+let notificationEntries=[],notificationUnread=0;
+const notificationTime=value=>{const d=new Date(Number(value)||Date.now());return new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(d)};
+function renderNotifications(){
+  const button=$('#notification-button'),badge=$('#notification-badge');
+  badge.textContent=notificationUnread>99?'99+':String(notificationUnread);
+  badge.hidden=notificationUnread<=0;button.classList.toggle('has-unread',notificationUnread>0);
+  const list=$('#notification-list');list.replaceChildren();
+  $('#notification-empty').hidden=notificationEntries.length>0;
+  for(const entry of notificationEntries){
+    const item=document.createElement('article');item.className='notification-item'+(entry.tone==='error'?' error':'');item.dataset.unread=String(!entry.read);item.dataset.notificationId=entry.id;if(entry.target)item.dataset.target=entry.target;
+    item.innerHTML=`<span class="notification-item-icon" aria-hidden="true">${entry.tone==='error'?'⚠':'🔔'}</span><div class="notification-item-body">${entry.title?`<strong>${esc(entry.title)}</strong>`:''}<p>${esc(entry.text)}</p><time datetime="${new Date(Number(entry.createdAt)||Date.now()).toISOString()}">${esc(notificationTime(entry.createdAt))}</time></div><button type="button" class="notification-item-remove" aria-label="删除这条消息" title="删除">×</button>`;
+    $('.notification-item-remove',item).onclick=()=>call('removeNotification',{id:entry.id},{silent:true}).then(applyNotifications).catch(()=>{});
+    if(entry.target)item.onclick=event=>{if(event.target.closest('.notification-item-remove'))return;toggleNotificationPanel(false);showPage('settings');$('#software-update-card').scrollIntoView({block:'start'})};
+    list.append(item);
+  }
+}
+function applyNotifications(snapshot){
+  if(Array.isArray(snapshot?.entries)){notificationEntries=snapshot.entries;}
+  else if(Array.isArray(snapshot?.added)&&snapshot.added.length){const added=new Map(snapshot.added.map(entry=>[entry.id,entry]));notificationEntries=[...added.values(),...notificationEntries.filter(entry=>!added.has(entry.id))];}
+  notificationUnread=Number(snapshot?.unread)||0;renderNotifications();
+}
+function showNotificationPopup(entry){
+  if(!entry?.text)return;
+  const host=$('#notification-popups'),box=document.createElement('article');
+  box.className='notification-popup'+(entry.tone==='error'?' error':'');box.setAttribute('role','status');
+  box.innerHTML=`<span class="notification-popup-icon" aria-hidden="true">${entry.tone==='error'?'⚠':'🔔'}</span><div class="notification-popup-body">${entry.title?`<strong>${esc(entry.title)}</strong>`:''}<p>${esc(entry.text)}</p></div><button type="button" class="notification-popup-close" aria-label="关闭这条提示">×</button>`;
+  const remove=()=>{clearTimeout(timer);if(!box.isConnected)return;box.classList.add('leaving');setTimeout(()=>box.remove(),180)};
+  const timer=setTimeout(remove,7000);
+  $('.notification-popup-close',box).onclick=remove;
+  host.append(box);
+  while(host.children.length>3)host.firstElementChild.remove();
+}
+function toggleNotificationPanel(open){
+  const panel=$('#notification-panel'),button=$('#notification-button');
+  const next=open??panel.hidden;panel.hidden=!next;button.setAttribute('aria-expanded',String(next));
+  if(next)call('readNotifications',{}, {silent:true}).then(applyNotifications).catch(()=>{});
+}
+function notify(message,error=false,title=''){if(!message)return;call('addNotification',{text:String(message),tone:error?'error':'info',title},{silent:true}).then(applyNotifications).catch(()=>{})}
 let downloadToastTimer,downloadToastHideTimer;
 function downloadToast(){
   const toast=$('#download-toast');clearTimeout(downloadToastTimer);clearTimeout(downloadToastHideTimer);
@@ -64,7 +102,7 @@ async function setLibraryView(view){
   catch{state.settings.libraryView=previous;renderLibrary()}
 }
 function setBusy(value){busyCount=Math.max(0,busyCount+(value?1:-1));if(value&&busyCount===1){$$('button').filter(el=>!el.closest('.sidebar')&&!el.closest('[data-layer-kind="dependency-modal"]')&&!el.classList.contains('category')&&!el.closest('.pager')&&!el.closest('.library-navigation')).forEach(el=>{busyButtons.set(el,el.disabled);el.disabled=true})}else if(!busyCount){for(const [el,disabled] of busyButtons)if(el.isConnected)el.disabled=disabled;busyButtons.clear();refreshInstallAvailability()}}
-async function call(action,payload,opts={}){if(!api?.call)throw new Error('本地服务不可用，请重新启动应用。');if(opts.foreground!==false)setBusy(true);try{const result=await api.call(action,payload);if(opts.reload)await loadState();return result}catch(e){if(!opts.silent)notice(e?.message||String(e),true);throw e}finally{if(opts.foreground!==false)setBusy(false)}}
+async function call(action,payload,opts={}){if(!api?.call)throw new Error('本地服务不可用，请重新启动应用。');if(opts.foreground!==false)setBusy(true);try{const result=await api.call(action,payload);if(opts.reload)await loadState();return result}catch(e){if(!opts.silent)notify(e?.message||String(e),true);throw e}finally{if(opts.foreground!==false)setBusy(false)}}
 async function enqueue(action,payload){try{downloadError='';const result=await call(action,payload,{foreground:false,silent:true});if(result?.queued)downloadToast();await loadDownloads()}catch(e){downloadError=e?.message||String(e);renderDownloads();showPage('downloads')}}
 async function loadState(){state=await api.call('state');renderState()}
 function renderState(){state.settings??={};state.mods??=[];state.presets??=[];$('#program-path').textContent=state.settings.launchExe||'尚未选择';$('#mods-path').textContent=state.settings.modsPath||'尚未选择';$('#data-root').textContent=state.runtime?.dataRoot?`数据目录：${state.runtime.dataRoot}`:'数据目录不可用';$('#auto-check-app-updates').checked=state.settings.autoCheckAppUpdates!==false;$('#software-version').textContent=state.runtime?.version?'v'+state.runtime.version:'';$('#auto-enable').checked=!!state.settings.autoEnable;$('#auto-check-updates').checked=!!state.settings.autoCheckUpdates;$('#blur-nsfw').checked=state.settings.blurNsfw!==false;$('#use-links').checked=state.settings.useLinks!==false;renderAppearance();refreshInstallAvailability();renderLibrary();renderPresets();renderHome()}
@@ -197,7 +235,7 @@ async function browse(){
     if(!empty.hidden)empty.innerHTML='<strong>没有找到模组</strong>试试其他分类或搜索词。';
     $('#page-info').textContent=`第 ${page} 页${total?' · 共 '+total+' 个':''}`;
     $('#prev-page').disabled=page<=1;$('#next-page').disabled=r.hasMore===false||(!('hasMore' in r)&&(!r.records?.length||(total>0&&page*20>=total)));
-  }catch(e){if(revision!==browseRevision)return;grid.replaceChildren();notice(e.message,true);empty.hidden=false;empty.innerHTML='<strong>加载失败</strong>请检查网络后重试。';}finally{if(revision===browseRevision)grid.setAttribute('aria-busy','false');}
+  }catch(e){if(revision!==browseRevision)return;grid.replaceChildren();notify(e.message,true);empty.hidden=false;empty.innerHTML='<strong>加载失败</strong>请检查网络后重试。';}finally{if(revision===browseRevision)grid.setAttribute('aria-busy','false');}
 }
 function workshopCard(m){const el=document.createElement('article');el.className='mod-card';el.dataset.testid='browse-card';el.dataset.nsfw=String(!!m.nsfw);el.innerHTML=`<div class="preview">${imageMarkup(m.preview,m.name,m.nsfw)}</div><div class="mod-card-body"><div class="eyebrow">${esc(m.characterName||flattenCategories(taxonomy).find(c=>String(c.id)===String(category))?.name||'模组')}${m.nsfw?' · NSFW':''}</div><h3 title="${esc(m.name)}">${esc(m.name)}</h3><p class="meta">${esc(m.author||'未知作者')} · ${m.downloadCount==null?'下载次数暂不可用':Number(m.downloadCount).toLocaleString('zh-CN')+' 次下载'}${m.uploadedAt?' · 发布 '+esc(formatDate(m.uploadedAt)):''}</p><div class="card-actions"><button class="link-button source">在 GameBanana 查看</button><button class="button primary detail">查看详情</button></div></div>`;$('.preview',el).onclick=()=>revealNsfw(el);$('.source',el).onclick=()=>openSourceItem(m);$('.detail',el).onclick=()=>openDetail(m);return el}
 const dialogStack=new DialogStack(['modal','dependency-modal']);
@@ -255,14 +293,14 @@ async function openDetail(record){
   const install=q('[data-install-confirm]');install.dataset.hasFiles=String(files.length>0);
   q('.detail-settings')?.addEventListener('click',()=>{dialogStack.back(dialog);showPage('settings')});
   if(d.nsfw&&state.settings.blurNsfw!==false){const gallery=q('.detail-images');if(gallery){gallery.classList.add('nsfw-detail');gallery.title='NSFW · 点击查看';gallery.onclick=()=>gallery.classList.remove('nsfw-detail');}}
-  install.onclick=async()=>{const fileId=q('input[type=radio]:checked')?.value;if(!fileId)return notice('请选择一个安装文件。',true);install.disabled=true;try{await enqueue('install',{sourceId:d.id,fileId,rootCategoryId:d.rootCategoryId||record.rootCategoryId,rootCategoryName:d.rootCategoryName||record.rootCategoryName,characterId:d.characterId||record.characterId,characterName:d.characterName||record.characterName})}finally{install.disabled=!state.settings.modsPath;}};
+  install.onclick=async()=>{const fileId=q('input[type=radio]:checked')?.value;if(!fileId)return notify('请选择一个安装文件。',true);install.disabled=true;try{await enqueue('install',{sourceId:d.id,fileId,rootCategoryId:d.rootCategoryId||record.rootCategoryId,rootCategoryName:d.rootCategoryName||record.rootCategoryName,characterId:d.characterId||record.characterId,characterName:d.characterName||record.characterName})}finally{install.disabled=!state.settings.modsPath;}};
  }catch(e){if(dialog.open&&dialog.dataset.layerRevision===revision)$('[id$="modal-body"]',dialog).innerHTML=`<p class="notice error">${esc(e.message)}</p>`;}
 }
 function confirmRemove(m){modal('移除模组','此操作会删除本机保存的模组文件。',`<p>确定移除“${esc(m.name)}”吗？相关搭配方案也会更新。</p>`,`<button class="button secondary" value="cancel">取消</button><button type="button" class="button danger" id="remove-confirm">确认移除</button>`);$('#remove-confirm').onclick=()=>{closeModal();mutate('remove',{id:m.id})}}
 function confirmDeletePreset(p){modal('删除搭配方案','不会删除其中的模组。',`<p>确定删除“${esc(p.name)}”吗？</p>`,`<button class="button secondary" value="cancel">取消</button><button type="button" class="button danger" id="delete-confirm">确认删除</button>`);$('#delete-confirm').onclick=()=>{closeModal();mutate('deletePreset',{id:p.id})}}
-function savePreset(){modal('保存当前搭配','记录现在启用的所有角色模组。',`<div class="field"><label for="preset-name">方案名称</label><input id="preset-name" maxlength="50" autofocus placeholder="例如：日常探索"></div>`,`<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary" id="preset-confirm">保存</button>`);$('#preset-confirm').onclick=()=>{const name=$('#preset-name').value.trim();if(!name)return notice('请输入方案名称。',true);closeModal();mutate('savePreset',{name})}}
+function savePreset(){modal('保存当前搭配','记录现在启用的所有角色模组。',`<div class="field"><label for="preset-name">方案名称</label><input id="preset-name" maxlength="50" autofocus placeholder="例如：日常探索"></div>`,`<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary" id="preset-confirm">保存</button>`);$('#preset-confirm').onclick=()=>{const name=$('#preset-name').value.trim();if(!name)return notify('请输入方案名称。',true);closeModal();mutate('savePreset',{name})}}
 function updateSummaryBody(result){const updates=result.updates||[],failures=result.failures||[],unknown=result.unknown||[];const updateRows=updates.map((u,i)=>`<div class="update-result"><div class="update-title"><div><strong>${esc(u.name)}</strong><small>当前 ${esc(formatDate(u.baselineAt)||'日期未知')} → 最新 ${esc(formatDate(u.latestAt)||'日期未知')}</small></div><button class="link-button update-source" type="button" data-source="${esc(u.sourceId||'')}">打开来源</button></div><div class="update-files">${(u.files||[]).map(f=>`<label class="file-option"><input type="radio" name="update-${i}" value="${esc(f.id)}"><span><strong>${esc(f.name)}</strong><small>${esc(formatDate(f.uploadedAt)||'时间未知')} · ${esc(formatSize(f.size))}</small></span></label>`).join('')||'<p class="meta">未找到可安装文件</p>'}</div></div>`).join('');const issues=[...failures.map(x=>({...x,type:'检查失败'})),...unknown.map(x=>({...x,type:'无法判断'}))];return `<p class="meta update-window-note">可选文件来自作者最新上传时间起向前 72 小时内的同批文件；请选择适合你的版本。</p>${updateRows||'<div class="summary-ok">没有发现明确可用的更新。</div>'}${issues.length?`<div class="update-issues"><strong>需要留意</strong>${issues.map(x=>`<p><b>${esc(x.name)}</b> · ${esc(x.type)}：${esc(x.error||x.reason||'原因未知')}</p>`).join('')}</div>`:''}`}
-async function checkUpdates(){try{const result=await call('checkUpdates'),updates=result.updates||[];modal('更新检查结果',`已检查 ${result.checked??result.total??state.mods.length} 个模组 · ${updates.length} 个有更新`,updateSummaryBody(result),`<button class="button secondary" value="cancel">关闭</button>${updates.length?'<button type="button" class="button primary" id="update-confirm">安装所选更新</button>':''}`);$$('.update-source').forEach(b=>b.onclick=()=>openSourceItem({sourceId:b.dataset.source}));$('#update-confirm')?.addEventListener('click',async()=>{const choices=updates.map((u,i)=>({u,fileId:$(`input[name="update-${i}"]:checked`)?.value})).filter(x=>x.fileId);if(!choices.length)return notice('请先为至少一个模组选择更新文件。',true);closeModal();for(const x of choices)await enqueue('updateMod',{id:x.u.id,fileId:x.fileId})})}catch{}}
+async function checkUpdates(){try{const result=await call('checkUpdates'),updates=result.updates||[];modal('更新检查结果',`已检查 ${result.checked??result.total??state.mods.length} 个模组 · ${updates.length} 个有更新`,updateSummaryBody(result),`<button class="button secondary" value="cancel">关闭</button>${updates.length?'<button type="button" class="button primary" id="update-confirm">安装所选更新</button>':''}`);$$('.update-source').forEach(b=>b.onclick=()=>openSourceItem({sourceId:b.dataset.source}));$('#update-confirm')?.addEventListener('click',async()=>{const choices=updates.map((u,i)=>({u,fileId:$(`input[name="update-${i}"]:checked`)?.value})).filter(x=>x.fileId);if(!choices.length)return notify('请先为至少一个模组选择更新文件。',true);closeModal();for(const x of choices)await enqueue('updateMod',{id:x.u.id,fileId:x.fileId})})}catch{}}
 const downloadStatus={queued:'等待中',downloading:'下载中',installing:'安装中',downloaded:'已下载',installed:'已安装',failed:'失败',cancelled:'已取消'};
 async function loadDownloads(){try{downloads=await api.call('downloads');renderDownloads()}catch(e){downloadError=e?.message||String(e);renderDownloads()}}
 function renderDownloads(){const box=$('#download-list');$('#download-empty').hidden=downloads.length>0;$('#download-error').hidden=!downloadError;$('#download-error').textContent=downloadError;$('#clear-downloads').disabled=!downloads.some(row=>!['queued','downloading','installing'].includes(row.status));box.innerHTML='';for(const row of downloads){const el=document.createElement('article'),p=row.progress||{},received=Number(p.received)||0,total=Number(p.total)||0,running=['downloading','installing'].includes(row.status);el.className='download-row';el.dataset.testid='download-row';el.innerHTML=`<div class="download-heading"><div><h3>${esc(row.name||'模组下载')}</h3><p class="meta">${esc(row.sourceFileName||'')}${row.createdAt?' · '+esc(formatDate(row.createdAt)):''}</p></div><span class="history-status ${esc(row.status)}">${esc(downloadStatus[row.status]||row.status)}</span></div>${running?`<div class="download-progress"><div><span>${esc(p.label||downloadStatus[row.status])}</span><span>${total?Math.min(100,Math.round(received/total*100))+'% · ':''}${esc(formatSize(received))}${total?' / '+esc(formatSize(total)):''}${p.speed?' · '+esc(formatSize(p.speed))+'/s':''}</span></div><progress max="${total||1}" ${total?'value="'+Math.min(received,total)+'"':''}></progress></div>`:''}${row.error?`<p class="download-failure">${esc(row.error)}</p>`:row.message?`<p class="meta">${esc(row.message)}</p>`:''}<div class="row-actions">${row.sourceId?'<button class="link-button download-source">来源</button>':''}${row.key?'<button class="link-button download-folder">打开位置</button>':''}${row.status==='failed'?'<button class="button secondary download-retry">重试</button>':''}${!['queued','downloading','installing'].includes(row.status)?'<button class="button secondary download-remove">删除记录</button>':''}${row.status==='queued'?'<button class="button secondary download-cancel">移出队列</button>':''}</div>`;$('.download-remove',el)?.addEventListener('click',()=>enqueue('removeDownload',{id:row.id}));$('.download-source',el)?.addEventListener('click',()=>openSourceItem(row));$('.download-folder',el)?.addEventListener('click',()=>call('openDownloadFolder',{key:row.key},{foreground:false}).catch(()=>{}));$('.download-retry',el)?.addEventListener('click',()=>enqueue('retryDownload',row.id?{id:row.id}:{key:row.key}));$('.download-cancel',el)?.addEventListener('click',()=>enqueue('cancelDownload',{id:row.id}));box.append(el)}}
@@ -271,16 +309,25 @@ function renderAppearance(){const s=state.settings,theme=s.theme||'system',dark=
 function refreshWorkshopBlur(){for(const card of $$('#browse-grid .mod-card[data-nsfw="true"]')){const preview=$('.preview',card),img=$('img',preview);if(!img)continue;$('.nsfw-cover',preview)?.remove();const blur=state.settings.blurNsfw!==false;img.classList.toggle('nsfw-image',blur);if(blur){const cover=document.createElement('span');cover.className='nsfw-cover';cover.textContent='NSFW · 点击查看';preview.append(cover)}}}
 
 $('#home-open-library').onclick=()=>showPage('library');$('#home-open-presets').onclick=()=>showPage('presets');$('#home-game-settings').onclick=()=>mutate('chooseProgram');
-$('#rail-back').onclick=()=>showPage('home');$('#fetch-background').onclick=async()=>{try{await call('fetchOfficialBackground',{},{reload:true});notice('已更新为米哈游官方最新背景。')}catch{}};
+$('#rail-back').onclick=()=>showPage('home');$('#fetch-background').onclick=async()=>{try{await call('fetchOfficialBackground',{},{reload:true});notify('已更新为米哈游官方最新背景。')}catch{}};
 renderGameRails();
 for(const card of $$('.game-card[data-game]')){const gameId=()=>card.dataset.game;card.onclick=()=>{activeGame=gameId();syncGameTiles()};card.ondblclick=()=>enterWorkspace(gameId(),card);card.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();enterWorkspace(gameId(),card)}}}
 syncGameTiles();
 $('#library-view-list').onclick=()=>setLibraryView('list');$('#library-view-grid').onclick=()=>setLibraryView('grid');
 $('#clear-downloads').onclick=()=>enqueue('clearDownloads',{});
-$$('.nav-item').forEach(b=>b.onclick=()=>showPage(b.dataset.page));$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};$('#prev-page').onclick=()=>{if(page>1){page--;browse()}};$('#next-page').onclick=()=>{page++;browse()};$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=async()=>{try{const r=await call('launch');if(r?.message)notice(r.message)}catch{}};$('#import-button').onclick=async()=>{let picked;try{picked=await call('import')}catch{return}if(!picked||picked.cancelled)return;chooseLibraryFolder({subtitle:picked.name,onConfirm:async node=>{try{const r=await call('importApply',{file:picked.file,characterId:node.id},{reload:true});if(!r?.cancelled)notice('本地模组导入完成。')}catch{}}}).catch(e=>notice(e.message,true))};$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods');$('#choose-program').onclick=()=>mutate('chooseProgram');$('#choose-background').onclick=()=>mutate('chooseBackground');$('#reset-background').onclick=()=>mutate('resetBackground');$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#check-updates').onclick=checkUpdates;$('#check-updates-library').onclick=checkUpdates;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
+$$('.nav-item').forEach(b=>b.onclick=()=>showPage(b.dataset.page));$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};$('#prev-page').onclick=()=>{if(page>1){page--;browse()}};$('#next-page').onclick=()=>{page++;browse()};$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=()=>call('launch').catch(()=>{});$('#import-button').onclick=async()=>{let picked;try{picked=await call('import')}catch{return}if(!picked||picked.cancelled)return;chooseLibraryFolder({subtitle:picked.name,onConfirm:async node=>{try{const r=await call('importApply',{file:picked.file,characterId:node.id},{reload:true});if(!r?.cancelled)notify('本地模组导入完成。')}catch{}}}).catch(e=>notify(e.message,true))};$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods');$('#choose-program').onclick=()=>mutate('chooseProgram');$('#choose-background').onclick=()=>mutate('chooseBackground');$('#reset-background').onclick=()=>mutate('resetBackground');$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#check-updates').onclick=checkUpdates;$('#check-updates-library').onclick=checkUpdates;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
 $('#blur-nsfw').onchange=async e=>{await mutate('settings',{blurNsfw:e.target.checked});refreshWorkshopBlur()};$('#use-links').onchange=e=>mutate('settings',{useLinks:e.target.checked});$('#theme-select').onchange=e=>mutate('settings',{theme:e.target.value});$('#material-select').onchange=e=>mutate('settings',{material:e.target.value});$('#proxy-mode').onchange=e=>{if(e.target.value==='manual'){ $('#proxy-url-row').hidden=false;if(state.settings.proxyUrl)mutate('settings',{proxyMode:'manual'});}else mutate('settings',{proxyMode:'system'})};$('#save-proxy').onclick=()=>mutate('settings',{proxyMode:$('#proxy-mode').value,proxyUrl:$('#proxy-url').value.trim()});$('#test-proxy').onclick=async()=>{try{const r=await call('proxyDiagnostics');$('#proxy-result').textContent=[r.message,r.route,r.apiRoute].filter(Boolean).join(' · ')}catch(e){$('#proxy-result').textContent=e.message}};window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(!state.runtime||typeof state.runtime.dark!=='boolean')renderAppearance()});for(const id of ['sort-select','sfw-filter','nsfw-filter'])$('#'+id).onchange=()=>{page=1;browse()};
-api?.onDownloads?.(rows=>{downloads=rows||[];renderDownloads()});api?.onProgress?.(p=>{const box=$('#progress'),bar=$('#progress-bar'),revision=++progressRevision;if(!p?.label){box.hidden=true;return}box.hidden=false;$('#progress-label').textContent=p.label;const total=Number(p.total)||0,received=Number(p.received)||0;bar.max=total||1;bar.removeAttribute('value');if(total){bar.value=received;const ratio=Math.min(100,Math.round(received/total*100));$('#progress-value').textContent=p.unit==='items'?`${received}/${total}`:`${ratio}%${p.speed?' · '+formatSize(p.speed)+'/s':''}`}else $('#progress-value').textContent=p.speed?formatSize(p.speed)+'/s':formatSize(received);if(total&&received>=total)setTimeout(()=>{if(progressRevision===revision)box.hidden=true},1200)});api?.onState?.(snapshot=>{state=snapshot;renderState()});api?.onNotice?.(message=>{if(message)notice(message)});
-(async()=>{try{await loadState();await Promise.all([loadDownloads(),loadCategories()])}catch(e){notice(e?.message||'初始化失败，请重新启动应用。',true)}})();
+api?.onDownloads?.(rows=>{downloads=rows||[];renderDownloads()});api?.onProgress?.(p=>{const box=$('#progress'),bar=$('#progress-bar'),revision=++progressRevision;if(!p?.label){box.hidden=true;return}box.hidden=false;$('#progress-label').textContent=p.label;const total=Number(p.total)||0,received=Number(p.received)||0;bar.max=total||1;bar.removeAttribute('value');if(total){bar.value=received;const ratio=Math.min(100,Math.round(received/total*100));$('#progress-value').textContent=p.unit==='items'?`${received}/${total}`:`${ratio}%${p.speed?' · '+formatSize(p.speed)+'/s':''}`}else $('#progress-value').textContent=p.speed?formatSize(p.speed)+'/s':formatSize(received);if(total&&received>=total)setTimeout(()=>{if(progressRevision===revision)box.hidden=true},1200)});api?.onState?.(snapshot=>{state=snapshot;renderState()});
+api?.onNotifications?.(value=>applyNotifications(value));
+api?.onNotificationPopups?.(list=>{for(const payload of list||[])showNotificationPopup(payload?.entry||payload)});
+$('#notification-button').onclick=event=>{event.stopPropagation();toggleNotificationPanel()};
+$('#notification-read-all').onclick=()=>call('readNotifications',{}, {silent:true}).then(applyNotifications).catch(()=>{});
+$('#notification-clear').onclick=()=>call('clearNotifications',{}, {silent:true}).then(applyNotifications).catch(()=>{});
+document.addEventListener('pointerdown',event=>{if(!event.target.closest('#notification-center'))toggleNotificationPanel(false)});
+document.addEventListener('keydown',event=>{if(event.key==='Escape')toggleNotificationPanel(false)});
+window.addEventListener('scroll',()=>toggleNotificationPanel(false));
+call('notifications',{}, {silent:true,foreground:false}).then(applyNotifications).catch(()=>{});
+(async()=>{try{await loadState();await Promise.all([loadDownloads(),loadCategories()])}catch(e){notify(e?.message||'初始化失败，请重新启动应用。',true)}})();
 
 async function showHotkeys(mod){
   try{
@@ -334,7 +381,7 @@ function renderHashPreview(dialog,panel,result){
     try{
       const batch=await call('applyHash',{token:result.token},{reload:true});
       hashPreview=null;hashInputs={old:'',new:''};
-      notice(`已替换 ${batch.count} 处；可在“替换记录”查看，或在“回溯记录”换回替换前。`);
+      notify(`已替换 ${batch.count} 处；可在“替换记录”查看，或在“回溯记录”换回替换前。`);
       hashTab='records';renderHashPanel(dialog);
     }catch{button.disabled=false}
   });
@@ -364,7 +411,7 @@ function confirmHashRollback(dialog,panel,batch){
   $('.hash-rollback-cancel',box).onclick=()=>renderHashPanel(dialog);
   $('.hash-rollback-confirm',box).onclick=async event=>{
     const button=event.currentTarget;button.disabled=true;
-    try{await call('rollbackHash',{id:batch.id},{reload:true});notice('已回溯到该批次替换前的文件。');renderHashPanel(dialog)}
+    try{await call('rollbackHash',{id:batch.id},{reload:true});notify('已回溯到该批次替换前的文件。');renderHashPanel(dialog)}
     catch{button.disabled=false}
   };
 }
@@ -416,14 +463,14 @@ async function chooseLibraryFolder({subtitle,onConfirm}){
 
 function renameMod(mod){
  modal('修改模组名称','只修改显示名称，文件、分类、来源和启用状态保持不变。',`<div class="field"><label for="mod-name">模组名称</label><input id="mod-name" maxlength="200" value="${esc(mod.name)}" autofocus></div>`,'<button class="button secondary" value="cancel">取消</button><button class="button primary" type="button" id="rename-confirm">保存</button>');
- $('#rename-confirm').onclick=async()=>{const name=$('#mod-name').value.trim();if(!name)return notice('请输入模组名称。',true);const result=await mutate('rename',{id:mod.id,name});if(result)closeModal();};
+ $('#rename-confirm').onclick=async()=>{const name=$('#mod-name').value.trim();if(!name)return notify('请输入模组名称。',true);const result=await mutate('rename',{id:mod.id,name});if(result)closeModal();};
 }
 function hideContextMenu(){$('#context-menu').hidden=true;$('#help-tooltip').hidden=true;}
 function openModFolder(mod,kind){call('openModFolder',{id:mod.id,kind}).catch(()=>{});}
 function showFolderContext(event,node){
  event.preventDefault();event.stopPropagation();const menu=$('#context-menu');$$('.mod-context-action',menu).forEach(b=>b.remove());$('#context-refresh').hidden=true;
  const b=document.createElement('button');b.type='button';b.className='mod-context-action';b.setAttribute('role','menuitem');b.textContent='删除空文件夹';b.disabled=busyCount>0;
- b.onclick=()=>{hideContextMenu();call('removeLibraryFolder',{id:node.id},{reload:true}).then(()=>notice(`已删除空文件夹「${node.name}」。`)).catch(()=>{})};
+ b.onclick=()=>{hideContextMenu();call('removeLibraryFolder',{id:node.id},{reload:true}).then(()=>notify(`已删除空文件夹「${node.name}」。`)).catch(()=>{})};
  menu.append(b);menu.hidden=false;menu.dataset.scrollX=scrollX;menu.dataset.scrollY=scrollY;menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-170))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-menu.offsetHeight-8))+'px';b.focus({preventScroll:true});
 }
 function showModContext(event,mod){
@@ -433,7 +480,7 @@ function showModContext(event,mod){
  menu.hidden=false;menu.dataset.scrollX=scrollX;menu.dataset.scrollY=scrollY;menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-170))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-menu.offsetHeight-8))+'px';$('.mod-context-action',menu)?.focus({preventScroll:true});
 }
 function refreshPage(){hideContextMenu();if(activePage==='workshop')return loadCategories();if(activePage==='downloads')return loadDownloads();return loadState();}
-$('#context-refresh').onclick=()=>refreshPage().catch(e=>notice(e.message,true));
+$('#context-refresh').onclick=()=>refreshPage().catch(e=>notify(e.message,true));
 document.addEventListener('contextmenu',event=>{
  if(event.target.closest('button,input,select,textarea,a,article,dialog,.sidebar,.library-thumb,.folder-card,.category'))return;
  event.preventDefault();const menu=$('#context-menu');$$('.mod-context-action',menu).forEach(b=>b.remove());$('#context-refresh').hidden=false;menu.hidden=false;menu.dataset.scrollX=scrollX;menu.dataset.scrollY=scrollY;menu.style.left=Math.min(event.clientX,innerWidth-170)+'px';menu.style.top=Math.min(event.clientY,innerHeight-55)+'px';$('#context-refresh').focus({preventScroll:true});
@@ -460,7 +507,7 @@ new MutationObserver(prepareHints).observe(document.body,{childList:true,charact
 function showHelp(event){const el=event.target.closest('.help-note,[data-tip-text]');if(!el)return;const tip=$('#help-tooltip'),host=el.closest('dialog')||document.body;if(tip.parentElement!==host)host.append(tip);tip.textContent=el.dataset.tipText||el.textContent;tip.hidden=false;const r=el.getBoundingClientRect();tip.style.left=Math.max(8,Math.min(r.left,innerWidth-370))+'px';tip.style.top=Math.min(r.bottom+8,innerHeight-tip.offsetHeight-8)+'px';}
 document.addEventListener('pointerover',showHelp);document.addEventListener('focusin',showHelp);
 document.addEventListener('pointerout',event=>{if(event.target.closest('.help-note,[data-tip-text]'))$('#help-tooltip').hidden=true;});document.addEventListener('focusout',()=>$('#help-tooltip').hidden=true);
-$('#app-background').onerror=()=>{const img=$('#app-background');if(img.getAttribute('src')!=='home-background.jpg'){img.src='home-background.jpg';notice('自定义背景无法读取，已使用默认背景。',true);}};
+$('#app-background').onerror=()=>{const img=$('#app-background');if(img.getAttribute('src')!=='home-background.jpg'){img.src='home-background.jpg';notify('自定义背景无法读取，已使用默认背景。',true);}};
 document.documentElement.dataset.mode='launcher';
 document.documentElement.dataset.page='home';
 
@@ -472,10 +519,8 @@ function renderSoftwareUpdate(value){
  const action=$('#software-action');action.hidden=!['available','ready','recovery'].includes(u.status)&&!(u.status==='error'&&u.update);action.disabled=working;action.textContent=u.status==='ready'?'重启并更新':u.status==='recovery'?'恢复旧程序并重启':'下载更新';
  $('#software-progress').hidden=!['downloading','preparing'].includes(u.status);const bar=$('#software-progress-bar');bar.max=u.total||1;if(u.total)bar.value=u.received||0;else bar.removeAttribute('value');$('#software-progress-text').textContent=formatSize(u.received||0)+(u.total?' / '+formatSize(u.total):'');
  $('#software-notes').hidden=!u.update?.notes;$('#software-notes-text').textContent=u.update?.notes||'';
- $('#app-update-banner').hidden=!['available','ready','recovery'].includes(u.status);$('#app-update-banner-text').textContent=labels[u.status]||'';
 }
 $('#software-check').onclick=async()=>{try{renderSoftwareUpdate(await call('checkAppUpdate',{}, {foreground:false,silent:true}));}catch(e){renderSoftwareUpdate({...softwareUpdate,status:'error',error:e.message});}};
 $('#software-action').onclick=async()=>{try{if(['ready','recovery'].includes(softwareUpdate.status))await call('installAppUpdate',{}, {foreground:false});else renderSoftwareUpdate(await call('downloadAppUpdate',{}, {foreground:false,silent:true}));}catch(e){if(!['ready','recovery'].includes(softwareUpdate.status))renderSoftwareUpdate({...softwareUpdate,status:'error',error:e.message});}};
-$('#view-app-update').onclick=()=>{showPage('settings');$('#software-update-card').scrollIntoView({block:'start'});};
 $('#auto-check-app-updates').onchange=e=>mutate('settings',{autoCheckAppUpdates:e.target.checked});
 api?.onAppUpdate?.(renderSoftwareUpdate);api?.call('appUpdateState').then(renderSoftwareUpdate).catch(()=>{});

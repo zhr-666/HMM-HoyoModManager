@@ -29,6 +29,15 @@
   <div id="help-tooltip" class="help-tooltip" role="tooltip" hidden></div>
   <div id="context-menu" class="context-menu" role="menu" hidden><button id="context-refresh" role="menuitem" type="button"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>　刷新</button></div>
   <div id="download-toast" class="download-toast" role="status" aria-live="polite" hidden></div>
+  <div id="notification-popups" class="notification-popups" aria-live="polite"></div>
+  <section id="notification-center" class="notification-center">
+    <div id="notification-panel" class="notification-panel" role="region" aria-label="通知中心" hidden>
+      <div class="notification-panel-head"><strong>通知中心</strong><div class="row-actions"><button type="button" class="link-button" id="notification-read-all">全部已读</button><button type="button" class="link-button" id="notification-clear">全部清除</button></div></div>
+      <div id="notification-list" class="notification-list"></div>
+      <p id="notification-empty" class="notification-empty">还没有消息。</p>
+    </div>
+    <button type="button" id="notification-button" class="notification-button" aria-label="通知中心" aria-expanded="false" title="通知中心"><span aria-hidden="true">🔔</span><span id="notification-badge" class="notification-badge" hidden>0</span></button>
+  </section>
   <div class="window-titlebar" aria-hidden="true"></div>
   <div class="app-shell">
     <aside class="sidebar">
@@ -54,8 +63,6 @@
         <div><h1 id="page-title">首页</h1><p id="page-subtitle">准备好下一次冒险</p></div>
         <div class="top-actions"><button class="button secondary" id="open-library-button" hidden>安装库</button><button class="button secondary" id="open-mods-button" hidden>启用库</button><button class="button secondary" id="replace-hash" hidden>替换 Hash</button></div>
       </header>
-<div id="app-update-banner" class="notice app-update-banner" hidden><span id="app-update-banner-text"></span><button class="link-button" id="view-app-update">查看更新</button></div>
-      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
       <div id="progress" class="progress" aria-live="polite" hidden><div><span id="progress-label">处理中…</span><span id="progress-value"></span></div><progress id="progress-bar"></progress></div>
 
       <section id="page-home" class="page active launcher-page" data-testid="home-page">

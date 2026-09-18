@@ -4,7 +4,7 @@ const {_electron}=require(process.env.PLAYWRIGHT_MODULE||'playwright'),assert=re
  try{
   const page=await app.firstWindow(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(()=>{
-   window.hoyo={onDependency:fn=>window.emitDependency=fn,onState(){},onDownloads(){},onNotice(){},onProgress(){},call:async(action,p)=>{
+   window.hoyo={onDependency:fn=>window.emitDependency=fn,onState(){},onDownloads(){},onNotifications(){},onNotificationPopups(){},onProgress(){},call:async(action,p)=>{
     if(action==='state')return {settings:{modsPath:'C:/GIMI/Mods'},mods:[],presets:[],runtime:{platform:'win32'}};
     if(action==='libraryStats')return {totalBytes:0};if(['taxonomy','downloads'].includes(action))return [];if(action==='browse')return {records:[]};
     if(action==='openDependency')return {sourceId:485763};

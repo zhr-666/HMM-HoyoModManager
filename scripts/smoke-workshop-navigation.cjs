@@ -6,7 +6,7 @@ const {_electron}=require(process.env.PLAYWRIGHT_MODULE||'playwright'),assert=re
  await page.addInitScript(()=>{
   const state={settings:{modsPath:'C:/GIMI/Mods'},mods:[{id:'a',name:'Installed A',characterId:'local',characterName:'本地',sourceId:1,active:true}],presets:[],runtime:{platform:'win32'}},pending=new Map();let serial=0,emit;
   window.testCalls=[];
-  window.hoyo={onDependency:fn=>emit=fn,onState(){},onDownloads(){},onProgress(){},onNotice(){},call:async(action,p)=>{
+  window.hoyo={onDependency:fn=>emit=fn,onState(){},onDownloads(){},onProgress(){},onNotifications(){},onNotificationPopups(){},call:async(action,p)=>{
    testCalls.push({action,p});if(action==='state')return structuredClone(state);if(action==='taxonomy'||action==='downloads')return [];if(action==='libraryStats')return {totalBytes:100};
    if(action==='browse')return new Promise(resolve=>window.finishBrowse=()=>resolve({records:[{id:1,name:'Mod 1',preview:'https://images.gamebanana.com/test.png'}],hasMore:false}));
    if(action==='detail')return {id:p.id,name:'Mod '+p.id,author:'Author',characterId:'local',characterName:'本地',images:['https://images.gamebanana.com/test.png'],description:'介绍 '.repeat(400),files:[{id:10,name:'one.zip'},{id:20,name:'two.zip'}]};
