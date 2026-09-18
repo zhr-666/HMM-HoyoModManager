@@ -164,6 +164,7 @@ async function main(){
   const failedId=await evaluate('window.hoyo.call("notifications").then(s=>s.entries.find(e=>e.text.includes("后台任务失败")).id)');
   await evaluate(`document.querySelector('.notification-item[data-notification-id="${failedId}"] .notification-item-remove').click()`);
   await waitFor(`window.hoyo.call("notifications").then(s=>!s.entries.some(e=>e.text.includes("后台任务失败")))`,'单条删除');
+  await waitFor(`[...document.querySelectorAll('.notification-item')].filter(item=>item.textContent.includes(${quoted(failed)})).length===0`,'列表移除删除的消息');
   assert.equal(await itemCount(failed),0,'列表里也应移除');
   assert.ok((await historyTexts()).includes(done),'其他消息不应被删除');
   await sleep(300);
