@@ -1,6 +1,7 @@
 const {_electron}=require(process.env.PLAYWRIGHT_MODULE||'playwright'),assert=require('node:assert/strict'),path=require('node:path');
 (async()=>{const app=await _electron.launch({executablePath:require('electron'),args:[path.join(__dirname,'renderer-harness.cjs')]});try{
  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1260,860));const page=await app.firstWindow(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const gotoPage=async name=>{const t=page.locator(`[data-page="${name}"]:visible`).first();if(await t.count())return t.click();await page.evaluate(n=>showPage(n),name)};
  await page.route('https://images.gamebanana.com/**',r=>r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#bacde0"/></svg>'}));
  await page.addInitScript(()=>{
   const state={settings:{modsPath:'C:/GIMI/Mods'},mods:[{id:'a',name:'Installed A',characterId:'local',characterName:'本地',sourceId:1,active:true}],presets:[],runtime:{platform:'win32'}},pending=new Map();let serial=0,emit;
@@ -18,7 +19,7 @@ const {_electron}=require(process.env.PLAYWRIGHT_MODULE||'playwright'),assert=re
  });
  await page.goto(require('node:url').pathToFileURL(path.resolve(__dirname,'../src/ui/index.html')).href);
  await require('node:fs/promises').mkdir(path.join(__dirname,'../test-results'),{recursive:true});
- await page.locator('[data-page=workshop]').click();await page.locator('.mod-skeleton').first().waitFor({state:'visible'});assert.equal(await page.locator('#browse-grid').getAttribute('aria-busy'),'true');await page.waitForFunction(()=>getComputedStyle(document.querySelector('#page-workshop')).opacity==='1');await page.screenshot({path:path.join(__dirname,'../test-results/workshop-skeleton-093.png')});await page.evaluate(()=>finishBrowse());
+ await gotoPage('workshop');await page.locator('.mod-skeleton').first().waitFor({state:'visible'});assert.equal(await page.locator('#browse-grid').getAttribute('aria-busy'),'true');await page.waitForFunction(()=>getComputedStyle(document.querySelector('#page-workshop')).opacity==='1');await page.screenshot({path:path.join(__dirname,'../test-results/workshop-skeleton-093.png')});await page.evaluate(()=>finishBrowse());
  await page.locator('.detail').click();await page.waitForFunction(()=>document.querySelector('#modal-title').textContent==='Mod 1');
  assert.equal(await page.locator('#modal-body').evaluate(el=>el.querySelector('.detail-images').compareDocumentPosition(el.querySelector('.description'))&Node.DOCUMENT_POSITION_FOLLOWING),4);
  await page.locator('#modal input[value="20"]').check();await page.locator('#modal-body').evaluate(el=>el.scrollTop=70);const scroll=await page.locator('#modal-body').evaluate(el=>el.scrollTop);
@@ -29,10 +30,12 @@ const {_electron}=require(process.env.PLAYWRIGHT_MODULE||'playwright'),assert=re
  await page.locator('#modal .dialog-back').click();await page.locator('#dependency-modal .dialog-back').click();assert.equal(await page.locator('#modal-title').textContent(),'Mod 2');await page.locator('#modal .dialog-back').click();
  assert.equal(await page.locator('#dependency-continue').textContent(),'重新检查');await page.locator('#dependency-continue').click();await page.locator('#dependency-modal').waitFor({state:'visible'});assert.equal(await page.locator('#dependency-continue').textContent(),'仍然继续');await page.locator('#dependency-cancel').click();
  assert.equal(await page.locator('#modal-title').textContent(),'Mod 1');assert.equal(await page.locator('#modal input[value="20"]').isChecked(),true);assert.equal(await page.locator('#modal-body').evaluate(el=>el.scrollTop),scroll);
- await page.locator('#modal .dialog-back').click();await page.locator('[data-page=library]').click();await page.locator('.folder-card').first().click();
+ await page.locator('#modal .dialog-back').click();await gotoPage('library');await page.locator('.folder-card').first().click();
  const item=page.locator('.library-item').first();assert.equal(await item.locator('.rename,.remove,.source').count(),0);await item.click({button:'right'});await page.getByRole('menuitem',{name:'重命名',exact:true}).click();assert.equal(await page.locator('#modal-title').textContent(),'修改模组名称');await page.locator('#modal .dialog-back').click();
  await item.locator('.hotkeys').click();assert.deepEqual(await page.locator('.hotkey-overview kbd').allTextContents(),['X','CTRL Y','Z']);assert.ok(!(await page.locator('.hotkey-overview').textContent()).includes('Something'));await page.locator('#modal .dialog-back').click();
  await page.locator('#open-library-button').click();assert.ok(await page.evaluate(()=>testCalls.some(c=>c.action==='openLibrary')));
- assert.ok((await page.locator('.sidebar').boundingBox()).width<=80);assert.equal(await page.locator('.nav-item').first().getAttribute('title'),'首页');assert.ok((await page.locator('.settings-nav').boundingBox()).y<400);
- assert.deepEqual(errors,[]);console.log('Workshop navigation passed: skeletons, image-first details, five preserved layers, back/selection/scroll, fresh recheck, context menu, hotkey overview and compact sidebar.');
+ assert.ok((await page.locator('.sidebar').boundingBox()).width<=80);assert.equal(await page.locator('.rail-workspace .game-tile').first().getAttribute('id'),'rail-back');
+ const railBack=await page.locator('#rail-back').boundingBox(),settings=await page.locator('.settings-nav').boundingBox();
+ assert.ok(railBack.y<settings.y&&settings.y<800,'工作空间侧栏：返回启动器在最上，设置在底部');
+ assert.deepEqual(errors,[]);console.log('Workshop navigation passed: skeletons, image-first details, five preserved layers, back/selection/scroll, fresh recheck, context menu, hotkey overview and compact launcher rail.');
  }finally{await app.close();}})().catch(e=>{console.error(e);process.exitCode=1});

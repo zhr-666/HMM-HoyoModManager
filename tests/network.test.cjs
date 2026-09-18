@@ -114,3 +114,17 @@ test('unsolicited partial response never becomes a resumable prefix',async t=>{
  network.setFetch(async()=>new Response('def',{status:206,headers:{'content-length':'3','content-range':'bytes 3-5/6',etag:'"v1"','accept-ranges':'bytes'}}));
  await assert.rejects(network.download('https://gamebanana.com/file.zip',dest,undefined,undefined,{expectedSize:6,retryDelayMs:0}),/分段/);await assert.rejects(fs.access(dest));
 });
+
+test('official launcher background sources are trusted, lookalike and plaintext hosts are not', async (t) => {
+  // 启动器背景只从米哈游官方接口与静态站获取；其余主机仍按可信来源拒绝。
+  assert.equal(network.allowed('https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1'), 'https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1');
+  assert.equal(network.allowed('https://launcher-webstatic.mihoyo.com/launcher-public/2026/07/22/bg.webp'), 'https://launcher-webstatic.mihoyo.com/launcher-public/2026/07/22/bg.webp');
+  for (const url of ['https://hyp-api.mihoyo.com.evil.example/bg.webp', 'https://evil.example/launcher-webstatic.mihoyo.com/bg.webp', 'http://launcher-webstatic.mihoyo.com/bg.webp', 'https://user:pass@launcher-webstatic.mihoyo.com/bg.webp']) {
+    assert.throws(() => network.allowed(url), /可信来源/, url);
+  }
+  t.after(() => network.setFetch(globalThis.fetch));
+  const destination = await temp(t);
+  network.setFetch(async () => new Response(null, { status: 302, headers: { location: 'https://hyp-api.mihoyo.com.evil.example/bg.webp' } }));
+  await assert.rejects(network.download('https://launcher-webstatic.mihoyo.com/bg.webp', destination), /可信来源/);
+  await assert.rejects(fs.access(destination));
+});

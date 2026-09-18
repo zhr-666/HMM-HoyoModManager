@@ -30,7 +30,7 @@
 
 1. **基础检查**：代码、依赖或构建配置变化时运行 `pnpm check`。纯文档修改检查内容、链接和差异即可。
 2. **专项回归**：修改业务行为时补充正常、失败、取消或恢复路径中相关的测试；缺陷修复先获得复现证据。
-3. **界面与集成**：UI/IPC 变更按影响范围运行现有 `scripts/smoke-*.cjs`。例如首页用 `node scripts/smoke-home.cjs`，详情竞态用 `node scripts/smoke-detail-race.cjs`，工坊导航用 `node scripts/smoke-workshop-navigation.cjs`，更新界面用 `node scripts/smoke-app-update.cjs`。全量界面回归还需 renderer、desktop、management、queue 和 dependency-queue 脚本。
+3. **界面与集成**：UI/IPC 变更按影响范围运行现有 `scripts/smoke-*.cjs`。例如首页用 `node scripts/smoke-home.cjs`，详情竞态用 `node scripts/smoke-detail-race.cjs`，工坊导航用 `node scripts/smoke-workshop-navigation.cjs`，更新界面用 `node scripts/smoke-app-update.cjs`，本机库文件夹与导入存放位置用 `node scripts/smoke-library-folders.cjs`（该脚本通过 Electron 远程调试端口驱动界面，不依赖 Playwright，但需要图形会话）。全量界面回归还需 renderer、desktop、management、queue 和 dependency-queue 脚本。
 4. **产物检查**：发布前构建当前源码，验证 Windows 包内容及实际 ZIP 的更新准备流程。
 5. **Windows 实机**：按 [验收说明](acceptance.md) 验证启动、文件替换与恢复、游戏和 GIMI 行为。macOS 单元测试及模拟界面不能代替这些结果。
 

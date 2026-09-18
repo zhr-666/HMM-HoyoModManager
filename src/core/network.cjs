@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
-const ALLOWED = ['gamebanana.com', 'github.com', 'api.github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'];
+const ALLOWED = ['gamebanana.com', 'github.com', 'api.github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com', 'hyp-api.mihoyo.com', 'launcher-webstatic.mihoyo.com'];
 const MAX_DOWNLOAD = 2 * 1024 ** 3;
 let fetchTransport = globalThis.fetch;
 

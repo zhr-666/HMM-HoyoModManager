@@ -11,6 +11,7 @@ async function waitTask(page,id,timeout=30000){const started=Date.now();while(Da
   const modsPath=path.join(data,'GIMI','Mods');await fs.mkdir(modsPath,{recursive:true});await fs.writeFile(path.join(data,'GIMI','d3dx.ini'),'[Include]');await lib.settings({modsPath});
   const archive=path.join(data,'test.zip'),bin=require('../src/core/archive.cjs').archiver();await fs.chmod(bin,0o755);await promisify(execFile)(bin,['a','-tzip',archive,'mod.ini'],{cwd:input});
   app=await _electron.launch({executablePath:require('electron'),args:[path.resolve(__dirname,'..')],env:{...process.env,HOYOMOD_DATA:data}});let page=await app.firstWindow();await page.waitForFunction(()=>!!window.hoyo);
+  const gotoPage=async name=>{const t=page.locator(`[data-page="${name}"]:visible`).first();if(await t.count())return t.click();await page.evaluate(n=>showPage(n),name)};
   if(process.env.HOYOMOD_LIVE_TEST==='1'){
    const queued=await page.evaluate(()=>window.hoyo.call('install',{sourceId:710045,fileId:1798090,characterId:'19498',characterName:'Raiden Shogun'}));assert.equal(queued.queued,true);
    const row=await waitTask(page,queued.id,240000);assert.equal(row.status,'installed',row.error);console.log('Live queued GameBanana download and installation passed.');
@@ -36,8 +37,8 @@ async function waitTask(page,id,timeout=30000){const started=Date.now();while(Da
    await page.evaluate(()=>window.hoyo.call('clearDownloads'));assert.deepEqual((await page.evaluate(()=>window.hoyo.call('downloads'))).map(r=>r.id),[first.id]);
    await page.evaluate(id=>window.hoyo.call('enable',{id}),mod.id);
    await page.evaluate(()=>window.hoyo.call('settings',{theme:'dark'}));assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
-   await page.locator('[data-page="library"]').click();assert.equal(await page.locator('#progress').isVisible(),false);assert.equal(await page.locator('#replace-hash').isDisabled(),false);
-   await page.locator('[data-page="downloads"]').click();await page.locator('.download-progress').waitFor();
+   await gotoPage('library');assert.equal(await page.locator('#progress').isVisible(),false);assert.equal(await page.locator('#replace-hash').isDisabled(),false);
+   await gotoPage('downloads');await page.locator('.download-progress').waitFor();
    const out=path.resolve(__dirname,'../test-results');await fs.mkdir(out,{recursive:true});await page.screenshot({path:path.join(out,'downloads-dark.png'),fullPage:true});
    await app.evaluate(()=>globalThis.__queueRelease());
    await waitTask(page,first.id);

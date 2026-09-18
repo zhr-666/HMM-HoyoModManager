@@ -120,7 +120,7 @@ test('known roles cannot bypass an unresolved active skin in another subcategory
 test('initializes defaults and snapshot is a deep clone', async (t) => {
   const { library } = await fixture(t);
   const snapshot = library.snapshot();
-  assert.deepEqual(snapshot, { currentPresetId:null, settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], presets: [] });
+  assert.deepEqual(snapshot, { currentPresetId:null, settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], folders: [], presets: [] });
   snapshot.settings.autoEnable = true;
   assert.equal(library.snapshot().settings.autoEnable, false);
 });
@@ -618,4 +618,75 @@ test('local imports reject a nested ShaderFixes folder as well',async t=>{
  await fs.writeFile(path.join(folder,'Amber','Amber.ini'),'[TextureOverride]');await fs.writeFile(path.join(folder,'Amber','shaderfixes','fix.fx'),'// shader');
  await assert.rejects(library.importLocal(folder,{name:'Local shader',target}),/shaderfixes.*手动安装/s);
  assert.deepEqual(library.snapshot().mods,[]);
+});
+
+const amberFolder={characterId:'19513',characterName:'胡桃',rootCategoryId:'17510',rootCategoryName:'Skins',characterGroupId:'19513'};
+const folderDir=library=>path.join(library.libraryRoot,...library.snapshot().folders[0].libraryPath.split('/'));
+
+test('creating a character folder makes a real empty folder, stays idempotent and survives a restart',async t=>{
+ const {library,modFolder}=await fixture(t);
+ await assert.rejects(library.createFolder({characterId:'19513',characterName:'胡桃'}),/缺少分类信息/);
+ const created=await library.createFolder(amberFolder);
+ assert.equal(created.folders.length,1);
+ const target=folderDir(library);
+ assert.ok((await fs.stat(target)).isDirectory());
+ assert.deepEqual(await fs.readdir(target),[]);
+ const again=await library.createFolder({...amberFolder,characterName:'Hu Tao'});
+ assert.deepEqual(again.folders,created.folders);
+ const reopened=new Library(library.root);await reopened.init();
+ assert.deepEqual(reopened.snapshot().folders,created.folders);
+ const mod=await library.install(await modFolder('unused'),meta('Unused'));
+ assert.equal(mod.folder.startsWith(target),false);
+});
+
+test('a download lands in the folder created for its character even when the label differs',async t=>{
+ const {library,modFolder}=await fixture(t);
+ await library.createFolder(amberFolder);
+ const target=folderDir(library);
+ const mod=await library.install(await modFolder('gb-hutao'),{name:'GB 胡桃',characterId:'19513',characterName:'Hu Tao',characterGroupId:'19513',rootCategoryId:'17510',rootCategoryName:'Skins'});
+ assert.equal(path.dirname(mod.folder),target);
+ assert.equal(mod.libraryPath,library.snapshot().folders[0].libraryPath+'/'+path.basename(mod.folder));
+});
+
+test('a local mod imported into a character folder counts as that character and is mutually exclusive',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ await library.createFolder(amberFolder);
+ const target=path.join(modsPath,'HoYoModManaged','BufferValues');
+ const local=await library.importLocal(await modFolder('local-hutao'),{name:'本地胡桃',target,...amberFolder});
+ assert.equal(local.characterId,'19513');
+ assert.equal(local.characterGroupId,'19513');
+ assert.equal(local.active,true);
+ assert.equal(path.dirname(local.folder),folderDir(library));
+ const downloaded=await library.install(await modFolder('gb-hutao'),{name:'下载胡桃',characterId:'19513',characterName:'胡桃',characterGroupId:'19513',rootCategoryId:'17510',rootCategoryName:'Skins'});
+ await library.enable(downloaded.id);
+ const active=library.snapshot().mods.filter(mod=>mod.active);
+ assert.deepEqual(active.map(mod=>mod.id),[downloaded.id]);
+ assert.equal(library.snapshot().mods.find(mod=>mod.id===local.id).characterGroupId,'19513');
+});
+
+test('unclassified local imports stay out of character exclusivity',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const target=path.join(modsPath,'HoYoModManaged','BufferValues');
+ const first=await library.importLocal(await modFolder('plain-one'),{name:'普通一',target});
+ const second=await library.importLocal(await modFolder('plain-two'),{name:'普通二',target});
+ assert.equal(first.characterId.startsWith('local:'),true);
+ assert.equal(second.characterId.startsWith('local:'),true);
+ assert.deepEqual(library.snapshot().mods.filter(mod=>mod.active).map(mod=>mod.id).sort(),[first.id,second.id].sort());
+});
+
+test('removing a folder is refused while it holds mods or hand-placed files, and deletes only the empty folder',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ await library.createFolder(amberFolder);
+ const target=folderDir(library);
+ await fs.writeFile(path.join(target,'手动说明.txt'),'keep');
+ await assert.rejects(library.removeFolder('19513'),/其他文件/);
+ assert.ok((await fs.stat(target)).isDirectory());
+ await fs.rm(path.join(target,'手动说明.txt'));
+ const mod=await library.install(await modFolder('holder'),{name:'Holder',characterId:'19513',characterName:'胡桃',characterGroupId:'19513',rootCategoryId:'17510',rootCategoryName:'Skins'});
+ await assert.rejects(library.removeFolder('19513'),/还有模组/);
+ await library.remove(mod.id);
+ await library.removeFolder('19513');
+ assert.deepEqual(library.snapshot().folders,[]);
+ await assert.rejects(fs.access(target));
+ await assert.rejects(library.removeFolder('19513'),/找不到/);
 });

@@ -4,6 +4,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
  const app=await _electron.launch({executablePath:require('electron'),args:[path.join(__dirname,'renderer-harness.cjs')]});
  try{
   const page=await app.firstWindow();await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(1280,900));
+  const gotoPage=async name=>{const t=page.locator(`[data-page="${name}"]:visible`).first();if(await t.count())return t.click();await page.evaluate(n=>showPage(n),name)};
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('https://images.gamebanana.com/**',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="600" height="450"><rect width="600" height="450" fill="#c5d9e4"/><circle cx="300" cy="210" r="125" fill="#9caebf"/><path d="M0 400L180 240L330 400L460 260L600 450H0" fill="#778c9b"/></svg>'}));
   await page.addInitScript(()=>{
@@ -36,22 +37,25 @@ const path=require('node:path'),assert=require('node:assert/strict');
   });
   assert.ok(labelLines.every(lines=>lines<=1),'action button labels must stay on one line');
   assert.equal(await page.locator('.sidebar .brand').count(),0);
-  assert.equal(await page.locator('.nav-item').first().getAttribute('data-page'),'home');
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.mode),'launcher');
+  assert.equal(await page.locator('.rail-launcher .game-tile[data-game]').count(),1);
+  assert.equal(await page.locator('.rail-workspace .nav-item:visible').count(),0);
   await page.waitForFunction(()=>document.querySelector('#home-total-size').textContent.includes('GB'));
   assert.match(await page.locator('#home-total-size').textContent(),/^5(?:\.0)? GB$/);
   assert.equal(await page.locator('#home-preset-name').textContent(),'日常探索');
-  assert.deepEqual(await page.locator('#home-game-select option').allTextContents(),['原神']);
+  assert.equal(await page.locator('#game-card-state').textContent(),'模组工作空间已就绪');
   await page.locator('#launch-button').click();assert.ok(await page.evaluate(()=>calls.some(c=>c.action==='launch')));
   await require('node:fs/promises').mkdir(path.resolve(__dirname,'../test-results'),{recursive:true});
   await page.screenshot({path:path.resolve(__dirname,'../test-results/home-light.png')});
   for(const name of ['workshop','presets','downloads','settings','library']){
-   await page.locator(`[data-page="${name}"]`).click();assert.equal(await page.locator('#launch-button').isVisible(),false);
+   await gotoPage(name);assert.equal(await page.locator('#launch-button').isVisible(),false);
   }
   assert.equal(await page.locator('[data-testid="installed-mod"]').count(),0);
   await page.locator('.folder-card').filter({hasText:'Skins'}).click();assert.equal(await page.locator('[data-testid="installed-mod"]').count(),0);
   await page.locator('.folder-card').filter({hasText:'Characters'}).click();assert.equal(await page.locator('[data-testid="installed-mod"]').count(),0);
   await page.locator('.folder-card').filter({hasText:'角色 A'}).click();assert.equal(await page.locator('[data-testid="installed-mod"]').count(),5);
-  assert.equal((await page.locator('#library-back').textContent()).trim(),'← 返回');
+  assert.equal((await page.locator('#library-back').textContent()).trim(),'返回');
+  assert.equal(await page.locator('#library-back .icon use').getAttribute('href'),'#i-back');
   assert.ok((await page.locator('.library-thumb').first().boundingBox()).width<100);
   await page.locator('#library-view-grid').click();
   await page.waitForFunction(()=>document.querySelector('#library-grid').dataset.view==='grid');
@@ -62,19 +66,19 @@ const path=require('node:path'),assert=require('node:assert/strict');
   await page.screenshot({path:path.resolve(__dirname,'../test-results/library-grid-light.png')});
   await page.locator('#page-title').click({button:'right'});await page.locator('#context-refresh').click();assert.equal(await page.locator('#library-view-grid').getAttribute('aria-pressed'),'true');
   await page.locator('.mod-switch input').first().uncheck();
-  await page.locator('[data-page="home"]').click();await page.waitForFunction(()=>document.querySelector('#home-preset-name').textContent==='自定义搭配');
-  await page.locator('[data-page="library"]').click();assert.equal(await page.locator('#library-view-grid').getAttribute('aria-pressed'),'true');
+  await gotoPage('home');await page.waitForFunction(()=>document.querySelector('#home-preset-name').textContent==='自定义搭配');
+  await gotoPage('library');assert.equal(await page.locator('#library-view-grid').getAttribute('aria-pressed'),'true');
   await page.locator('#library-view-list').click();await page.waitForFunction(()=>document.querySelector('#library-grid').dataset.view==='list');
   assert.ok((await page.locator('.library-thumb').first().boundingBox()).width<100);
   await page.screenshot({path:path.resolve(__dirname,'../test-results/library-list-light.png')});
-  await page.locator('[data-page="settings"]').click();await page.locator('#theme-select').selectOption('dark');
-  await page.locator('[data-page="home"]').click();await page.screenshot({path:path.resolve(__dirname,'../test-results/home-dark.png')});
-  await page.locator('[data-page="library"]').click();await page.locator('#library-view-grid').click();await page.screenshot({path:path.resolve(__dirname,'../test-results/library-grid-dark.png')});
+  await gotoPage('settings');await page.locator('#theme-select').selectOption('dark');
+  await gotoPage('home');await page.screenshot({path:path.resolve(__dirname,'../test-results/home-dark.png')});
+  await gotoPage('library');await page.locator('#library-view-grid').click();await page.screenshot({path:path.resolve(__dirname,'../test-results/library-grid-dark.png')});
   await page.emulateMedia({reducedMotion:'reduce'});
   for(const width of [980,1280]){
     await app.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setSize(width,900),width);
     for(const name of ['home','library','presets','downloads','settings','workshop']){
-      await page.locator(`[data-page="${name}"]`).click();
+      await gotoPage(name);
       const wrapped=await page.locator('button:visible, a.button:visible, a.link-button:visible').evaluateAll(buttons=>buttons.flatMap(button=>{
         const walker=document.createTreeWalker(button,NodeFilter.SHOW_TEXT);let node;
         while((node=walker.nextNode()))if(node.textContent.trim()){
@@ -86,7 +90,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
       assert.deepEqual(wrapped,[],`${name} at ${width}px: no wrapped button labels`);
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} at ${width}px: no horizontal page overflow`);
     }
-    await page.locator('[data-page="library"]').click();
+    await gotoPage('library');
     await page.screenshot({path:path.resolve(__dirname,`../test-results/library-buttons-${width}.png`)});
   }
   assert.deepEqual(errors,[]);console.log('Home and explorer passed: scoped contents, list/grid geometry, persistent view, preset identity, totals, launch placement, themes, single-line buttons at 980/1280px.');

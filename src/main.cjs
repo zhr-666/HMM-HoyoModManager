@@ -12,6 +12,9 @@ const {findFileUpdate}=require('./core/updates.cjs');
 const {extract}=require('./core/archive.cjs');
 const launcher=require('./core/launcher.cjs');
 protocol.registerSchemesAsPrivileged([{scheme:'hoyo',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
+// 米哈游官方启动器的公开接口；这里只取《原神》的背景图地址。
+const OFFICIAL_BACKGROUND_API='https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1';
+const OFFICIAL_BACKGROUND_GAME='hk4e_cn';
 const root=process.env.HOYOMOD_DATA || path.join(app.isPackaged?path.dirname(app.getPath('exe')):path.dirname(__dirname),'data');
 app.setPath('userData',path.join(root,'session'));
 app.setPath('sessionData',path.join(root,'session'));
@@ -69,6 +72,34 @@ async function enqueueMod(p,old){
   return downloadQueue.add({sourceId:id(old?.sourceId||p.sourceId),fileId:id(p.fileId),...(old?{id:old.id,name:old.name}:{...character(p),...(p.rootCategoryId&&p.rootCategoryName?{rootCategoryId:String(id(p.rootCategoryId)),rootCategoryName:String(p.rootCategoryName).slice(0,100)}:{}),name:p.name?String(p.name).slice(0,200):undefined})});
 }
 
+async function taxonomyRows(){
+  const cache=path.join(root,'taxonomy.json');
+  try{const rows=await api.taxonomy();await fs.writeFile(cache,JSON.stringify(rows));return rows;}
+  catch(e){try{return JSON.parse(await fs.readFile(cache,'utf8'));}catch{throw e;}}
+}
+function categoryPath(nodes,id,parents=[]){
+  for(const node of nodes||[]){
+    const next=[...parents,node];
+    if(String(node.id)===String(id))return next;
+    const found=categoryPath(node.children,id,next);
+    if(found)return found;
+  }
+  return null;
+}
+// 用户选定的库文件夹：优先用已登记的文件夹（离线也能用），否则在 GameBanana 分类树里
+// 查找，取它的顶层大分类作为库内第一层、节点自身作为第二层。
+async function resolveCategory(categoryId){
+  const id=String(categoryId??'').trim();
+  if(!/^\d+$/.test(id))throw new Error('无效的分类编号。');
+  const registered=lib.snapshot().folders.find(folder=>String(folder.id)===id);
+  if(registered)return {characterId:registered.id,characterName:registered.name,rootCategoryId:registered.rootCategoryId,rootCategoryName:registered.rootCategoryName,characterGroupId:registered.characterGroupId??null};
+  const taxonomy=await taxonomyRows(),trail=categoryPath(taxonomy,id);
+  if(!trail)throw new Error('找不到该分类，请联网打开模组工坊刷新分类后重试。');
+  if(trail.length<2)throw new Error('请进入具体角色或子分类后，再选择存放文件夹。');
+  const root=trail[0],node=trail.at(-1),group=require('./core/character-groups.cjs').characterGroups(taxonomy).get(id);
+  return {characterId:id,characterName:String(node.name||''),rootCategoryId:String(root.id),rootCategoryName:String(root.name||''),characterGroupId:group===undefined||group===null?null:String(group)};
+}
+
 async function checkUpdates(automatic=false){
   const mods=lib.snapshot().mods.filter(m=>m.sourceId),result={updates:[],failures:[],unknown:[],checked:0,total:mods.length};
   try{for(const mod of mods){
@@ -109,11 +140,7 @@ const actions={
     try{const rows=await api.categories();await fs.writeFile(cache,JSON.stringify(rows));return rows;}
     catch(e){try{return JSON.parse(await fs.readFile(cache,'utf8'));}catch{throw e;}}
   },
-  taxonomy:async()=>{
-    const cache=path.join(root,'taxonomy.json');
-    try{const rows=await api.taxonomy();await fs.writeFile(cache,JSON.stringify(rows));return rows;}
-    catch(e){try{return JSON.parse(await fs.readFile(cache,'utf8'));}catch{throw e;}}
-  },
+  taxonomy:()=>taxonomyRows(),
   browse:p=>api.list({category:p.category,page:Math.max(1,Math.min(1000,Number(p.page)||1)),query:String(p.query||'').slice(0,100),sort:p.sort,sfw:p.sfw!==false,nsfw:p.nsfw!==false}),
   detail:p=>api.detail(id(p.id)),
   install:p=>exclusive(()=>enqueueMod(p)),
@@ -132,22 +159,35 @@ const actions={
     await downloadQueue.clear(rows.filter(r=>String(r.id).startsWith('legacy:')&&!['queued','downloading','installing'].includes(r.status)).map(r=>r.key));
     return downloadRows();
   },
+  // 手动导入分两步：先选压缩包，再在软件内选择本机库的存放文件夹（importApply）。
   import:p=>exclusive(async()=>{
     await requireMods(lib.snapshot().settings);
     const result=await dialog.showOpenDialog(win,{title:'导入本地 Mod',properties:['openFile'],filters:[{name:'Mod 压缩包',extensions:['zip','7z','rar']}]});
     if(result.canceled)return {cancelled:true};
+    const file=result.filePaths[0];
+    return {file,name:path.basename(file,path.extname(file))};
+  }),
+  importApply:p=>exclusive(async()=>{
+    await requireMods(lib.snapshot().settings);
+    const file=String(p.file||'');
+    if(!path.isAbsolute(file)||!['.zip','.7z','.rar'].includes(path.extname(file).toLowerCase()))throw new Error('请选择 ZIP、7Z 或 RAR 压缩包。');
+    if(!(await fs.stat(file).catch(()=>null))?.isFile())throw new Error('找不到所选压缩包，请重新选择。');
+    const classification=await resolveCategory(p.characterId);
     const target=await dialog.showOpenDialog(win,{title:'选择 Mods 内的安装文件夹',defaultPath:lib.snapshot().settings.modsPath,properties:['openDirectory','createDirectory']});
     if(target.canceled)return {cancelled:true};
     await require('./core/local-deployment.cjs').validateTarget(lib.snapshot().settings.modsPath,target.filePaths[0]);
     const temp=await fs.mkdtemp(path.join(root,'import-'));
     try{
-      await extract(result.filePaths[0],path.join(temp,'unpacked'));
+      await extract(file,path.join(temp,'unpacked'));
       let requirements=[],known=true;try{requirements=await require('./core/dependencies.cjs').scanLocal(path.join(temp,'unpacked'));}catch{known=false;}
-      if(!await dependencyReminder({name:path.basename(result.filePaths[0]),requirements,requirementsKnown:known},true))return {cancelled:true};
-      await lib.importLocal(path.join(temp,'unpacked'),{name:path.basename(result.filePaths[0],path.extname(result.filePaths[0])),target:target.filePaths[0]});
+      if(!await dependencyReminder({name:path.basename(file),requirements,requirementsKnown:known},true))return {cancelled:true};
+      await lib.createFolder(classification);
+      await lib.importLocal(path.join(temp,'unpacked'),{name:path.basename(file,path.extname(file)),target:target.filePaths[0],...classification});
       return snapshot();
     }finally{await fs.rm(temp,{recursive:true,force:true});}
   }),
+  createLibraryFolder:p=>exclusive(async()=>{await lib.createFolder(await resolveCategory(p.characterId));return snapshot();}),
+  removeLibraryFolder:p=>exclusive(async()=>{await lib.removeFolder(p.id);return snapshot();}),
   rename:p=>exclusive(()=>lib.rename(p.id,p.name)),
   enable:p=>exclusive(async()=>{const mod=lib.snapshot().mods.find(m=>m.id===p.id);if(!mod)throw Error('找不到模组');if(!await modDependencies(mod))return snapshot();return changed(()=>lib.enable(p.id));}),
   disable:p=>exclusive(()=>changed(()=>lib.disable(p.id))),
@@ -183,10 +223,22 @@ const actions={
     return snapshot();
   }),
   chooseBackground:()=>exclusive(async()=>{
-    const r=await dialog.showOpenDialog(win,{title:'选择首页背景图片',properties:['openFile'],filters:[{name:'图片',extensions:['jpg','jpeg','png','webp','bmp']}]});
-    if(!r.canceled){const st=await fs.stat(r.filePaths[0]);if(st.size>32*1024**2)throw Error('背景图片请控制在 32 MB 以内。');let img=nativeImage.createFromPath(r.filePaths[0]);if(img.isEmpty())throw Error('无法读取该图片。');if(img.getSize().width>3840)img=img.resize({width:3840});await fs.writeFile(path.join(root,'home-background.jpg'),img.toJPEG(90));await lib.settings({backgroundVersion:require('node:crypto').randomUUID()});}return snapshot();
+    const r=await dialog.showOpenDialog(win,{title:'选择启动器背景图片',properties:['openFile'],filters:[{name:'图片',extensions:['jpg','jpeg','png','webp','bmp']}]});
+    if(!r.canceled){const st=await fs.stat(r.filePaths[0]);if(st.size>32*1024**2)throw Error('背景图片请控制在 32 MB 以内。');let img=nativeImage.createFromPath(r.filePaths[0]);if(img.isEmpty())throw Error('无法读取该图片。');if(img.getSize().width>3840)img=img.resize({width:3840});await fs.rm(path.join(root,'home-background.webp'),{force:true});await fs.writeFile(path.join(root,'home-background.jpg'),img.toJPEG(90));await lib.settings({backgroundVersion:require('node:crypto').randomUUID()});}return snapshot();
   }),
-  resetBackground:()=>exclusive(()=>lib.settings({backgroundVersion:''})),
+  fetchOfficialBackground:()=>exclusive(async()=>{
+    const info=await network.json(OFFICIAL_BACKGROUND_API);
+    const game=(info?.data?.game_info_list||[]).find(item=>item?.game?.biz===OFFICIAL_BACKGROUND_GAME);
+    const url=game?.backgrounds?.map(item=>item?.background?.url).find(Boolean);
+    if(!url)throw Error('米哈游官方启动器当前没有可用的《原神》背景图。');
+    const target=path.join(root,'home-background.webp');
+    await fs.rm(target,{force:true});
+    await network.download(url,target);
+    await fs.rm(path.join(root,'home-background.jpg'),{force:true});
+    await lib.settings({backgroundVersion:require('node:crypto').randomUUID()});
+    return snapshot();
+  }),
+  resetBackground:()=>exclusive(async()=>{await fs.rm(path.join(root,'home-background.jpg'),{force:true});await fs.rm(path.join(root,'home-background.webp'),{force:true});return lib.settings({backgroundVersion:''})}),
   openLibrary:async()=>{const folder=lib.libraryRoot;if(!await fs.stat(folder).then(s=>s.isDirectory(),()=>false))throw Error('本机库文件夹尚未创建，请先安装一个模组。');const error=await shell.openPath(folder);if(error)throw Error(error);},
   openMods:async()=>{await requireMods(lib.snapshot().settings);const error=await shell.openPath(lib.snapshot().settings.modsPath);if(error)throw Error(error);},
   openModFolder:async p=>{
@@ -254,11 +306,15 @@ if(lock)app.whenReady().then(async()=>{
   appUpdater=new (require('./core/app-update.cjs').AppUpdate)({appDir:app.isPackaged?path.dirname(app.getPath('exe')):path.dirname(__dirname),version:app.getVersion(),protectedPaths:()=>[root,lib.snapshot().settings.modsPath,lib.snapshot().settings.launchExe].filter(Boolean),json:network.json,download:network.download,extract,onChange:s=>send('appUpdate',s)});
   await appUpdater.init();
   session.defaultSession.setPermissionRequestHandler((wc,perm,cb)=>cb(false));
-  protocol.handle('hoyo',request=>{
+  protocol.handle('hoyo',async request=>{
     const url=new URL(request.url);
     const name=url.pathname==='/'?'index.html':decodeURIComponent(url.pathname.slice(1));
-    if(url.hostname==='app'&&name==='custom-background')return net.fetch(pathToFileURL(path.join(root,'home-background.jpg')).href);
-    if(url.hostname!=='app'||!['home-background.jpg','index.html','app.js','library-categories.js','dialog-stack.js','style.css'].includes(name))return new Response('Not found',{status:404});
+    if(url.hostname==='app'&&name==='custom-background'){
+      const official=path.join(root,'home-background.webp');
+      const useOfficial=await fs.stat(official).then(s=>s.isFile(),()=>false);
+      return net.fetch(pathToFileURL(useOfficial?official:path.join(root,'home-background.jpg')).href);
+    }
+    if(url.hostname!=='app'||!['home-background.jpg','genshin-icon.png','index.html','app.js','library-categories.js','dialog-stack.js','style.css'].includes(name))return new Response('Not found',{status:404});
     return net.fetch(pathToFileURL(path.join(__dirname,'ui',name)).href);
   });
   win=new BrowserWindow({width:1260,height:860,minWidth:980,minHeight:650,title:'HoYoMod · 原神模组管理',backgroundColor:'#f5f7fa',autoHideMenuBar:true,...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{color:'#00000000',symbolColor:'#202733',height:40}}:{}),webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});

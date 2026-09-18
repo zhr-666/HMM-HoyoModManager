@@ -8,10 +8,21 @@ const {characterGroups}=require('./character-groups.cjs');
 const DEFAULT_STATE = Object.freeze({
   settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
   mods: [],
+  folders: [],
   presets: [],
   currentPresetId: null,
 });
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// 文件夹相对本机库的路径：总分类-哈希/角色或子分类-哈希。名字里带哈希只为防重名，
+// 界面显示的名称来自 GameBanana 分类。
+function validLibraryPath(value){
+  if(typeof value!=='string'||!value)return null;
+  const pieces=value.split('/');
+  if(!pieces.length||pieces.length>3)return null;
+  for(const piece of pieces)if(!piece||piece==='.'||piece==='..'||/[<>:"\\|?*\x00-\x1f]/.test(piece)||/[ .]$/.test(piece))return null;
+  return pieces;
+}
 
 function categoryFolder(name,id) {
   const label=String(name||'未分类').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/^[ .]+|[ .]+$/g,'').slice(0,45)||'未分类';
@@ -92,6 +103,7 @@ class Library {
         this.state = {
           settings: { ...DEFAULT_STATE.settings, ...(saved.settings || {}),autoUpdate:false,autoCheckUpdates:saved.settings?.autoCheckUpdates ?? !!saved.settings?.autoUpdate },
           mods: Array.isArray(saved.mods) ? saved.mods.map((mod) => this._rebaseMod(mod)) : [],
+          folders: Array.isArray(saved.folders) ? saved.folders.filter((folder)=>this._validFolder(folder)) : [],
           presets: Array.isArray(saved.presets) ? saved.presets : [],
           currentPresetId: typeof saved.currentPresetId==='string'?saved.currentPresetId:null,
           ...(Array.isArray(saved.hashBatches)?{hashBatches:saved.hashBatches}:{}),
@@ -139,10 +151,63 @@ class Library {
     });
   }
 
-  async importLocal(folder,{name,target}){
+  // 手动导入：模组副本存进用户选定的本机库文件夹。带分类时按该分类存放，模组算作
+  // 该角色（或子分类）并写进记录；不带分类时保持未分类的本地导入行为。
+  async importLocal(folder,{name,target,characterId,characterName,rootCategoryId,rootCategoryName,characterGroupId}={}){
     const relative=await require('./local-deployment.cjs').validateTarget(this.state.settings.modsPath,target,{create:true});
-    const mod=await this.install(folder,{name,characterId:'local:'+randomUUID(),characterName:path.basename(target),deploymentRelative:relative});
+    const classified=typeof characterId==='string'&&characterId.trim()!=='';
+    if(classified&&(typeof characterName!=='string'||!characterName.trim()))throw Error('缺少角色信息：characterName');
+    const classification=classified?{
+      characterId:characterId.trim(),
+      characterName:characterName.trim(),
+      ...(typeof rootCategoryId==='string'&&rootCategoryId.trim()&&typeof rootCategoryName==='string'&&rootCategoryName.trim()?{rootCategoryId:rootCategoryId.trim(),rootCategoryName:rootCategoryName.trim()}:{}),
+      characterGroupId:characterGroupId===undefined||characterGroupId===null?null:String(characterGroupId),
+    }:{characterId:'local:'+randomUUID(),characterName:path.basename(target)};
+    const mod=await this.install(folder,{name,...classification,deploymentRelative:relative});
     await this.enable(mod.id);return this.snapshot().mods.find(m=>m.id===mod.id);
+  }
+
+  // 按 GameBanana 分类创建空白文件夹。磁盘目录与下载使用的命名公式一致，因此该分类
+  // 之后的下载会自动落进同一个文件夹。
+  createFolder({characterId,characterName,rootCategoryId,rootCategoryName,characterGroupId}={}){
+    return this._enqueue(async()=>{
+      for(const [key,value] of Object.entries({characterId,characterName,rootCategoryId,rootCategoryName})){
+        if(typeof value!=='string'||!value.trim())throw Error(`缺少分类信息：${key}`);
+      }
+      const id=characterId.trim();
+      if(this.state.folders.some((folder)=>String(folder.id)===id))return this.snapshot();
+      const libraryPath=[categoryFolder(rootCategoryName.trim(),rootCategoryId.trim()),categoryFolder(characterName.trim(),id)].join('/');
+      const pieces=validLibraryPath(libraryPath);
+      if(!pieces)throw Error('文件夹名称无效。');
+      await fs.mkdir(path.join(this.libraryRoot,...pieces),{recursive:true});
+      const next=clone(this.state);
+      next.folders=[...(Array.isArray(next.folders)?next.folders:[]),{
+        id,name:characterName.trim(),rootCategoryId:rootCategoryId.trim(),rootCategoryName:rootCategoryName.trim(),
+        characterGroupId:characterGroupId===undefined||characterGroupId===null?null:String(characterGroupId),
+        libraryPath,createdAt:Date.now(),
+      }];
+      await this._writeState(next);this.state=next;return this.snapshot();
+    });
+  }
+
+  // 只删除没有模组、且里面没有用户手放文件的空文件夹。
+  removeFolder(id){
+    return this._enqueue(async()=>{
+      const folder=this.state.folders.find((item)=>String(item.id)===String(id));
+      if(!folder)throw Error('找不到该文件夹。');
+      if(this.state.mods.some((mod)=>String(mod.characterId)===String(folder.id)))throw Error('该文件夹里还有模组，请先移除模组。');
+      const pieces=validLibraryPath(folder.libraryPath);
+      if(!pieces)throw Error('文件夹记录无效。');
+      const target=path.join(this.libraryRoot,...pieces);
+      const entries=await fs.readdir(target).catch(error=>{if(error.code==='ENOENT')return [];throw error;});
+      if(entries.length)throw Error('该文件夹里还有其他文件，程序不会删除，请手动处理。');
+      await fs.rmdir(target).catch(error=>{if(error.code!=='ENOENT')throw error;});
+      const parent=path.dirname(target);
+      if(parent!==this.libraryRoot&&!(await fs.readdir(parent).catch(()=>['x'])).length)await fs.rmdir(parent).catch(()=>{});
+      const next=clone(this.state);
+      next.folders=next.folders.filter((item)=>String(item.id)!==String(id));
+      await this._writeState(next);this.state=next;return this.snapshot();
+    });
   }
 
   updateMetadata(id,patch) {
@@ -163,8 +228,14 @@ class Library {
       if (metadata.id && !old) throw new Error('更新 ID 必须对应现有 Mod');
       const id = old?.id || randomUUID();
       const classification={...old,...metadata};
-      const parent=classification.rootCategoryId&&classification.rootCategoryName
-        ?path.join(this.libraryRoot,categoryFolder(classification.rootCategoryName,classification.rootCategoryId),categoryFolder(old?.characterName||metadata.characterName,old?.characterId||metadata.characterId)):this.libraryRoot;
+      // 用户建过的分类文件夹优先：即使 GameBanana 返回的显示名与建目录时略有差异，
+      // 下载也会进入同一个文件夹。
+      const known=this.state.folders.find((folder)=>String(folder.id)===String(old?.characterId||metadata.characterId));
+      const knownPath=known?validLibraryPath(known.libraryPath):null;
+      const parent=knownPath
+        ?path.join(this.libraryRoot,...knownPath)
+        :classification.rootCategoryId&&classification.rootCategoryName
+          ?path.join(this.libraryRoot,categoryFolder(classification.rootCategoryName,classification.rootCategoryId),categoryFolder(old?.characterName||metadata.characterName,old?.characterId||metadata.characterId)):this.libraryRoot;
       await fs.mkdir(parent,{recursive:true});
       const destination = path.join(parent, `${id}-${randomUUID()}`);
       await fs.cp(path.resolve(folder), destination, { recursive: true, errorOnExist: true, force: false });
@@ -229,8 +300,11 @@ class Library {
     let categories=characterGroups(await readCache('taxonomy.json'));
     const legacy=await readCache('categories.json');
     for(const row of Array.isArray(legacy)?legacy:[])if(!categories.has(String(row.id)))categories.set(String(row.id),String(row.id));
-    for(const mod of mods)if(mod.deploymentRelative===undefined&&mod.characterGroupId!==undefined&&!categories.has(String(mod.characterId)))categories.set(String(mod.characterId),mod.characterGroupId);
-    const unknown=mod=>mod.deploymentRelative===undefined&&!String(mod.characterId).startsWith('local:')&&mod.characterGroupId===undefined&&!categories.has(String(mod.characterId))&&(String(mod.rootCategoryId)==='17510'||mod.rootCategoryName==='Skins');
+    // 未分类的本地导入（local: 前缀）不参与互斥；导入到角色文件夹的本地模组使用真实分类
+    // 编号，与下载的模组同等对待。
+    const local=mod=>String(mod.characterId).startsWith('local:');
+    for(const mod of mods)if(!local(mod)&&mod.characterGroupId!==undefined&&!categories.has(String(mod.characterId)))categories.set(String(mod.characterId),mod.characterGroupId);
+    const unknown=mod=>!local(mod)&&mod.characterGroupId===undefined&&!categories.has(String(mod.characterId))&&(String(mod.rootCategoryId)==='17510'||mod.rootCategoryName==='Skins');
     if(this.resolveTaxonomy&&mods.some(unknown)){
       try{
         const taxonomy=await this.resolveTaxonomy();
@@ -239,7 +313,7 @@ class Library {
       }catch{ /* Unknown roles are rejected below; already classified mods still work offline. */ }
     }
     return new Map(mods.map(mod=>{
-      if(mod.deploymentRelative!==undefined||String(mod.characterId).startsWith('local:'))return [mod.id,null];
+      if(local(mod))return [mod.id,null];
       const category=String(mod.characterId);
       if(categories.has(category))mod.characterGroupId=categories.get(category);
       let group=mod.characterGroupId;
@@ -360,6 +434,13 @@ class Library {
     const pieces=typeof relative==='string'?relative.split('/'):[];
     if(![1,3].includes(pieces.length)||pieces.at(-1)!==folderName||pieces.some(piece=>!piece||piece==='.'||piece==='..'||/[<>:"\\|?*\x00-\x1f]/.test(piece)||/[ .]$/.test(piece)))throw new Error(`Mod ${mod.id} 的资源目录无效`);
     return { ...mod, folder: path.join(this.libraryRoot,...pieces) };
+  }
+
+  _validFolder(folder) {
+    if (!folder || typeof folder !== 'object') return false;
+    if (typeof folder.id !== 'string' || !folder.id.trim() || folder.id.length > 100) return false;
+    if (typeof folder.name !== 'string' || !folder.name.trim() || folder.name.length > 200) return false;
+    return validLibraryPath(folder.libraryPath) !== null;
   }
 
   async _validateInstall(folder, metadata) {

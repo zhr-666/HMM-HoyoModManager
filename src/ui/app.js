@@ -5,11 +5,15 @@ const api = window.hoyo;
 let state={settings:{},mods:[],presets:[],runtime:{}}, categories=[], taxonomy=[], libraryNavigation=[], category='', page=1, query='', total=0, busyCount=0, progressRevision=0, browseRevision=0;
 let activePage='home', downloads=[], downloadError='';
 const pageScroll={}, busyButtons=new Map();
-const titles={home:['首页','准备好下一次冒险'],downloads:['下载列表','管理下载队列与安装记录'],workshop:['模组工坊','从 GameBanana 浏览并安装各类模组'],library:['我的模组','管理本机已安装的模组'],presets:['搭配方案','保存并切换整套角色搭配'],settings:['设置','配置 GIMI、外部程序与外观']};
+const titles={home:['首页','准备好下一次冒险'],games:['全部游戏','选择要进入模组工作空间的游戏'],downloads:['下载列表','管理下载队列与安装记录'],workshop:['模组工坊','从 GameBanana 浏览并安装各类模组'],library:['我的模组','管理本机已安装的模组'],presets:['搭配方案','保存并切换整套角色搭配'],settings:['设置','配置 GIMI、外部程序与外观']};
+const launcherPages=new Set(['home','games']);
+let activeGame='genshin';
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const safeImage=u=>{try{const x=new URL(u);return x.protocol==='https:'&&(x.hostname==='gamebanana.com'||x.hostname.endsWith('.gamebanana.com'))?x.href:''}catch{return''}};
 const formatDate=v=>{if(!v)return'';const raw=typeof v==='string'&&/^\d+$/.test(v)?Number(v):v;const d=new Date(typeof raw==='number'&&raw<1e12?raw*1000:raw);return Number.isNaN(d.valueOf())?'':new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'short',day:'numeric'}).format(d)};
 const formatSize=n=>{n=Number(n)||0;return n>=1073741824?(n/1073741824).toFixed(1)+' GB':n>=1048576?(n/1048576).toFixed(1)+' MB':n>1024?Math.round(n/1024)+' KB':n+' B'};
+// 图标来自 index.html 的 #i-* symbol 表，避免在 JS 里重复定义路径。
+const ICON=name=>`<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
 function notice(message,error=false){const n=$('#notice');n.textContent=message;n.className='notice'+(error?' error':'');n.hidden=!message;if(message)setTimeout(()=>{if(n.textContent===message)n.hidden=true},6500)}
 let downloadToastTimer,downloadToastHideTimer;
@@ -33,9 +37,12 @@ function renderHome(){
   $('#home-active-mods').innerHTML=active.slice(0,4).map(mod=>`<span class="active-mod-chip" title="${esc(mod.name)}">${esc(mod.characterName)} · ${esc(mod.name)}</span>`).join('')+(active.length>4?`<span class="active-mod-chip">还有 ${active.length-4} 个模组</span>`:'');
   const configured=!!state.settings.modsPath;
   const bg=state.settings.backgroundVersion?'hoyo://app/custom-background?v='+encodeURIComponent(state.settings.backgroundVersion):'home-background.jpg';
-  if($('#home-background').getAttribute('src')!==bg)$('#home-background').src=bg;
-  $('#home-ready-state').textContent=configured?'● 游戏配置已就绪':'● 请先完成游戏配置';
+  const backdrop=$('#app-background');
+  if(backdrop.getAttribute('src')!==bg)backdrop.src=bg;
+  const readyText=configured?'● 游戏配置已就绪':'● 请先完成游戏配置';
+  $('#home-ready-state').textContent=readyText;
   $('#home-ready-state').dataset.ready=String(configured);
+  $('#game-card-state').textContent=configured?'模组工作空间已就绪':'尚未完成游戏配置';
   if(activePage==='home'){clearTimeout(homeStatsTimer);homeStatsTimer=setTimeout(refreshHomeStats,80)}
 }
 async function refreshHomeStats(){
@@ -62,7 +69,7 @@ function revealNsfw(root){$('.nsfw-image',root)?.classList.remove('nsfw-image');
 function openSourceItem(item){if(!item?.sourceId&&!item?.id)return;call('openSource',{id:Number(item.sourceId||item.id)}).catch(()=>{})}
 function updateStatusMarkup(s){if(!s)return'';const labels={update:'有更新',current:'已是最新',unknown:'无法判断',error:'检查失败'},cls=s.status==='update'?'update':'muted';return `<span class="update-badge ${cls}">${esc(labels[s.status]||s.status)}</span>`}
 function renderLibraryFolders(){
-  const tree=buildLibraryTree(taxonomy,state.mods),path=[];
+  const tree=buildLibraryTree(taxonomy,state.mods,state.folders||[]),path=[];
   let children=tree;
   for(const id of libraryNavigation){
     const node=children.find(n=>n.id===id);if(!node)break;
@@ -81,17 +88,22 @@ function renderLibraryFolders(){
   const folders=$('#library-folders');folders.replaceChildren();
   for(const node of children){
     const button=document.createElement('button'),icon=safeImage(node.icon);button.className='folder-card';
-    button.innerHTML=`<span class="folder-icon" aria-hidden="true">${icon?`<img src="${esc(icon)}" alt=""><span hidden>▱</span>`:'<span>▱</span>'}</span><span><strong>${esc(node.name)}</strong><small>${node.modIds.length} 个模组</small></span><span aria-hidden="true">›</span>`;
+    const count=node.modIds.length?`${node.modIds.length} 个模组`:node.folder?'空文件夹':'没有模组';
+    button.innerHTML=`<span class="folder-icon" aria-hidden="true">${icon?`<img src="${esc(icon)}" alt=""><span hidden>${ICON('folder')}</span>`:`<span>${ICON('folder')}</span>`}</span><span><strong>${esc(node.name)}</strong><small>${count}</small></span><span aria-hidden="true">›</span>`;
     const img=$('img',button);if(img)img.onerror=()=>{img.hidden=true;img.nextElementSibling.hidden=false};
-    button.onclick=()=>{libraryNavigation.push(node.id);renderLibrary()};folders.append(button);
+    button.onclick=()=>{libraryNavigation.push(node.id);renderLibrary()};
+    if(node.folder&&!node.modIds.length)button.oncontextmenu=event=>showFolderContext(event,node);
+    folders.append(button);
   }
   const ids=new Set(current?.directModIds||[]);
-  return state.mods.filter(mod=>ids.has(mod.id));
+  return {mods:state.mods.filter(mod=>ids.has(mod.id)),folderCount:children.length};
 }
-function renderLibrary(){const visibleMods=renderLibraryFolders();const box=$('#library-grid'),empty=$('#library-empty');const view=state.settings.libraryView==='grid'?'grid':'list';box.dataset.view=view;$('#library-view-list').setAttribute('aria-pressed',String(view==='list'));$('#library-view-grid').setAttribute('aria-pressed',String(view==='grid'));box.innerHTML='';empty.hidden=state.mods.length>0;empty.innerHTML='<strong>还没有本机模组</strong>从模组工坊安装，或导入 ZIP、7Z、RAR 文件。';for(const m of visibleMods){const el=document.createElement('article');el.className='library-item';el.dataset.testid='installed-mod';el.innerHTML=`<div class="library-thumb">${imageMarkup(m.preview,m.name,false)}</div><div class="library-details"><div class="eyebrow">${esc(m.characterName)}</div><h3>${esc(m.name)}</h3><p class="meta">${esc(m.author||'本地导入')} · ${m.active?'<span class="active-badge">● 已启用</span>':'<span class="active-badge inactive-badge">未启用</span>'} ${updateStatusMarkup(m.updateStatus)}</p></div><div class="item-actions"><button class="button secondary hotkeys">查看热键</button><label class="switch mod-switch"><input class="toggle" type="checkbox" role="switch" aria-label="${esc(m.name)} 启用状态" ${m.active?'checked':''}><span></span></label>${m.updateStatus?.status==='update'?'<button class="button secondary update-one">查看更新</button>':''}</div>`;$('.library-thumb',el).onclick=()=>revealNsfw(el);el.dataset.modId=m.id;el.oncontextmenu=e=>showModContext(e,m);$('.hotkeys',el).onclick=()=>showHotkeys(m);$('.toggle',el).onchange=async e=>{const input=e.target;input.disabled=true;const result=await mutate(input.checked?'enable':'disable',{id:m.id});if(!result)input.checked=!!m.active;input.disabled=false};$('.update-one',el)?.addEventListener('click',checkUpdates);box.append(el)}}
+function renderLibrary(){const {mods:visibleMods,folderCount}=renderLibraryFolders();const box=$('#library-grid'),empty=$('#library-empty');const view=state.settings.libraryView==='grid'?'grid':'list';box.dataset.view=view;$('#library-view-list').setAttribute('aria-pressed',String(view==='list'));$('#library-view-grid').setAttribute('aria-pressed',String(view==='grid'));box.innerHTML='';const hasLibrary=state.mods.length>0||(state.folders||[]).length>0;empty.hidden=visibleMods.length>0||folderCount>0;empty.innerHTML=hasLibrary?'<strong>这个文件夹里还没有模组</strong>之后从 GameBanana 下载该分类的模组会自动存到这里。':'<strong>还没有本机模组</strong>从模组工坊安装，或导入 ZIP、7Z、RAR 文件。';for(const m of visibleMods){const el=document.createElement('article');el.className='library-item';el.dataset.testid='installed-mod';el.innerHTML=`<div class="library-thumb">${imageMarkup(m.preview,m.name,false)}</div><div class="library-details"><div class="eyebrow">${esc(m.characterName)}</div><h3>${esc(m.name)}</h3><p class="meta">${esc(m.author||'本地导入')} · ${m.active?'<span class="active-badge">● 已启用</span>':'<span class="active-badge inactive-badge">未启用</span>'} ${updateStatusMarkup(m.updateStatus)}</p></div><div class="item-actions"><button class="button secondary hotkeys">查看热键</button><label class="switch mod-switch"><input class="toggle" type="checkbox" role="switch" aria-label="${esc(m.name)} 启用状态" ${m.active?'checked':''}><span></span></label>${m.updateStatus?.status==='update'?'<button class="button secondary update-one">查看更新</button>':''}</div>`;$('.library-thumb',el).onclick=()=>revealNsfw(el);el.dataset.modId=m.id;el.oncontextmenu=e=>showModContext(e,m);$('.hotkeys',el).onclick=()=>showHotkeys(m);$('.toggle',el).onchange=async e=>{const input=e.target;input.disabled=true;const result=await mutate(input.checked?'enable':'disable',{id:m.id});if(!result)input.checked=!!m.active;input.disabled=false};$('.update-one',el)?.addEventListener('click',checkUpdates);box.append(el)}}
 function renderPresets(){const box=$('#preset-grid'),empty=$('#preset-empty');box.innerHTML='';empty.hidden=state.presets.length>0;empty.innerHTML='<strong>还没有搭配方案</strong>先在“我的模组”启用喜欢的组合，再保存为方案。';for(const p of state.presets){const names=(p.modIds||[]).map(id=>state.mods.find(m=>m.id===id)).filter(Boolean).map(m=>m.characterName+' · '+m.name);const el=document.createElement('article');el.className='preset-item';el.innerHTML=`<div><h3>${esc(p.name)}</h3><p>${names.length?esc(names.join('、')):'空搭配 · 将停用所有模组'}</p></div><div class="item-actions"><button class="button primary apply">应用</button><button class="button danger delete">删除</button></div>`;$('.apply',el).onclick=()=>mutate('applyPreset',{id:p.id});$('.delete',el).onclick=()=>confirmDeletePreset(p);box.append(el)}}
 async function mutate(action,payload){try{return await call(action,payload,{reload:true})}catch{return null}}
-function showPage(name){if(!titles[name])return;document.documentElement.dataset.page=name;$('#open-mods-button').hidden=name!=='library';$('#open-library-button').hidden=name!=='library';hideContextMenu();pageScroll[activePage]=window.scrollY;activePage=name;$$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===name));$$('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+name));[$('#page-title').textContent,$('#page-subtitle').textContent]=titles[name];window.scrollTo(0,pageScroll[name]||0);if(name==='home')renderHome()}
+function setMode(mode){if(document.documentElement.dataset.mode!==mode)document.documentElement.dataset.mode=mode}
+function syncGameTiles(){for(const el of $$('.game-tile[data-game],.game-card[data-game]'))el.classList.toggle('active',el.dataset.game===activeGame)}
+function showPage(name){if(!titles[name])return;if(name!=='settings')setMode(launcherPages.has(name)?'launcher':'workspace');document.documentElement.dataset.page=name;$('#open-mods-button').hidden=name!=='library';$('#open-library-button').hidden=name!=='library';hideContextMenu();pageScroll[activePage]=window.scrollY;activePage=name;$$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===name));$$('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+name));[$('#page-title').textContent,$('#page-subtitle').textContent]=titles[name];window.scrollTo(0,launcherPages.has(name)?0:(pageScroll[name]||0));syncGameTiles();if(name==='home')renderHome()}
 function flattenCategories(nodes,path=[]){return nodes.flatMap(n=>[{...n,path:[...path,n.name]},...flattenCategories(n.children||[],[...path,n.name])])}
 function categoryPath(nodes,id){
   for(const node of nodes){
@@ -220,9 +232,13 @@ function renderAppearance(){const s=state.settings,theme=s.theme||'system',dark=
 function refreshWorkshopBlur(){for(const card of $$('#browse-grid .mod-card[data-nsfw="true"]')){const preview=$('.preview',card),img=$('img',preview);if(!img)continue;$('.nsfw-cover',preview)?.remove();const blur=state.settings.blurNsfw!==false;img.classList.toggle('nsfw-image',blur);if(blur){const cover=document.createElement('span');cover.className='nsfw-cover';cover.textContent='NSFW · 点击查看';preview.append(cover)}}}
 
 $('#home-open-library').onclick=()=>showPage('library');$('#home-open-presets').onclick=()=>showPage('presets');$('#home-game-settings').onclick=()=>mutate('chooseProgram');
+$('#rail-back').onclick=()=>showPage('home');$('#fetch-background').onclick=async()=>{try{await call('fetchOfficialBackground',{},{reload:true});notice('已更新为米哈游官方最新背景。')}catch{}};
+function enterWorkspace(game){activeGame=game||activeGame;syncGameTiles();showPage('workshop')}
+for(const tile of $$('.game-tile[data-game],.game-card[data-game]')){const game=()=>tile.dataset.game;tile.onclick=()=>{activeGame=game();syncGameTiles();if(activePage!=='home')showPage('home')};tile.ondblclick=()=>enterWorkspace(game());tile.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();enterWorkspace(game())}}}
+syncGameTiles();
 $('#library-view-list').onclick=()=>setLibraryView('list');$('#library-view-grid').onclick=()=>setLibraryView('grid');
 $('#clear-downloads').onclick=()=>enqueue('clearDownloads',{});
-$$('.nav-item').forEach(b=>b.onclick=()=>showPage(b.dataset.page));$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};$('#prev-page').onclick=()=>{if(page>1){page--;browse()}};$('#next-page').onclick=()=>{page++;browse()};$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=async()=>{try{const r=await call('launch');if(r?.message)notice(r.message)}catch{}};$('#import-button').onclick=async()=>{try{const r=await call('import',{}, {reload:true});if(!r?.cancelled)notice('本地模组导入完成。')}catch{}};$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods');$('#choose-program').onclick=()=>mutate('chooseProgram');$('#choose-background').onclick=()=>mutate('chooseBackground');$('#reset-background').onclick=()=>mutate('resetBackground');$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#check-updates').onclick=checkUpdates;$('#check-updates-library').onclick=checkUpdates;const disableAll=()=>mutate('disableAll');$('#disable-all-library').onclick=disableAll;$('#disable-all-settings').onclick=disableAll;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
+$$('.nav-item').forEach(b=>b.onclick=()=>showPage(b.dataset.page));$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};$('#prev-page').onclick=()=>{if(page>1){page--;browse()}};$('#next-page').onclick=()=>{page++;browse()};$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=async()=>{try{const r=await call('launch');if(r?.message)notice(r.message)}catch{}};$('#import-button').onclick=async()=>{let picked;try{picked=await call('import')}catch{return}if(!picked||picked.cancelled)return;chooseLibraryFolder({mode:'import',subtitle:picked.name,onConfirm:async node=>{try{const r=await call('importApply',{file:picked.file,characterId:node.id},{reload:true});if(!r?.cancelled)notice('本地模组导入完成。')}catch{}}}).catch(e=>notice(e.message,true))};$('#new-folder-button').onclick=()=>chooseLibraryFolder({mode:'create',subtitle:'按 GameBanana 分类创建空白文件夹',onConfirm:async node=>{try{await call('createLibraryFolder',{characterId:node.id},{reload:true});notice(`文件夹「${node.name}」已就绪，之后该分类的下载会自动存到这里。`)}catch{}}}).catch(e=>notice(e.message,true));$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods');$('#choose-program').onclick=()=>mutate('chooseProgram');$('#choose-background').onclick=()=>mutate('chooseBackground');$('#reset-background').onclick=()=>mutate('resetBackground');$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#check-updates').onclick=checkUpdates;$('#check-updates-library').onclick=checkUpdates;const disableAll=()=>mutate('disableAll');$('#disable-all-library').onclick=disableAll;$('#disable-all-settings').onclick=disableAll;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
 $('#blur-nsfw').onchange=async e=>{await mutate('settings',{blurNsfw:e.target.checked});refreshWorkshopBlur()};$('#use-links').onchange=e=>mutate('settings',{useLinks:e.target.checked});$('#theme-select').onchange=e=>mutate('settings',{theme:e.target.value});$('#material-select').onchange=e=>mutate('settings',{material:e.target.value});$('#proxy-mode').onchange=e=>{if(e.target.value==='manual'){ $('#proxy-url-row').hidden=false;if(state.settings.proxyUrl)mutate('settings',{proxyMode:'manual'});}else mutate('settings',{proxyMode:'system'})};$('#save-proxy').onclick=()=>mutate('settings',{proxyMode:$('#proxy-mode').value,proxyUrl:$('#proxy-url').value.trim()});$('#test-proxy').onclick=async()=>{try{const r=await call('proxyDiagnostics');$('#proxy-result').textContent=[r.message,r.route,r.apiRoute].filter(Boolean).join(' · ')}catch(e){$('#proxy-result').textContent=e.message}};window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(!state.runtime||typeof state.runtime.dark!=='boolean')renderAppearance()});for(const id of ['sort-select','sfw-filter','nsfw-filter'])$('#'+id).onchange=()=>{page=1;browse()};
 api?.onDownloads?.(rows=>{downloads=rows||[];renderDownloads()});api?.onProgress?.(p=>{const box=$('#progress'),bar=$('#progress-bar'),revision=++progressRevision;if(!p?.label){box.hidden=true;return}box.hidden=false;$('#progress-label').textContent=p.label;const total=Number(p.total)||0,received=Number(p.received)||0;bar.max=total||1;bar.removeAttribute('value');if(total){bar.value=received;const ratio=Math.min(100,Math.round(received/total*100));$('#progress-value').textContent=p.unit==='items'?`${received}/${total}`:`${ratio}%${p.speed?' · '+formatSize(p.speed)+'/s':''}`}else $('#progress-value').textContent=p.speed?formatSize(p.speed)+'/s':formatSize(received);if(total&&received>=total)setTimeout(()=>{if(progressRevision===revision)box.hidden=true},1200)});api?.onState?.(snapshot=>{state=snapshot;renderState()});api?.onNotice?.(message=>{if(message)notice(message)});
 (async()=>{try{await loadState();await Promise.all([loadDownloads(),loadCategories()])}catch(e){notice(e?.message||'初始化失败，请重新启动应用。',true)}})();
@@ -253,12 +269,61 @@ async function showHashHistory(){
 }
 $('#replace-hash').onclick=showHashReplace;$('#hash-history').onclick=showHashHistory;
 
+async function ensureTaxonomy(){if(!taxonomy.length){try{taxonomy=await call('taxonomy',{},{foreground:false})}catch{}}return taxonomy}
+// 逐层浏览本机库的分类文件夹：可以选一个已有的文件夹存放，也可以进入还没建过的
+// GameBanana 分类（例如某个角色）把它新建出来。
+async function chooseLibraryFolder({mode,subtitle,onConfirm}){
+  await ensureTaxonomy();
+  const body='<p class="meta">模组副本存放在本机库的这个文件夹；启用时仍按原来的步骤选择 GIMI Mods 里的安装位置。</p><nav id="location-breadcrumb" class="category-breadcrumb" aria-label="本机库文件夹路径"></nav><div class="character-head"><strong id="location-heading">选择大分类</strong><label class="mini-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="location-search" type="search" placeholder="查找当前层级分类" aria-label="查找当前层级分类"></label></div><div id="location-folders" class="folder-grid"></div><p id="location-empty" class="meta" hidden>当前层级没有匹配的分类。</p><p id="location-selection" class="meta"></p>';
+  const dialog=modal(mode==='import'?'选择存放位置':'新建角色文件夹',subtitle,body,'<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary" id="location-confirm" disabled>确定</button>');
+  const q=selector=>$(selector,dialog),confirm=q('#location-confirm');
+  let trail=[],selection=null;
+  function render(){
+    const tree=buildLibraryPickerTree(taxonomy,state.mods,state.folders||[]),path=[];
+    let children=tree;
+    for(const id of trail){const node=children.find(item=>item.id===id);if(!node)break;path.push(node);children=node.children}
+    trail=path.map(node=>node.id);
+    const current=path.at(-1),breadcrumb=q('#location-breadcrumb');breadcrumb.replaceChildren();
+    for(const [index,node] of [{id:'',name:'全部分类'},...path].entries()){
+      if(index){const separator=document.createElement('span');separator.textContent='›';separator.setAttribute('aria-hidden','true');breadcrumb.append(separator)}
+      const button=document.createElement('button');button.type='button';button.className='link-button';button.textContent=node.name;
+      if(index===path.length)button.setAttribute('aria-current','page');
+      button.onclick=()=>{trail=trail.slice(0,index);render()};breadcrumb.append(button);
+    }
+    q('#location-heading').textContent=current?current.name:'选择大分类';
+    const filter=(q('#location-search').value||'').trim().toLocaleLowerCase();
+    const visible=children.filter(node=>!filter||node.name.toLocaleLowerCase().includes(filter));
+    const box=q('#location-folders');box.replaceChildren();
+    for(const node of visible){
+      const button=document.createElement('button'),icon=safeImage(node.icon);button.type='button';button.className='folder-card';
+      const note=node.modIds.length?`${node.modIds.length} 个模组`:node.folder?'空文件夹':'可以新建为存放文件夹';
+      button.innerHTML=`<span class="folder-icon" aria-hidden="true">${icon?`<img src="${esc(icon)}" alt=""><span hidden>${ICON('folder')}</span>`:`<span>${ICON('folder')}</span>`}</span><span><strong>${esc(node.name)}</strong><small>${note}</small></span><span aria-hidden="true">›</span>`;
+      const img=$('img',button);if(img)img.onerror=()=>{img.hidden=true;img.nextElementSibling.hidden=false};
+      button.onclick=()=>{trail.push(node.id);render()};box.append(button);
+    }
+    q('#location-empty').hidden=visible.length>0;
+    selection=current&&path.length>=2?current:null;
+    q('#location-selection').textContent=selection?`已选择：${path.map(node=>node.name).join(' / ')}${selection.folder?' · 已有文件夹':''}`:'继续进入具体角色或子分类后即可存放。';
+    confirm.disabled=!selection;
+    confirm.textContent=selection?`${mode==='import'?'存到':'新建'}「${selection.name}」`:'确定';
+  }
+  q('#location-search').oninput=render;
+  confirm.onclick=()=>{if(!selection)return;const chosen=selection;closeModal();onConfirm(chosen)};
+  render();
+}
+
 function renameMod(mod){
  modal('修改模组名称','只修改显示名称，文件、分类、来源和启用状态保持不变。',`<div class="field"><label for="mod-name">模组名称</label><input id="mod-name" maxlength="200" value="${esc(mod.name)}" autofocus></div>`,'<button class="button secondary" value="cancel">取消</button><button class="button primary" type="button" id="rename-confirm">保存</button>');
  $('#rename-confirm').onclick=async()=>{const name=$('#mod-name').value.trim();if(!name)return notice('请输入模组名称。',true);const result=await mutate('rename',{id:mod.id,name});if(result)closeModal();};
 }
 function hideContextMenu(){$('#context-menu').hidden=true;$('#help-tooltip').hidden=true;}
 function openModFolder(mod,kind){call('openModFolder',{id:mod.id,kind}).catch(()=>{});}
+function showFolderContext(event,node){
+ event.preventDefault();event.stopPropagation();const menu=$('#context-menu');$$('.mod-context-action',menu).forEach(b=>b.remove());$('#context-refresh').hidden=true;
+ const b=document.createElement('button');b.type='button';b.className='mod-context-action';b.setAttribute('role','menuitem');b.textContent='删除空文件夹';b.disabled=busyCount>0;
+ b.onclick=()=>{hideContextMenu();call('removeLibraryFolder',{id:node.id},{reload:true}).then(()=>notice(`已删除空文件夹「${node.name}」。`)).catch(()=>{})};
+ menu.append(b);menu.hidden=false;menu.dataset.scrollX=scrollX;menu.dataset.scrollY=scrollY;menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-170))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-menu.offsetHeight-8))+'px';b.focus({preventScroll:true});
+}
 function showModContext(event,mod){
  event.preventDefault();event.stopPropagation();const menu=$('#context-menu');$$('.mod-context-action',menu).forEach(b=>b.remove());$('#context-refresh').hidden=true;
  const items=[['重命名',()=>renameMod(mod)],['移除',()=>confirmRemove(mod)],...(mod.sourceId?[['来源',()=>openSourceItem(mod)]]:[]),['打开本机库',()=>openModFolder(mod,'library')],['打开 Mods 文件夹',()=>openModFolder(mod,'mods'),mod.active?'':'此模组未启用，GIMI 中还没有它的文件。']];
@@ -289,7 +354,8 @@ new MutationObserver(prepareHints).observe(document.body,{childList:true,charact
 function showHelp(event){const el=event.target.closest('.help-note');if(!el)return;const tip=$('#help-tooltip'),host=el.closest('dialog')||document.body;if(tip.parentElement!==host)host.append(tip);tip.textContent=el.textContent;tip.hidden=false;const r=el.getBoundingClientRect();tip.style.left=Math.max(8,Math.min(r.left,innerWidth-370))+'px';tip.style.top=Math.min(r.bottom+8,innerHeight-tip.offsetHeight-8)+'px';}
 document.addEventListener('pointerover',showHelp);document.addEventListener('focusin',showHelp);
 document.addEventListener('pointerout',event=>{if(event.target.closest('.help-note'))$('#help-tooltip').hidden=true;});document.addEventListener('focusout',()=>$('#help-tooltip').hidden=true);
-$('#home-background').onerror=()=>{if($('#home-background').getAttribute('src')!=='home-background.jpg'){$('#home-background').src='home-background.jpg';notice('自定义背景无法读取，已使用默认背景。',true);}};
+$('#app-background').onerror=()=>{const img=$('#app-background');if(img.getAttribute('src')!=='home-background.jpg'){img.src='home-background.jpg';notice('自定义背景无法读取，已使用默认背景。',true);}};
+document.documentElement.dataset.mode='launcher';
 document.documentElement.dataset.page='home';
 
 let softwareUpdate={status:'idle'};
