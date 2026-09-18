@@ -5,7 +5,8 @@
 *{box-sizing:border-box}
 button,.button,.link-button{white-space:nowrap}
 body{margin:0;min-width:900px;min-height:640px;background:var(--bg)}
-.app-shell{display:grid;grid-template-columns:210px 1fr;min-height:100vh}
+:root{--rail-width:72px}
+.app-shell{display:grid;grid-template-columns:var(--rail-width) 1fr;min-height:100vh}
 .sidebar{position:fixed;inset:0 auto 0 0;width:210px;background:var(--surface);border-right:1px solid var(--line);padding:24px 14px 18px;display:flex;flex-direction:column}
 .brand{display:flex;align-items:center;gap:11px;padding:0 10px 28px}
 .brand-mark{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:linear-gradient(145deg,#2e7bea,#1257c0);color:#fff;font-weight:700;font-size:18px;box-shadow:0 5px 14px #1769e033}
@@ -134,6 +135,28 @@ dialog form{margin:0}
 :root[data-material="mica"] .settings-card,:root[data-material="acrylic"] .settings-card{background:color-mix(in srgb,var(--surface) 88%,transparent)}
 .settings-nav{margin-top:auto;width:100%}input,select,textarea{color:var(--text)}.mini-search input{background:transparent}.setting-row select,.setting-row input[type="url"]{border:1px solid var(--control-line);border-radius:6px;background:var(--surface);padding:8px 10px;font:inherit}.setting-row input[type="url"]{min-width:235px}dialog{background:var(--surface);color:var(--text)}.switch{display:inline-block;flex-shrink:0}.switch input:disabled+span{opacity:.5;cursor:wait}.mod-switch{margin:0 5px}.download-row{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}.download-heading{display:flex;align-items:start;justify-content:space-between;gap:20px}.download-heading h3{font-size:15px;margin:0;overflow-wrap:anywhere}.download-heading .meta{margin-bottom:10px}.download-row>.row-actions{justify-content:flex-end}.download-progress{margin:5px 0 16px}.download-progress>div{display:flex;justify-content:space-between;gap:20px;color:var(--muted);font-size:12px;margin-bottom:8px}.download-progress progress{width:100%;height:7px;accent-color:var(--blue)}.download-failure{color:var(--danger);font-size:12px;overflow-wrap:anywhere}.history-status.installed{background:var(--success-bg);color:var(--success)}.history-status.downloading,.history-status.installing{background:var(--blue-soft);color:var(--blue)}.setup-required{padding:12px;background:var(--warning-bg);border-radius:7px;color:var(--warning)}.setup-required button{margin-left:8px}[hidden]{display:none!important}
 :root[data-theme="dark"] .preview{background:linear-gradient(135deg,#303640,#242830)}
+
+/* 通知中心：底部一个细线图标按钮，弹窗与面板都用最轻的线条表达。 */
+.notification-button-icon{display:grid;place-items:center}.notification-button-icon .icon{width:19px;height:19px}
+.notification-button{box-shadow:0 3px 12px #0000001f}
+.notification-popup{gap:9px;width:min(300px,calc(100vw - 56px));padding:10px 11px;border-radius:9px;background:color-mix(in srgb,var(--surface) 97%,transparent);box-shadow:0 6px 20px #0000001f}
+.notification-popup-icon{display:grid;place-items:center;width:16px;height:16px;margin-top:1px;color:var(--muted)}.notification-popup-icon .icon,.notification-item-icon .icon{width:16px;height:16px}
+.notification-popup.error .notification-popup-icon,.notification-item.error .notification-item-icon{color:var(--danger)}
+.notification-popup-body strong{font-size:11.5px;font-weight:600;color:var(--text-secondary)}
+.notification-popup-body p{font-size:12.5px;color:var(--text)}
+.notification-popup-close,.notification-item-remove{color:var(--muted);opacity:.65;border-radius:4px;transition:opacity .15s,background .15s}
+.notification-popup-close:hover,.notification-item-remove:hover{opacity:1;background:var(--inset);color:var(--text)}
+.notification-popup-close{font-size:14px;padding:3px 4px}
+.notification-panel-title{display:flex;align-items:center;gap:7px;color:var(--text)}
+.notification-panel-title .icon{width:16px;height:16px;color:var(--muted)}
+.notification-panel-title strong{font-size:12.5px;font-weight:600;letter-spacing:.4px}
+.notification-panel-head .icon-button{position:relative;width:26px;height:26px;background:transparent;color:var(--muted)}
+.notification-panel-head .icon-button .icon{width:15px;height:15px}
+.notification-panel-head .icon-button:hover{background:var(--inset);color:var(--text)}
+.notification-item{gap:8px;padding:9px 10px;border-radius:7px}
+.notification-item-icon{display:grid;place-items:center;width:16px;height:16px;margin-top:1px;color:var(--muted)}
+.notification-item-body strong{font-size:11.5px;font-weight:600;color:var(--text-secondary)}
+.notification-item-remove{font-size:12px;padding:3px 5px}
 :root[data-theme="dark"] .button.primary{color:#102441}
 :root[data-theme="dark"] .button.primary:hover:not(:disabled){background:#a4c9ff}
 :root[data-theme="dark"] .category.active{background:var(--blue-soft);border-color:var(--blue);color:var(--text)}
@@ -224,9 +247,10 @@ html[data-platform="win32"] .download-toast{top:54px}
 @keyframes page-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
 html[data-platform="win32"] .sidebar{top:0;padding-top:64px}
 .app-backdrop{position:fixed;inset:0;pointer-events:none;z-index:0;background:#314b67;overflow:hidden}
-/* 启动器模式：背景图从侧栏右边线开始铺，图片最左端与那条线对齐 */
-html[data-mode="launcher"] .app-backdrop{left:72px}
-.app-backdrop img{width:100%;height:100%;object-fit:cover;transform:scale(1.05);filter:blur(28px) saturate(.8);transition:filter .32s ease}
+/* 启动器模式：背景图从侧栏右边线开始铺，图片最左端与那条线对齐；
+   左边界与侧栏宽度共用 --rail-width，两者永远重合。 */
+html[data-mode="launcher"] .app-backdrop{left:var(--rail-width)}
+.app-backdrop img{width:100%;height:100%;object-fit:cover;object-position:left center;transform:scale(1.05);filter:blur(28px) saturate(.8);transition:filter .32s ease}
 html[data-mode="launcher"][data-page="home"] .app-backdrop img{filter:none}
 .app-backdrop:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,color-mix(in srgb,var(--bg) 64%,transparent),color-mix(in srgb,var(--bg) 78%,transparent));transition:background .32s ease}
 html[data-mode="launcher"][data-page="home"] .app-backdrop:after{background:linear-gradient(180deg,#10233848,transparent 45%,#10233885)}
@@ -291,9 +315,9 @@ html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex
 .hero-actions{flex-direction:row}.home-gamebar .section-kicker,.home-gamebar .game-selector{color:#fff;text-shadow:0 1px 6px #10203070}
 .topbar>div:first-child,.section-head>div:first-child{display:flex;align-items:center;gap:10px}
 .app-shell{grid-template-columns:72px 1fr}
-.sidebar,html[data-platform="win32"] .sidebar{width:72px;top:0;padding:8px;gap:5px}
+.sidebar,html[data-platform="win32"] .sidebar{width:var(--rail-width);top:0;padding:8px;gap:5px}
 .sidebar nav{gap:5px}.sidebar .nav-item{width:55px;height:48px;padding:0;justify-content:center;font-size:22px;-webkit-app-region:no-drag}
-html[data-platform="win32"] .window-titlebar{left:72px}
+html[data-platform="win32"] .window-titlebar{left:var(--rail-width)}
 .icon-sprite{position:absolute;width:0;height:0;overflow:hidden}
 /* 统一线性图标：24 网格、1.6px 圆头圆角，尺寸跟所在元素字号；颜色走 currentColor。 */
 .icon{width:1em;height:1em;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.135em}
@@ -330,9 +354,11 @@ dialog .help-note{display:inline-flex;margin:0 0 0 7px!important;vertical-align:
 
 /* ===== 米哈游官方启动器风格：两级侧栏（启动器 / 模组工作空间）===== */
 .rail{display:grid;gap:5px;align-content:start}
+/* 启动器侧栏：游戏列表贴着横杠往上排，横杠下面才是「全部游戏」。 */
+.game-list{display:flex;flex-direction:column;gap:5px}
 .rail-foot{display:grid;gap:5px;margin-top:auto;padding-top:10px}
 /* 「全部游戏」上方的小横杠：区分游戏区与底部入口 */
-.rail-separator{display:block;height:1px;margin:5px 6px;background:#ffffff2e}
+.rail-separator{display:block;height:0;min-height:1px;flex:none;margin:6px 6px;border-top:1px solid #ffffff52}
 html[data-mode="launcher"] .rail-workspace,html[data-mode="workspace"] .rail-launcher,html[data-mode="workspace"] .rail-games{display:none}
 html[data-mode="workspace"] .rail-separator{display:none}
 
@@ -413,4 +439,4 @@ html[data-mode="workspace"] .rail-back img{animation:rail-icon-land .42s cubic-b
 ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 20%,transparent);border-radius:4px;transition:background .25s ease}
 html[data-scrolling] ::-webkit-scrollbar-thumb,::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--muted) 68%,transparent)}
 ::-webkit-scrollbar-corner{background:transparent}
-@media(prefers-reduced-motion:reduce){.game-icon-fly{display:none}html[data-mode="workspace"] .rail-back img{animation:none}}
+@media(prefers-reduced-motion:reduce){.game-icon-fly,html[data-mode="workspace"] .rail-back img{animation-duration:.09s!important}}

@@ -7,6 +7,7 @@ const {pathToFileURL}=require('node:url');
 const {Library}=require('./core/library.cjs');
 const {DownloadQueue}=require('./core/download-queue.cjs');
 const {proxyConfig,materialSupported,requireMods}=require('./core/preferences.cjs');
+const {UI_ASSETS,noStoreResponse,clearAssetCache}=require('./core/ui-assets.cjs');
 const {GameBanana}=require('./core/gamebanana.cjs');
 const network=require('./core/network.cjs');
 const {InstallService}=require('./core/install-service.cjs');
@@ -315,6 +316,10 @@ const actions={
   openData:async()=>{const error=await shell.openPath(root);if(error)throw new Error(error);}
 };
 if(lock)app.whenReady().then(async()=>{
+  // 旧版本可能把界面资源缓存进了 data/session；每次启动清一次，升级后不会再看到旧样式。
+  await clearAssetCache(path.join(root,'session'));
+  // Windows 任务栏按 AppUserModelID 归组与取图标；显式设置后不会退回 electron.exe 的名字与图标。
+  if(process.platform==='win32')app.setAppUserModelId('local.hoyomod.library');
   lib=new Library(root,{resolveTaxonomy:()=>api.taxonomy()});await lib.init();api=new GameBanana();network.setFetch(require('./core/electron-fetch.cjs').electronFetch(net));
   await session.defaultSession.setProxy(proxyConfig(lib.snapshot().settings));applyAppearance();
   notifications=new NotificationCenter(path.join(root,'notifications.json'),{onChange:unread=>send('notifications',{unread}),onPopup:entry=>send('notification-popups',[entry])});
@@ -344,8 +349,8 @@ if(lock)app.whenReady().then(async()=>{
       const useOfficial=await fs.stat(official).then(s=>s.isFile(),()=>false);
       return net.fetch(pathToFileURL(useOfficial?official:path.join(root,'home-background.jpg')).href);
     }
-    if(url.hostname!=='app'||!['home-background.jpg','genshin-icon.png','app-icon.png','index.html','app.js','library-categories.js','dialog-stack.js','style.css'].includes(name))return new Response('Not found',{status:404});
-    return net.fetch(pathToFileURL(path.join(__dirname,'ui',name)).href);
+    if(url.hostname!=='app'||!UI_ASSETS.includes(name))return new Response('Not found',{status:404});
+    return noStoreResponse(await net.fetch(pathToFileURL(path.join(__dirname,'ui',name)).href));
   });
   win=new BrowserWindow({icon:appIcon(),width:1260,height:860,minWidth:980,minHeight:650,title:'HMM · 原神模组管理',backgroundColor:'#f5f7fa',autoHideMenuBar:true,...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{color:'#00000000',symbolColor:'#202733',height:40}}:{}),webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   applyAppearance();nativeTheme.on('updated',()=>{applyAppearance();send('state',snapshot());});
