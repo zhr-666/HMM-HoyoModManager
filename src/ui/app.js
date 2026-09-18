@@ -19,7 +19,9 @@ const formatSize=n=>{n=Number(n)||0;return n>=1073741824?(n/1073741824).toFixed(
 // 图标来自 index.html 的 #i-* symbol 表，避免在 JS 里重复定义路径。
 const ICON=name=>`<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
-// 通知中心：除顶部小弹窗外的一切消息都写入这里，历史由主进程持久化。
+// 通知与弹窗所用的线性图标：错误用警示，其余用消息。
+const notificationIcon={error:ICON('warning'),message:ICON('message')};const notificationGlyph=entry=>notificationIcon[entry.tone]||notificationIcon.message;
+// 通知中心：除下载小提示外的一切消息都写入这里，历史由主进程持久化。
 let notificationEntries=[],notificationUnread=0;
 const notificationTime=value=>{const d=new Date(Number(value)||Date.now());return new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(d)};
 function renderNotifications(){
@@ -30,7 +32,7 @@ function renderNotifications(){
   $('#notification-empty').hidden=notificationEntries.length>0;
   for(const entry of notificationEntries){
     const item=document.createElement('article');item.className='notification-item'+(entry.tone==='error'?' error':'');item.dataset.unread=String(!entry.read);item.dataset.notificationId=entry.id;if(entry.target)item.dataset.target=entry.target;
-    item.innerHTML=`<span class="notification-item-icon" aria-hidden="true">${entry.tone==='error'?'⚠':'🔔'}</span><div class="notification-item-body">${entry.title?`<strong>${esc(entry.title)}</strong>`:''}<p>${esc(entry.text)}</p><time datetime="${new Date(Number(entry.createdAt)||Date.now()).toISOString()}">${esc(notificationTime(entry.createdAt))}</time></div><button type="button" class="notification-item-remove" aria-label="删除这条消息" title="删除">×</button>`;
+    item.innerHTML=`<span class="notification-item-icon" aria-hidden="true">${notificationGlyph(entry)}</span><div class="notification-item-body">${entry.title?`<strong>${esc(entry.title)}</strong>`:''}<p>${esc(entry.text)}</p><time datetime="${new Date(Number(entry.createdAt)||Date.now()).toISOString()}">${esc(notificationTime(entry.createdAt))}</time></div><button type="button" class="notification-item-remove" aria-label="删除这条消息" title="删除">×</button>`;
     $('.notification-item-remove',item).onclick=()=>call('removeNotification',{id:entry.id},{silent:true}).then(applyNotifications).catch(()=>{});
     if(entry.target)item.onclick=event=>{if(event.target.closest('.notification-item-remove'))return;toggleNotificationPanel(false);showPage('settings');$('#software-update-card').scrollIntoView({block:'start'})};
     list.append(item);
@@ -45,7 +47,7 @@ function showNotificationPopup(entry){
   if(!entry?.text)return;
   const host=$('#notification-popups'),box=document.createElement('article');
   box.className='notification-popup'+(entry.tone==='error'?' error':'');box.setAttribute('role','status');
-  box.innerHTML=`<span class="notification-popup-icon" aria-hidden="true">${entry.tone==='error'?'⚠':'🔔'}</span><div class="notification-popup-body">${entry.title?`<strong>${esc(entry.title)}</strong>`:''}<p>${esc(entry.text)}</p></div><button type="button" class="notification-popup-close" aria-label="关闭这条提示">×</button>`;
+  box.innerHTML=`<span class="notification-popup-icon" aria-hidden="true">${notificationGlyph(entry)}</span><div class="notification-popup-body">${entry.title?`<strong>${esc(entry.title)}</strong>`:''}<p>${esc(entry.text)}</p></div><button type="button" class="notification-popup-close" aria-label="关闭这条提示">×</button>`;
   const remove=()=>{clearTimeout(timer);if(!box.isConnected)return;box.classList.add('leaving');setTimeout(()=>box.remove(),180)};
   const timer=setTimeout(remove,7000);
   $('.notification-popup-close',box).onclick=remove;
@@ -145,11 +147,11 @@ function renderPresets(){const box=$('#preset-grid'),empty=$('#preset-empty');bo
 async function mutate(action,payload){try{return await call(action,payload,{reload:true})}catch{return null}}
 function setMode(mode){if(document.documentElement.dataset.mode!==mode)document.documentElement.dataset.mode=mode}
 function renderGameRails(){
-  const launcher=$('.rail-launcher'),back=$('#rail-back');if(!launcher||!back)return;
+  const list=$('#game-list'),back=$('#rail-back');if(!list||!back)return;
   const image=game=>`<img src="${game.icon}" alt="" draggable="false">`;
-  launcher.innerHTML=GAMES.map(game=>`<button type="button" class="game-tile${game.id===activeGame?' active':''}" data-game="${game.id}" data-testid="game-tile" title="${esc(gameTileLabel(game.name))}" aria-label="${esc(gameTileLabel(game.name))}">${image(game)}</button>`).join('');
+  list.innerHTML=GAMES.map(game=>`<button type="button" class="game-tile${game.id===activeGame?' active':''}" data-game="${game.id}" data-testid="game-tile" title="${esc(gameTileLabel(game.name))}" aria-label="${esc(gameTileLabel(game.name))}">${image(game)}</button>`).join('');
   back.innerHTML=image(gameById(activeGame));
-  for(const tile of $$('.game-tile[data-game]',launcher)){
+  for(const tile of $$('.game-tile[data-game]',list)){
     const pick=()=>{activeGame=tile.dataset.game;syncGameTiles();if(activePage!=='home')showPage('home')};
     tile.onclick=pick;
     tile.ondblclick=()=>enterWorkspace(tile.dataset.game,tile);
@@ -163,9 +165,9 @@ function syncGameTiles(){for(const el of $$('.game-tile[data-game],.game-card[da
 function enterWorkspace(game,origin){
   const id=game||activeGame,source=origin?.querySelector?.('img')||$('.rail-launcher .game-tile[data-game] img');
   const from=source?.getBoundingClientRect(),snapshot=origin?.getBoundingClientRect();
-  const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  const fromLauncher=launcherPages.has(activePage);
   activeGame=id;syncGameTiles();showPage('workshop');
-  if(reduced||!from?.width||!snapshot?.width)return;
+  if(!fromLauncher||!from?.width||!snapshot?.width)return;
   const target=$('#rail-back img'),to=target?.getBoundingClientRect();
   if(!to?.width)return;
   const fly=document.createElement('img');
