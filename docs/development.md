@@ -93,6 +93,7 @@ CI 不构建、不上传、不发布，不含桌面 UI 与 Windows 人工验收�
 - [ ] 检查 LICENSE、THIRD-PARTY-NOTICES 与随包说明，记录 ZIP 文件名、字节数和 SHA256。
 - [ ] 在 `docs/releases/<版本>.md` 记录证据与未验证项；未完成必要 Windows 验收时保持待验收状态，不标成正式发布通过。
 - [ ] 用户明确要求上传或发布后，才执行正式 Release 操作；发布后核对标签、版本、产物和校验值。
+- [ ] 发布后复核本地分支：用 `git branch --merged main` 和 `git log main..<分支>` 确认哪些 `feat/*` 已无独有工作，用 `git branch -d` 删除已合并分支；仍有未发布工作的分支保留，并说明其内容与去向。
 
 版本记录模板：
 
