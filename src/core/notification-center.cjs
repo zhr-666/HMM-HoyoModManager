@@ -49,7 +49,9 @@ class NotificationCenter {
 
   // Adds one message. Messages raised before the window is listening are queued and replayed
   // by flushPending(); nothing is ever popped twice, because the queue is drained once.
-  add({ text, title, tone, target } = {}) {
+  // 瞬时提示（ephemeral）只弹一次：不进历史、不计未读、不落盘，窗口还没就绪就直接丢弃，
+  // 否则「开始检查更新」这类提示会在下次启动时补弹。
+  add({ text, title, tone, target, ephemeral } = {}) {
     const message = normalizeText(text);
     if (!message) return null;
     const entry = { id: randomUUID(), text: message, tone: normalizeTone(tone), read: false, createdAt: Date.now() };
@@ -57,6 +59,10 @@ class NotificationCenter {
     if (name) entry.title = name;
     const destination = normalizeText(target);
     if (destination) entry.target = destination.slice(0, 40);
+    if (ephemeral) {
+      if (this.ready) this.onPopup(entry);
+      return entry;
+    }
     this.entries.unshift(entry);
     if (this.entries.length > this.limit) this.entries.length = this.limit;
     if (this.ready) {

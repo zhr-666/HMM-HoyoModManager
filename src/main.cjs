@@ -12,6 +12,7 @@ const {GameBanana}=require('./core/gamebanana.cjs');
 const network=require('./core/network.cjs');
 const {InstallService}=require('./core/install-service.cjs');
 const {findFileUpdate}=require('./core/updates.cjs');
+const {summarizeUpdateCheck,summarizeFromLibrary}=require('./core/update-summary.cjs');
 const {extract}=require('./core/archive.cjs');
 const launcher=require('./core/launcher.cjs');
 protocol.registerSchemesAsPrivileged([{scheme:'hoyo',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
@@ -35,9 +36,13 @@ const lock=app.requestSingleInstanceLock();
 if(!lock)app.quit();
 let appUpdater,updateHandoff=false,pendingActions=0;
 let win,lib,api,installer,busy=false,updateTimer,hashPreview,downloadQueue,notifications,downloadReporter;let nativeMaterial=materialSupported(),legacyDownloads=[];
+// 最近一次模组更新检查的结果。检查完成只发通知并点亮红点，结果留在这里等用户主动打开。
+let lastUpdateSummary=null;
 function send(channel,data){if(win&&!win.isDestroyed())win.webContents.send('hoyo:'+channel,data);}
 // 通知中心：小弹窗之外的所有消息都进入这里，历史持久化在 data 目录。
 function pushNotification(text,{title,tone='info',target}={}){if(!text)return null;return notifications?.add({text,title,tone,target})||null;}
+// 瞬时提示：只在右下角弹一次，不进通知历史、不计未读。
+function pushEphemeral(text,{title,tone='info'}={}){if(!text)return null;return notifications?.add({text,title,tone,ephemeral:true})||null;}
 function flushNotifications(){if(win&&!win.isDestroyed()&&notifications)notifications.flushPending(entry=>win.webContents.send('hoyo:notification-popups',[entry]));}
 const dependencyPrompts=new (require('./core/dependency-prompts.cjs').DependencyPrompts)(detail=>send('dependency',detail));
 function snapshot(){return {...lib.snapshot(),runtime:{version:app.getVersion(),platform:process.platform,dataRoot:root,dark:nativeTheme.shouldUseDarkColors,materialSupported:nativeMaterial}};}
@@ -119,10 +124,12 @@ async function resolveCategory(categoryId){
   return {characterId:id,characterName:String(node.name||''),rootCategoryId:String(root.id),rootCategoryName:String(root.name||''),characterGroupId:group===undefined||group===null?null:String(group)};
 }
 
+// 检查更新一律在后台跑：手动检查先弹一条「开始检查更新」，完成后只发通知 + 点亮按钮红点，
+// 绝不自动弹出结果窗口；自动检查保持安静，只有查到更新时才通知。
 async function checkUpdates(automatic=false){
   const mods=lib.snapshot().mods.filter(m=>m.sourceId),result={updates:[],failures:[],unknown:[],checked:0,total:mods.length};
-  try{for(const mod of mods){
-    send('progress',{label:'检查更新：'+mod.name,received:result.checked,total:mods.length,unit:'items'});
+  if(!automatic)pushEphemeral('开始检查更新',{title:'检查更新'});
+  for(const mod of mods){
     try{
       const detail=await api.detail(id(mod.sourceId)),status=findFileUpdate(mod,detail);
       const row={id:mod.id,name:mod.name,sourceId:mod.sourceId,sourceUrl:detail.url||'https://gamebanana.com/mods/'+mod.sourceId,...status};
@@ -130,8 +137,12 @@ async function checkUpdates(automatic=false){
       if(status.status==='update')result.updates.push(row);else if(status.status==='unknown')result.unknown.push(row);
     }catch(e){result.failures.push({id:mod.id,name:mod.name,error:e.message});await lib.updateMetadata(mod.id,{updateStatus:{status:'error',reason:e.message,checkedAt:Date.now()}});}
     result.checked++;
-  }}finally{send('progress',{label:'',received:0,total:0});}
-  if(automatic&&result.updates.length)notify(`${result.updates.length} 个 Mod 有更新，请在“我的模组”检查并手动选择更新。`);
+  }
+  const summary={...result,automatic,at:Date.now()};
+  lastUpdateSummary=summary;
+  const notice=summarizeUpdateCheck(result,{automatic});
+  if(notice)pushNotification(notice.text,{title:'检查更新',tone:notice.tone,target:notice.target});
+  send('updateSummary',{summary,unviewed:Boolean(notice)});
   return result;
 }
 const operationContext=new (require('node:async_hooks').AsyncLocalStorage)();
@@ -149,6 +160,7 @@ const actions={
   },
   state:()=>snapshot(),
   notifications:()=>notifications.snapshot(),
+  updateSummary:()=>lastUpdateSummary||summarizeFromLibrary(lib.snapshot().mods),
   addNotification:p=>{
     const text=typeof p?.text==='string'?p.text.slice(0,600):'';if(!text.trim())return notifications.snapshot();
     notifications.add({text,title:typeof p.title==='string'?p.title.slice(0,80):'',tone:p.tone==='error'?'error':'info',target:typeof p.target==='string'?p.target:''});
