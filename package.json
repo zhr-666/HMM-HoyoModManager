@@ -1,6 +1,6 @@
 {
   "name": "hoyo-mod-library",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "原神 Mod 集中管理器",
   "author": "HoYo Mod Library contributors",
   "license": "MIT",
@@ -64,7 +64,7 @@
       "target": [
         "zip"
       ],
-      "signAndEditExecutable": false
+      "signExecutable": false
     },
     "artifactName": "HoYoMod-${version}-Windows-${arch}.${ext}",
     "mac": {
