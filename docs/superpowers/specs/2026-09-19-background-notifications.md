@@ -81,3 +81,11 @@
 
 - macOS 上只能跑 `node --test`；`scripts/smoke-*.cjs` 需要 Playwright 与图形会话，本机未安装，未执行。相关改动为逐行审读，未实机验证。
 - 红点在 Windows 高 DPI 下的像素表现、通知窗口与任务栏的联动，需按 `docs/acceptance.md` 在 Windows 实机确认。
+
+## 补记：拆分支时补回的缺口（2026-09-19）
+
+上面的界面行为实测发生在原会话；改动被界面任务提交 `4c6ae62` 误带、又被 `git reset --hard`
+清掉一部分之后，按分支拆分时按本规格补齐了 `src/preload.cjs` 的 `onUpdateSummary`、
+`src/core/notification-center.cjs` 的 `ephemeral`（只弹一次、不落盘、未就绪即丢弃）与相关测试、
+文档、冒烟脚本断言。补齐后的实际执行结果见
+[实施计划的补记](2026-09-19-background-notifications.md#补记拆分支时补回被-reset-清掉的部分2026-09-19)。

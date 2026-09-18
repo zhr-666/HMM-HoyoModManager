@@ -35,3 +35,23 @@
 
 - Windows 实机的红点、通知与任务栏联动表现。
 - 冒烟脚本在本机的可运行性。
+
+## 补记：拆分支时补回被 reset 清掉的部分（2026-09-19）
+
+本次改动原先留在暂存区，被界面任务的提交 `4c6ae62` 一并带走；紧随其后的 `git reset --hard`
+又把没暂存的部分清掉了。按分支拆分时核对，丢失并已按规格补回的是：
+
+- `src/preload.cjs` 的 `onUpdateSummary`（缺它时界面收不到 `hoyo:updateSummary`，红点链路是断的，
+  `tests/update-check-ui.test.cjs` 的 preload 契约用例会失败）。
+- `src/core/notification-center.cjs` 的 `ephemeral` 支持，以及 `tests/notification-center.test.cjs`
+  的三条 ephemeral 用例。
+- `scripts/smoke-app-update.cjs` 的红点断言、`scripts/smoke-queue.cjs` 与 `smoke-renderer.cjs`
+  的 `#progress` 断言。
+- 上面第 8 步新增的两个测试文件与第 10 步的文档。
+
+拆分支后的实际执行结果（与上面原会话的记录不同，以本节为准）：
+
+- `node scripts/check-syntax.cjs`：本分支 69 个 JavaScript 文件通过（合并界面分支后为 71 个）。
+- `node --test tests/*.test.cjs`（真实 Node 24.21.0）：233 项，232 通过、1 跳过
+  （`tests/app-update.test.cjs` 需要真实 Node 路径行为）、0 失败；合并界面分支后为 236 项。
+- `scripts/smoke-*.cjs`：本机没有 Playwright，仍未执行；改动为逐行审读。
