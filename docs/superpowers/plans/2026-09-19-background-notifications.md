@@ -52,6 +52,12 @@
 拆分支后的实际执行结果（与上面原会话的记录不同，以本节为准）：
 
 - `node scripts/check-syntax.cjs`：本分支 69 个 JavaScript 文件通过（合并界面分支后为 71 个）。
-- `node --test tests/*.test.cjs`（真实 Node 24.21.0）：233 项，232 通过、1 跳过
-  （`tests/app-update.test.cjs` 需要真实 Node 路径行为）、0 失败；合并界面分支后为 236 项。
-- `scripts/smoke-*.cjs`：本机没有 Playwright，仍未执行；改动为逐行审读。
+- `node --test tests/*.test.cjs`（真实 Node 24.21.0）：本分支 233 项，232 通过、1 跳过
+  （`tests/app-update.test.cjs` 需要真实 Node 路径行为）、0 失败；合并界面分支后 236 项，235 通过、1 跳过、0 失败。
+- 真实界面验收（临时 CDP 脚本，跑完删除；离线，`HOYOMOD_DATA` 指向临时目录）：5 项通过——全局进度条
+  元素不存在、弹窗内 `#inline-progress` 与三个红点标记就位、`onUpdateSummary` 已暴露；未查看结果到达时
+  只亮红点不弹窗；点按钮打开缓存结果并熄灭红点；再点一次先弹「开始检查更新」、完成后发通知并重新亮红点，
+  历史与 `notifications.json` 里都没有那条瞬时提示；点通知打开结果窗口并熄灭红点。
+- `node scripts/smoke-notifications.cjs` 与 `node scripts/smoke-library-folders.cjs`（都不依赖 Playwright）：通过，
+  作为与界面任务合并后的回归证据。
+- 其余 `scripts/smoke-*.cjs` 依赖 Playwright，本机没有可用的 Playwright，仍未执行；改动为逐行审读。
