@@ -104,7 +104,7 @@ const assert=require('node:assert/strict');
     assert.equal(await page.locator('.library-thumb .nsfw-image').count(),0);
     await page.locator('.mod-switch input').check();await page.waitForFunction(()=>document.querySelector('.mod-switch input').checked&&!document.querySelector('.mod-switch input').disabled);
     await page.evaluate(()=>window.pushDownloads([{id:'q1',name:'后台任务',status:'downloading',progress:{label:'下载文件',received:50,total:100,speed:200}}]));
-    assert.equal(await page.locator('#import-button').isEnabled(),true);assert.equal(await page.locator('#progress').isVisible(),false);
+    assert.equal(await page.locator('#import-button').isEnabled(),true);assert.equal(await page.locator('#progress').count(),0,'全局进度条已取消，后台任务不再占用页面上方');
     await gotoPage('downloads');assert.equal(await page.locator('[data-testid="download-row"]').count(),1);assert.match(await page.locator('.download-progress').textContent(),/50%/);
     await page.evaluate(()=>window.pushDownloads([{id:'q1',name:'失败任务',status:'failed',error:'连接超时',progress:{}}]));await page.locator('.download-retry').click();await page.waitForFunction(()=>document.querySelector('.history-status').textContent==='下载中');
     assert.equal(await page.locator('#launch-button').isVisible(),false);
