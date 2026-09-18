@@ -188,8 +188,8 @@ html[data-platform="win32"] .sidebar{top:40px}
 .category-arrow{margin-left:auto;flex-shrink:0;color:var(--muted)}
 #category-head[hidden],#category-list[hidden]{display:none}
 
-.download-toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:100;padding:13px 22px;max-width:calc(100vw - 40px);border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);box-shadow:0 6px 24px #0003;font-size:14px;font-weight:600;pointer-events:none;-webkit-app-region:no-drag}
-html[data-platform="win32"] .download-toast{top:54px}
+/* 「已加入下载列表」等操作反馈：和消息卡片同一套右下角栈，从右侧滑入。 */
+.download-toast{z-index:100;padding:13px 22px;max-width:min(344px,calc(100vw - 72px));border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);box-shadow:0 6px 24px #0003;font-size:14px;font-weight:600;pointer-events:none;-webkit-app-region:no-drag}
 .library-navigation{display:flex;align-items:center;gap:18px;margin-bottom:18px}
 .library-navigation .library-breadcrumb{margin:0;min-width:0}
 .library-breadcrumb [aria-current="page"]{color:var(--text);font-weight:600}
@@ -236,8 +236,8 @@ html[data-platform="win32"] .download-toast{top:54px}
 #library-grid[data-view="grid"] .item-actions .button{font-size:12px;min-height:30px;padding:5px 8px}#library-grid[data-view="grid"] .item-actions .link-button{font-size:12px}
 #library-grid[data-view="grid"] .meta{font-size:11px;line-height:1.6}.library-item:hover{border-color:color-mix(in srgb,var(--blue) 32%,var(--line))}
 .download-toast.toast-enter{animation:toast-enter .2s cubic-bezier(.2,.8,.2,1) both}.download-toast.toast-leave{animation:toast-leave .2s ease-in both}
-@keyframes toast-enter{from{opacity:0;transform:translate(-50%,-12px)}to{opacity:1;transform:translate(-50%,0)}}
-@keyframes toast-leave{from{opacity:1;transform:translate(-50%,0)}to{opacity:0;transform:translate(-50%,-8px)}}
+@keyframes toast-enter{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toast-leave{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(18px)}}
 :root[data-theme="dark"] .game-hero{background:linear-gradient(115deg,#263849,#283c4e 55%,#344b5b);color:#e1ecf4;border-color:#465c6c}
 :root[data-theme="dark"] .hero-eyebrow,:root[data-theme="dark"] .hero-copy p{color:#a6bbc9}:root[data-theme="dark"] .hero-status{background:#203540b3;border-color:#617d8055;color:#bbcdd7}:root[data-theme="dark"] .hero-status[data-ready="true"]{color:#a7d6c0}
 :root[data-theme="dark"] .hero-actions>.secondary{background:#20313ec9;border-color:#677e8a55;color:#d6e4ed}:root[data-theme="dark"] .hero-orbit{background:linear-gradient(145deg,#aac9dd33,#ffffff00);border-color:#aac9dd22}
@@ -262,7 +262,7 @@ html[data-page="home"] .topbar .help-note{color:#fff}
 html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex-direction:column;flex:1;min-height:0;justify-content:flex-end;animation-name:home-enter}
 /* Notification center: a floating bell in the bottom-right corner, a popup stack that
    Windows-style toasts appear in, and the persisted message history behind the bell. */
-.notification-center{position:fixed;bottom:96px;right:32px;z-index:95;display:flex;flex-direction:column;align-items:flex-end;gap:10px;-webkit-app-region:no-drag}
+.notification-center{position:fixed;right:32px;bottom:32px;z-index:95;display:flex;flex-direction:column;align-items:flex-end;gap:10px;-webkit-app-region:no-drag}
 .notification-popups{display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}
 .notification-popup{pointer-events:auto;width:min(344px,calc(100vw - 56px));display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(14px);box-shadow:0 10px 28px #0003;animation:notification-enter .2s cubic-bezier(.2,.8,.2,1) both}
 .notification-popup.leaving{animation:notification-leave .18s ease-in both}
@@ -280,7 +280,8 @@ html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex
 .notification-button.has-unread{animation:notification-pulse 2.4s ease-in-out infinite}
 .notification-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--danger);color:#fff;font-size:10.5px;font-weight:700;display:grid;place-items:center;border:1px solid var(--surface)}
 @keyframes notification-pulse{0%,100%{box-shadow:0 5px 18px #0002}50%{box-shadow:0 0 0 6px #1769e026}}
-.notification-panel{width:min(384px,calc(100vw - 56px));max-height:min(64vh,470px);display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--surface) 97%,transparent);backdrop-filter:blur(18px);box-shadow:0 14px 40px #0003;overflow:hidden;animation:notification-enter .16s ease-out both}
+.notification-panel{width:min(384px,calc(100vw - 56px));max-height:min(64vh,470px);display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--surface) 97%,transparent);backdrop-filter:blur(18px);box-shadow:0 14px 40px #0003;overflow:hidden;transform-origin:100% 100%;animation:notification-zoom .24s cubic-bezier(.2,.85,.3,1.04) both}
+@keyframes notification-zoom{from{opacity:0;transform:scale(.22) translateY(18px)}to{opacity:1;transform:scale(1) translateY(0)}}
 .notification-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
 .notification-list{overflow:auto;padding:6px}
 .notification-item{display:flex;align-items:flex-start;gap:9px;padding:10px 10px;border-radius:8px}
@@ -295,7 +296,6 @@ html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex
 .notification-item-remove{flex:0 0 auto;border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:3px 4px;border-radius:4px}
 .notification-item-remove:hover{background:var(--inset);color:var(--danger)}
 .notification-empty{margin:0;padding:26px 14px;text-align:center;color:var(--muted);font-size:12px}
-@media(max-width:1200px){.notification-center{bottom:90px;right:26px}}
 @media(prefers-reduced-motion:reduce){.notification-popup,.notification-panel{animation:none}.notification-button.has-unread{animation:none}}
 #page-home.active{display:flex;flex-direction:column;min-height:calc(100vh - 210px);animation-name:home-enter}
 @keyframes home-enter{from{opacity:0}to{opacity:1}}
@@ -356,8 +356,9 @@ dialog .help-note{display:inline-flex;margin:0 0 0 7px!important;vertical-align:
 
 /* ===== 米哈游官方启动器风格：两级侧栏（启动器 / 模组工作空间）===== */
 .rail{display:grid;gap:5px;align-content:start}
-/* 启动器侧栏：游戏列表贴着横杠往上排，横杠下面才是「全部游戏」。 */
-.game-list{display:flex;flex-direction:column;gap:5px}
+/* 启动器侧栏：游戏图标紧贴横杠往上排，横杠下面是「全部游戏」，再下面是设置。
+   column-reverse 让第一个加入的游戏离「全部游戏」最近，后续游戏往上叠。 */
+.game-list{display:flex;flex-direction:column-reverse;gap:5px}
 .rail-foot{display:grid;gap:5px;margin-top:auto;padding-top:10px}
 /* 「全部游戏」上方的小横杠：区分游戏区与底部入口 */
 .rail-separator{display:block;height:0;min-height:1px;flex:none;margin:6px 6px;border-top:1px solid #ffffff52}
@@ -394,7 +395,7 @@ html[data-mode="launcher"][data-page="games"] main{padding:26px 30px 30px;max-wi
 .launcher-main{display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0}
 .launcher-status{align-self:flex-start;font-size:12px;padding:7px 15px;border-radius:20px;background:#0c1a29bd;color:#e7eff7;border:1px solid #ffffff2e;backdrop-filter:blur(10px);text-shadow:0 1px 6px #00000073}
 .launcher-status[data-ready="true"]{color:#b9ecc7}
-.launcher-actions{display:flex;align-items:center;gap:12px;flex-shrink:0;padding-bottom:4px}
+.launcher-actions{position:fixed;right:88px;bottom:32px;z-index:10;display:flex;align-items:flex-end;gap:12px;padding:0}
 
 html[data-mode="launcher"] .home-summary{grid-template-columns:repeat(2,minmax(0,336px));margin-top:0}
 html[data-mode="launcher"] .home-card{min-height:0;padding:20px;background:color-mix(in srgb,#0c1a29 76%,transparent);border:1px solid #ffffff26;color:#eef4fa;backdrop-filter:blur(18px);box-shadow:0 10px 34px #06111d3d}
