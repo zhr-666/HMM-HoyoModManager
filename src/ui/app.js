@@ -24,9 +24,25 @@ const ICON=name=>`<svg class="icon" aria-hidden="true"><use href="#i-${name}"/><
 
 // 通知与弹窗所用的线性图标：错误用警示，其余用消息。
 const notificationIcon={error:ICON('warning'),message:ICON('message')};const notificationGlyph=entry=>notificationIcon[entry.tone]||notificationIcon.message;
-// 通知中心里的常驻通知（任务完成 / 错误）：历史由主进程持久化，条目有 target 才可点击。
+// 通知中心里的完成 / 错误通知：历史由主进程持久化，条目有 target 才可点击。
 // 3 秒即时通知（#notification-toast）与进行中的任务都不写入这里。
 let notificationEntries=[],notificationUnread=0;
+// 完成 / 错误提示卡的自动关闭时间：弹出 8 秒后自己关掉，用户也可以提前点「×」。
+const POPUP_CLOSE_MS=8000;
+// 通知系统整体放在浏览器顶层（#notification-center 带 popover="manual"）：有内容要显示就打开，
+// 最后一项消失（提示卡淡出、面板收起、即时通知消失）才关掉。顶层里的元素永远在对话框、遮罩
+// 与背景模糊之上，通知与通知中心始终清晰、不被遮挡；位置仍由 CSS 固定在右下角。
+// 严格按可见性判断：正在淡出的提示卡仍然算「有内容」，要等它真的移除后再离开顶层。
+function notificationLayerVisible(){
+  return Boolean(document.querySelectorAll('.notification-popup:not(.leaving)').length||document.querySelector('#notification-toast')?.hidden===false||document.querySelector('#notification-panel')?.hidden===false);
+}
+function syncNotificationLayer(){
+  const center=$('#notification-center');if(!center?.showPopover)return;
+  try{
+    if(notificationLayerVisible()){if(!center.matches(':popover-open'))center.showPopover()}
+    else if(center.matches(':popover-open'))center.hidePopover();
+  }catch{}
+}
 const notificationTime=value=>{const d=new Date(Number(value)||Date.now());return new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(d)};
 function renderNotifications(){
   const button=$('#notification-button'),badge=$('#notification-badge');
@@ -71,13 +87,16 @@ function showNotificationPopup(entry){
   box.className='notification-popup'+(entry.tone==='error'?' error':'');box.setAttribute('role','status');
   box.dataset.clickable=String(Boolean(entry.target));
   box.innerHTML=`<span class="notification-popup-icon" aria-hidden="true">${notificationGlyph(entry)}</span><div class="notification-popup-body">${entry.title?`<strong>${esc(entry.title)}</strong>`:''}<p>${esc(entry.text)}</p></div><button type="button" class="notification-popup-close" aria-label="关闭这条提示" title="只关闭这条提示，消息保留在通知中心">×</button>`;
-  const remove=()=>{if(!box.isConnected)return;box.classList.add('leaving');setTimeout(()=>box.remove(),180)};
+  const remove=()=>{if(!box.isConnected)return;box.classList.add('leaving');setTimeout(()=>{box.remove();syncNotificationLayer()},180)};
   // 「×」只关闭这个弹窗：不删除消息、不清空记录，之后在通知中心里仍然看得到（需求 6）。
   $('.notification-popup-close',box).onclick=event=>{event.stopPropagation();remove()};
   // 有对应页面的完成通知可以直接点进去；没有页面的通知不绑点击，鼠标也不显示手型。
   if(entry.target)$('.notification-popup-body',box).onclick=()=>{remove();closeNotificationPanel();openNotificationTarget(entry.target)};
   host.append(box);
   while(host.children.length>3)host.firstElementChild.remove();
+  // 弹出后 8 秒自动关闭（需求 2）：这段时间里用户仍然可以点「×」立刻关掉；消息保留在通知中心。
+  setTimeout(remove,POPUP_CLOSE_MS);
+  syncNotificationLayer();
 }
 let panelClosing=null;
 function toggleNotificationPanel(open){
@@ -86,7 +105,10 @@ function toggleNotificationPanel(open){
   if(!next)return closeNotificationPanel();
   clearTimeout(panelClosing);panelClosing=null;
   panel.classList.remove('closing');panel.hidden=false;
+  // 每次展开都重放一次展开动画：面板在顶层重排后动画会重头播，这里显式重排做保底。
+  panel.style.animation='none';void panel.offsetWidth;panel.style.animation='';
   button.setAttribute('aria-expanded','true');
+  syncNotificationLayer();
   call('readNotifications',{}, {silent:true}).then(applyNotifications).catch(()=>{});
 }
 // 关闭时先放反向收回动画，再隐藏；从面板点消息时等动画收完再跳转（需求 4）。
@@ -96,11 +118,12 @@ function closeNotificationPanel(after){
   button.setAttribute('aria-expanded','false');
   panel.classList.add('closing');
   clearTimeout(panelClosing);
-  panelClosing=setTimeout(()=>{panel.classList.remove('closing');panel.hidden=true;if(after)after()},200);
+  panelClosing=setTimeout(()=>{panel.classList.remove('closing');panel.hidden=true;syncNotificationLayer();if(after)after()},200);
 }
 function openNotificationPanel(){toggleNotificationPanel(true)}
 // 任务卡：只在通知中心的「进行中的任务」区显示，不再弹到右下角（需求：进行中的任务不主动弹窗）。
-// 下载队列把「当前文件」与「整个队列」两条进度放在同一张卡里，不拆成两个任务。
+// 下载队列把「当前文件」与「整个队列」放在同一张卡里，不拆成两个任务：当前文件带进度条与
+// 百分比；整个队列只报位置（「正在下载第 X 个，共 X 个」），不画整批的进度条与百分比。
 let taskList=[];
 function activeTasks(){return taskList.filter(task=>task.status==='running')}
 const taskStatusLabel={running:'进行中',success:'已完成',failed:'失败',cancelled:'已取消'};
@@ -123,10 +146,8 @@ function taskCard(task){
   }else if(total&&!queue){
     rows.push(`<div class="task-card-bar"><progress max="${total}" value="${Math.min(received,total)}"></progress><span>${esc(formatSize(received))} / ${esc(formatSize(total))}</span></div>`);
   }
-  if(queue){
-    rows.push(`<p class="task-card-queue">${esc(queue.text||'')}</p>`);
-    rows.push(taskProgressBar(queue));
-  }
+  // 整批任务只报位置，不带整批的进度条与百分比（需求 1）；当前文件的进度条在上面单独一行。
+  if(queue)rows.push(`<p class="task-card-queue">${esc(queue.text||'')}</p>`);
   if(task.message)rows.push(`<p class="task-card-message">${esc(task.message)}</p>`);
   if(task.status==='running'&&task.cancelable)rows.push('<div class="task-card-actions"><button type="button" class="button secondary task-cancel">取消</button></div>');
   card.innerHTML=rows.join('');
@@ -142,7 +163,7 @@ function renderTasks(){
 }
 function applyTasks(list){taskList=Array.isArray(list)?list:[];renderTasks()}
 // 成功反馈与按钮校验提示统一走右下角 3 秒即时通知：自动消失、不进通知中心、不可点击。
-// 真实错误才写常驻通知（进历史、可查详细信息），它必须由用户手动关闭（需求：三种通知状态）。
+// 真实错误才写通知历史（可查详细信息），右下角弹出 8 秒后自动关闭，也可以提前手动关掉。
 function notifyError(error,fallback='操作失败，请重试。'){const message=error?.message||String(error||fallback);call('addNotification',{text:message,tone:'error'},{silent:true}).then(applyNotifications).catch(()=>{});return message}
 function notify(message,error=false){return showToast(message,error?'error':'info')}
 let toastTimer,toastHideTimer;
@@ -151,10 +172,10 @@ function showToast(message,tone='info'){
   const toast=$('#notification-toast');if(!toast)return;
   clearTimeout(toastTimer);clearTimeout(toastHideTimer);
   toast.textContent=text;toast.classList.toggle('error',tone==='error');toast.hidden=false;toast.classList.remove('toast-enter','toast-leave');
-  void toast.offsetWidth;toast.classList.add('toast-enter');
+  void toast.offsetWidth;toast.classList.add('toast-enter');syncNotificationLayer();
   toastTimer=setTimeout(()=>{
     toast.classList.remove('toast-enter');toast.classList.add('toast-leave');
-    toastHideTimer=setTimeout(()=>{toast.hidden=true;toast.classList.remove('toast-leave')},200);
+    toastHideTimer=setTimeout(()=>{toast.hidden=true;toast.classList.remove('toast-leave');syncNotificationLayer()},200);
   },3000);
 }
 let homeStatsRevision=0,homeStatsTimer;
@@ -421,6 +442,10 @@ async function loadCategories(){
 function skeletonMarkup(count=8){return Array.from({length:count},()=>'<div class="mod-skeleton" aria-label="正在加载模组"><div class="skeleton-preview"><span class="skeleton-spinner"></span></div><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>').join('');}
 async function browse(){
   const revision=++browseRevision,grid=$('#browse-grid'),empty=$('#browse-empty');
+  // 换页时立刻回到页面最上方，不保留上一页的滚动位置（需求 3）。放在换骨架之前：这时旧内容
+  // 还在，滚到顶不会因为高度突然变化而跳一下；加载成功、失败或取消都停在这个位置。
+  // 切换分类、搜索与筛选同样走这里；不在工坊时不动滚动位置。
+  if(activePage==='workshop'&&(Number(scrollY)||0)>0)window.scrollTo({top:0,behavior:'auto'});
   grid.innerHTML=skeletonMarkup(8);grid.setAttribute('aria-busy','true');empty.hidden=true;
   try{
     const r=await api.call('browse',{category,page,query,sort:$('#sort-select').value,sfw:$('#sfw-filter').checked,nsfw:$('#nsfw-filter').checked});
@@ -610,7 +635,9 @@ syncGameTiles();
 $('#library-view-list').onclick=()=>setLibraryView('list');$('#library-view-grid').onclick=()=>setLibraryView('grid');
 $('#clear-downloads').onclick=()=>enqueue('clearDownloads',{});
 $('#cleanup-packages').onclick=async()=>{try{const result=await call('cleanupPackages',{},{foreground:false,silent:true});if(result?.downloads){downloads=result.downloads;renderDownloads()}notify(result?.removed?`已清理 ${result.removed} 个安装包，释放 ${formatSize(result.freed)}。`:'没有可清理的安装包。')}catch(e){notify(e.message,true)}};
-$$('.nav-item').forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==='settings')markAppUpdateSeen()});$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};$('#prev-page').onclick=()=>{if(page>1){page--;browse()}};$('#next-page').onclick=()=>{page++;browse()};$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=()=>call('launch').catch(()=>{});// 导入本地模组：选压缩包 → 选存放位置 → 解压复制注册 → 刷新列表（需求 13）。
+$$('.nav-item').forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==='settings')markAppUpdateSeen()});$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};function showBrowsePage(next){page=Math.max(1,Number(next)||1);browse()}
+$('#prev-page').onclick=()=>{if(page>1)showBrowsePage(page-1)};$('#next-page').onclick=()=>showBrowsePage(page+1);$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=()=>call('launch').catch(()=>{});// 导入本地模组：① 选 Mod 压缩包 → ② 直接解压、复制进安装库并登记（需求 4）。
+// 启用位置不再问用户：模组进 GIMI 的 HoYoModManaged/<模组 ID>，与其他模组走同一条启用库规则。
 // 整个过程用 importRunning 锁住，避免重复触发系统文件选择器；导入成功后再重载状态。
 let importRunning=false;
 $('#import-button').onclick=async()=>{
@@ -620,17 +647,15 @@ $('#import-button').onclick=async()=>{
   try{
     const picked=await call('import');
     if(!picked||picked.cancelled)return;
-    await chooseLibraryFolder({subtitle:picked.name,onConfirm:async node=>{
-      // reload:true 会先把新状态读回来，所以要在这之前记下已有的模组编号。
-      const before=new Set(state.mods.map(mod=>mod.id));
-      const result=await call('importApply',{file:picked.file,characterId:node.id},{reload:true});
-      if(result?.cancelled)return;
-      // 确认真的落库了：状态里找不到新模组时如实报告，而不是一律报「导入完成」。
-      const added=state.mods.filter(mod=>!before.has(mod.id));
-      renderLibrary();renderState();
-      if(added.length)notify(`本地模组导入完成：${added.map(mod=>mod.name).join('、')}。`);
-      else notify('导入流程已结束，但没有在“我的模组”里找到新模组，请刷新后重试。',true);
-    }});
+    // reload:true 会先把新状态读回来，所以要在这之前记下已有的模组编号。
+    const before=new Set(state.mods.map(mod=>mod.id));
+    const result=await call('importApply',{file:picked.file},{reload:true});
+    if(result?.cancelled)return;
+    // 确认真的落库了：状态里找不到新模组时如实报告，而不是一律报「导入完成」。
+    const added=state.mods.filter(mod=>!before.has(mod.id));
+    renderLibrary();renderState();
+    if(added.length)notify(`本地模组导入完成：${added.map(mod=>mod.name).join('、')}。`);
+    else notify('导入流程已结束，但没有在“我的模组”里找到新模组，请刷新后重试。',true);
   }catch(error){notifyError(error)}
   finally{importRunning=false;$('#import-button').disabled=false}
 };
@@ -762,50 +787,6 @@ function confirmHashRollback(dialog,panel,batch){
   };
 }
 $('#replace-hash').onclick=()=>{hashTab='apply';openHashReplace()};
-
-async function ensureTaxonomy(){if(!taxonomy.length){try{taxonomy=await call('taxonomy',{},{foreground:false})}catch{}}return taxonomy}
-// 逐层浏览本机库的分类文件夹，为选中的压缩包选一个存放位置：已有的文件夹直接存放，
-// 还没建过的 GameBanana 分类会自动创建。停在总分类上也行，模组直接放进大分类文件夹。
-async function chooseLibraryFolder({subtitle,onConfirm}){
-  await ensureTaxonomy();
-  const body='<p class="meta">模组副本（安装库）存放在这个分类文件夹；大分类也可以直接存放，还没有的文件夹会自动创建。</p><nav id="location-breadcrumb" class="category-breadcrumb" aria-label="本机库文件夹路径"></nav><div class="character-head"><strong id="location-heading">选择大分类</strong><label class="mini-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="location-search" type="search" placeholder="查找当前层级分类" aria-label="查找当前层级分类"></label></div><div id="location-folders" class="folder-grid"></div><p id="location-empty" class="meta" hidden>当前层级没有匹配的分类。</p><p id="location-selection" class="meta"></p>';
-  const dialog=modal('选择存放位置',subtitle,body,'<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary" id="location-confirm" disabled>确定</button>');
-  const q=selector=>$(selector,dialog),confirm=q('#location-confirm');
-  let trail=[],selection=null;
-  function render(){
-    const tree=buildLibraryPickerTree(taxonomy,state.mods,state.folders||[]),path=[];
-    let children=tree;
-    for(const id of trail){const node=children.find(item=>item.id===id);if(!node)break;path.push(node);children=node.children}
-    trail=path.map(node=>node.id);
-    const current=path.at(-1),breadcrumb=q('#location-breadcrumb');breadcrumb.replaceChildren();
-    for(const [index,node] of [{id:'',name:'全部分类'},...path].entries()){
-      if(index){const separator=document.createElement('span');separator.textContent='›';separator.setAttribute('aria-hidden','true');breadcrumb.append(separator)}
-      const button=document.createElement('button');button.type='button';button.className='link-button';button.textContent=node.name;
-      if(index===path.length)button.setAttribute('aria-current','page');
-      button.onclick=()=>{trail=trail.slice(0,index);render()};breadcrumb.append(button);
-    }
-    q('#location-heading').textContent=current?current.name:'选择大分类';
-    const filter=(q('#location-search').value||'').trim().toLocaleLowerCase();
-    const visible=children.filter(node=>!filter||node.name.toLocaleLowerCase().includes(filter));
-    const box=q('#location-folders');box.replaceChildren();
-    for(const node of visible){
-      const button=document.createElement('button'),icon=safeImage(node.icon);button.type='button';button.className='folder-card';
-      const note=node.modIds.length?`${node.modIds.length} 个模组`:node.folder?'空文件夹':'可以存放模组';
-      button.innerHTML=`<span class="folder-icon" aria-hidden="true">${icon?`<img src="${esc(icon)}" alt=""><span hidden>${ICON('folder')}</span>`:`<span>${ICON('folder')}</span>`}</span><span><strong>${esc(node.name)}</strong><small>${note}</small></span><span aria-hidden="true">›</span>`;
-      const img=$('img',button);if(img)img.onerror=()=>{img.hidden=true;img.nextElementSibling.hidden=false};
-      button.onclick=()=>{trail.push(node.id);render()};box.append(button);
-    }
-    q('#location-empty').hidden=visible.length>0;
-    // 任意一层都可以存放：大分类（总分类）也允许，分类不必选到最小子文件夹。
-    selection=current||null;
-    q('#location-selection').textContent=selection?`已选择：${path.map(node=>node.name).join(' / ')}${selection.folder?' · 已有文件夹':''}`:'选择任意一层分类后即可存放，还没有的文件夹会自动创建。';
-    confirm.disabled=!selection;
-    confirm.textContent=selection?`存到「${selection.name}」`:'确定';
-  }
-  q('#location-search').oninput=render;
-  confirm.onclick=()=>{if(!selection)return;const chosen=selection;closeModal();onConfirm(chosen)};
-  render();
-}
 
 function renameMod(mod){
  modal('修改模组名称','只修改显示名称，文件、分类、来源和启用状态保持不变。',`<div class="field"><label for="mod-name">模组名称</label><input id="mod-name" maxlength="200" value="${esc(mod.name)}" autofocus></div>`,'<button class="button secondary" value="cancel">取消</button><button class="button primary" type="button" id="rename-confirm">保存</button>');

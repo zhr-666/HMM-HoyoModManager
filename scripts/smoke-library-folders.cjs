@@ -1,4 +1,4 @@
-// 本机库文件夹（导入存放位置 / 角色空白文件夹）界面冒烟测试。
+// 本机库文件夹与本地导入（一键导入 / 角色空白文件夹）界面冒烟测试。
 // 通过 Electron 的远程调试端口（CDP）驱动真实界面，因此不依赖 Playwright；
 // 需要可用的图形会话。使用系统临时目录，不触碰用户 data、GIMI 或模组文件。
 // 用法：node scripts/smoke-library-folders.cjs
@@ -57,7 +57,10 @@ async function main(){
   await fs.writeFile(path.join(data,'state.json'),JSON.stringify({
     settings:{modsPath:'',proxyMode:'manual',proxyUrl:'http://127.0.0.1:9'},
     mods:[{id:MOD_ID,name:'钟离模组',characterId:'900002',characterName:'钟离',active:false,folder:path.join(zhongliFolder,MOD_ID),libraryPath:`Skins-abc1234567/钟离-1122334455/${MOD_ID}`,hotkeys:{bindings:[],warnings:[],filesScanned:0}}],
-    folders:[{id:'900001',name:'胡桃',rootCategoryId:'17510',rootCategoryName:'Skins',characterGroupId:'900001',libraryPath:'Skins-abc1234567/胡桃-def7654321',createdAt:Date.now()}],
+    folders:[
+      {id:'900001',name:'胡桃',rootCategoryId:'17510',rootCategoryName:'Skins',characterGroupId:'900001',libraryPath:'Skins-abc1234567/胡桃-def7654321',createdAt:Date.now()},
+      {id:'900002',name:'钟离',rootCategoryId:'17510',rootCategoryName:'Skins',characterGroupId:'900002',libraryPath:'Skins-abc1234567/钟离-1122334455',createdAt:Date.now()},
+    ],
     presets:[],
   }));
   await fs.writeFile(path.join(data,'taxonomy.json'),JSON.stringify([
@@ -111,49 +114,39 @@ async function main(){
   assert.match(String(emptyText),/这个文件夹里还没有模组/,'空文件夹应有说明：'+emptyText);
   console.log('✓ 进入空文件夹显示自动存放说明');
 
-  // 3. 导入存放位置弹窗：任意一层都能确认、可搜索
-  //    （系统文件对话框无法自动化，这里直接进入选位置这一步。）
-  await evaluate('libraryNavigation=[];renderLibrary();window.__picked=null;chooseLibraryFolder({subtitle:"测试包",onConfirm:node=>{window.__picked=node}})');
-  await waitFor('!!document.querySelector("#location-confirm")','存放位置弹窗');
-  assert.equal(await evaluate('document.querySelector("#modal-title").textContent'),'选择存放位置');
-  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),true,'未选分类时不能确认');
-  await clickByText('#location-folders .folder-card','Skins');
-  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),false,'大分类可以直接存放');
-  assert.equal(await evaluate('document.querySelector("#location-confirm").textContent'),'存到「Skins」');
-  assert.match(await evaluate('document.querySelector("#location-selection").textContent'),/已选择：Skins/);
-  await clickByText('#location-folders .folder-card','Characters');
-  assert.deepEqual(await cards('#location-folders .folder-card'),['胡桃|空文件夹','钟离|1 个模组','甘雨|可以存放模组']);
-  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),false,'子分类层也应可确认');
-  await evaluate('(()=>{const input=document.querySelector("#location-search");input.value="钟";input.dispatchEvent(new Event("input"))})()');
-  await sleep(150);
-  assert.deepEqual(await cards('#location-folders .folder-card'),['钟离|1 个模组'],'搜索应过滤当前层级');
-  await evaluate('document.querySelector("#location-search").value="";document.querySelector("#location-search").dispatchEvent(new Event("input"))');
-  await sleep(120);
-  await clickByText('#location-folders .folder-card','甘雨');
-  assert.match(await evaluate('document.querySelector("#location-selection").textContent'),/Skins \/ Characters \/ 甘雨/);
-  assert.equal(await evaluate('document.querySelector("#location-confirm").textContent'),'存到「甘雨」');
-  await evaluate('document.querySelector("#location-confirm").click()');
-  await waitFor('!document.querySelector("#modal").open','弹窗关闭');
-  assert.equal(await evaluate('window.__picked&&window.__picked.id'),'900003','确认后应把选中的分类交回导入流程');
-  console.log('✓ 导入存放位置弹窗可在大分类或子分类确认、可搜索，并交回导入流程');
-
-  // 4. 大分类文件夹：磁盘上只有一级，模组直接放在里面
-  const created=await evaluate('window.hoyo.call("createLibraryFolder",{characterId:"17510"}).then(()=>window.hoyo.call("state")).then(s=>s.folders.map(f=>f.id+"|"+f.name+"|"+f.libraryPath))');
-  assert.deepEqual(created.map(row=>row.split('|')[0]),['900001','17510'],'登记内容：'+JSON.stringify(created));
-  const rootLibraryPath=created[1].split('|')[2];
-  assert.equal(rootLibraryPath.split('/').length,1,'总分类文件夹只应有一级：'+rootLibraryPath);
-  const createdDir=path.join(data,'library',rootLibraryPath);
-  assert.ok((await fs.stat(createdDir)).isDirectory(),'大分类文件夹应真的建在磁盘上：'+createdDir);
-  await evaluate('libraryNavigation=[];renderLibrary()');
+  // 3. 导入本地模组：只选压缩包，直接进安装库并启用（不再有「选择存放位置」与选 Mods 文件夹）
+  const zips=path.join(data,"zips");await fs.mkdir(zips,{recursive:true});
+  const gimi=path.join(data,"gimi");const modsPath=path.join(gimi,"Mods");await fs.mkdir(modsPath,{recursive:true});
+  await fs.writeFile(path.join(gimi,"d3dx.ini"),"[Loader]");
+  await evaluate("window.hoyo.call('settings',{modsPath:"+JSON.stringify(modsPath)+"})");
+  const zipFile=path.join(zips,"本地测试.zip");
+  await fs.writeFile(path.join(zips,"mod.ini"),"[TextureOverride]");
+  const {execFile}=require("node:child_process");const {promisify}=require("node:util");
+  const sevenZip=require("7zip-bin").path7za.replace("app.asar"+path.sep,"app.asar.unpacked"+path.sep);
+  if(process.platform!=="win32")await fs.chmod(sevenZip,0o755);
+  await promisify(execFile)(sevenZip,["a",zipFile,"mod.ini"],{cwd:zips});
+  const before=await evaluate("window.hoyo.call('state').then(s=>s.mods.length)");
+  const state=await evaluate("window.hoyo.call('importApply',{file:"+JSON.stringify(zipFile)+"}).then(s=>s.mods.map(m=>({id:m.id,name:m.name,active:m.active,folder:m.folder,deploymentRelative:m.deploymentRelative})))");
+  assert.equal(state.length,before+1,"导入后应多出一个模组");
+  const imported=state.at(-1);
+  assert.equal(imported.deploymentRelative,undefined,"不再询问 GIMI 内的安装文件夹");
+  assert.equal(imported.active,true,"导入后自动启用");
+  assert.equal(path.dirname(imported.folder),path.join(data,"library"),"模组副本放进安装库");
+  assert.equal(await fs.realpath(path.join(modsPath,"HoYoModManaged",imported.id)),await fs.realpath(imported.folder),"启用位置与其他模组同一条规则");
+  await evaluate("loadState()");await sleep(300);
+  await evaluate("showPage('library');libraryNavigation=[];renderLibrary()");
   await sleep(250);
-  assert.deepEqual(await cards('#library-folders .folder-card'),['Skins|1 个模组']);
-  console.log('✓ 大分类文件夹只有一级目录（磁盘 + 状态 + 界面）');
+  // 未分类的本地导入在「我的模组」里归到「本地导入」文件夹：文件夹卡上的数量就是这条新模组。
+  await clickByText('#library-folders .folder-card','本地导入');
+  await sleep(250);
+  assert.deepEqual(await cards('#library-folders .folder-card'),['本地导入|1 个模组'],'本地导入文件夹应显示刚导入的模组');
+  console.log("✓ 导入本地模组只需选压缩包：自动进安装库、自动启用，界面里能看到");
 
   // 5. 有模组的文件夹没有删除入口
   await evaluate('showPage("library");libraryNavigation=["17510","18140"];renderLibrary();(()=>{const card=[...document.querySelectorAll("#library-folders .folder-card")].find(b=>b.textContent.includes("钟离"));card.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,clientX:120,clientY:120}))})()');
   await sleep(200);
   assert.equal(await evaluate('document.querySelector("#context-menu").hidden'),true,'有模组的文件夹不应给出删除入口');
-  const refused=await evaluate('window.hoyo.call("createLibraryFolder",{characterId:"900002"}).then(()=>window.hoyo.call("removeLibraryFolder",{id:"900002"})).then(()=>"allowed",e=>e.message)');
+  const refused=await evaluate('window.hoyo.call("removeLibraryFolder",{id:"900002"}).then(()=>"allowed",e=>e.message)');
   assert.match(String(refused),/还有模组/,'核心层应拒绝删除有模组的文件夹：'+refused);
   await evaluate('showPage("library");libraryNavigation=["17510","18140"];renderLibrary();(()=>{const card=[...document.querySelectorAll("#library-folders .folder-card")].find(b=>b.textContent.includes("钟离"));card.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,clientX:120,clientY:120}))})()');
   await sleep(200);
@@ -165,16 +158,18 @@ async function main(){
   await waitFor('!document.querySelector("#context-menu").hidden','空文件夹右键菜单');
   assert.deepEqual(await cards('#context-menu .mod-context-action'),['undefined|删除空文件夹']);
   await evaluate('document.querySelector("#context-menu .mod-context-action").click()');
-  await waitFor('window.hoyo.call("state").then(s=>s.folders.length===2)','删除生效');
+  await waitFor('window.hoyo.call("state").then(s=>s.folders.length===1)','删除生效');
   const remaining=await evaluate('window.hoyo.call("state").then(s=>s.folders.map(f=>f.id))');
-  assert.deepEqual(remaining,['17510','900002'],'其余文件夹应保留：'+JSON.stringify(remaining));
+  assert.deepEqual(remaining,['900002'],'其余文件夹应保留：'+JSON.stringify(remaining));
   assert.ok(await fs.stat(hutaoFolder).then(()=>false,()=>true),'空文件夹目录应被删除');
+  // 此时还停在「Skins / Characters」这一层：胡桃没了，只剩仍有模组的钟离。
   assert.deepEqual(await cards('#library-folders .folder-card'),['钟离|1 个模组']);
   console.log('✓ 右键删除空文件夹（状态 + 磁盘 + 界面）');
 
-  // 7. 导入入口仍可用（只验证按钮存在且未被禁用，系统对话框不在此自动化）
+  // 7. 导入入口：两步流程里只剩选压缩包的系统对话框，「选择存放位置」弹窗已经移除
   assert.equal(await evaluate('document.querySelector("#import-button").disabled'),false);
-  assert.equal(await evaluate('typeof chooseLibraryFolder'),'function');
+  assert.equal(await evaluate('typeof chooseLibraryFolder'),'undefined','选择存放位置弹窗的函数应已删除');
+  assert.equal(await evaluate('document.querySelector("#location-folders")'),null,'界面里不再有存放位置选择器');
 
   client.close();
   await fs.rm(data,{recursive:true,force:true});dataDir=null;

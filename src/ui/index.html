@@ -32,8 +32,12 @@
   <div id="help-tooltip" class="help-tooltip" role="tooltip" hidden></div>
   <div id="context-menu" class="context-menu" role="menu" hidden><button id="context-refresh" role="menuitem" type="button"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>　刷新</button></div>
   <div id="selection-menu" class="context-menu" role="menu" hidden><button id="selection-hotkey" role="menuitem" type="button"><svg class="icon" aria-hidden="true"><use href="#i-check-check"/></svg>　设置为热键提示</button></div>
-  <section id="notification-center" class="notification-center">
-    <!-- 三种通知：① 3 秒即时通知（这里，自动消失、不可点击）；② 进行中的任务（只在面板的任务区）；③ 完成/错误常驻通知（下面 #notification-popups，必须手动关闭）。 -->
+  <!-- 通知系统整块走 popover="manual"：浏览器把它放进顶层（top layer），因此右下角弹窗、
+       悬浮按钮与展开的面板永远在对话框、遮罩和背景模糊之上，也不会被 dialog::backdrop 的
+       模糊影响。用 manual 是因为显隐时机由界面自己决定（弹窗淡出、面板收回都要等动画收尾），
+       不能让浏览器在点击别处时直接隐藏。 -->
+  <section id="notification-center" class="notification-center" popover="manual">
+    <!-- 三种通知：① 3 秒即时通知（这里，自动消失、不可点击）；② 进行中的任务（只在面板的任务区）；③ 完成/错误通知（下面 #notification-popups，8 秒后自动关闭，也可手动关掉）。 -->
     <div id="notification-toast" class="notification-toast" role="status" aria-live="polite" hidden></div>
     <div id="notification-popups" class="notification-popups" aria-live="polite"></div>
     <div id="notification-panel" class="notification-panel" role="region" aria-label="通知中心" hidden>
@@ -132,7 +136,7 @@
       </section>
 
       <section id="page-library" class="page" data-testid="library-page">
-        <div class="section-head"><div class="row-actions"><button class="button secondary" id="replace-hash" hidden>替换 Hash</button><button class="button secondary" id="check-updates-library">检查更新<span class="button-dot" aria-hidden="true" hidden></span></button><button class="button primary" id="import-button" data-tip-text="选择文件后选择安装位置">导入本地模组<span class="button-hint" aria-hidden="true">?</span></button></div></div>
+        <div class="section-head"><div class="row-actions"><button class="button secondary" id="replace-hash" hidden>替换 Hash</button><button class="button secondary" id="check-updates-library">检查更新<span class="button-dot" aria-hidden="true" hidden></span></button><button class="button primary" id="import-button" data-tip-text="选择文件后选择安装库位置">导入本地模组<span class="button-hint" aria-hidden="true">?</span></button></div></div>
         <div class="library-navigation"><button type="button" id="library-back" class="button secondary library-back" aria-label="返回上一级分类" disabled><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg> 返回</button><nav id="library-breadcrumb" class="library-breadcrumb" aria-label="模组分类路径"></nav><div class="library-view-switch" role="group" aria-label="模组显示方式"><button type="button" id="library-view-list" aria-pressed="true" title="横向列表"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg> 列表</button><button type="button" id="library-view-grid" aria-pressed="false" title="大图网格"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg> 网格</button></div></div><div id="library-folders" class="folder-grid"></div>
         <div id="library-grid" class="list-grid"></div><div id="library-empty" class="empty" hidden></div>
       </section>

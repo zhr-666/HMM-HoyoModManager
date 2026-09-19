@@ -130,22 +130,30 @@ async function main(){
   assert.equal((await saved()).entries.some(entry=>entry.text===instant),false,'即时通知不落盘');
   console.log('✓ 3 秒即时通知自动消失、不进通知中心、不落盘');
 
-  // 2. 任务完成通知：右下角常驻（不自动消失），手动关闭后消息留在通知中心
+  // 2. 完成通知：右下角弹出、8 秒后自动关闭，消息留在通知中心（关闭前也可以手动关掉）
   const done='全部任务下载完成';
   await evaluate(`window.hoyo.call("addNotification",{text:${quoted(done)},target:"downloads"})`);
-  await waitFor(`[...document.querySelectorAll('.notification-popup')].some(box=>box.textContent.includes(${quoted(done)}))`,'右下角常驻通知');
+  await waitFor(`[...document.querySelectorAll('.notification-popup')].some(box=>box.textContent.includes(${quoted(done)}))`,'右下角通知提示卡');
+  // 提示卡与通知中心整体在浏览器顶层（需求 5）：不会被对话框、遮罩或背景模糊盖住。
+  assert.equal(await evaluate('document.querySelector("#notification-center").matches(":popover-open")'),true,'有提示卡时通知中心应在顶层');
   assert.equal(await evaluate(`[...document.querySelectorAll('.notification-popup')].find(box=>box.textContent.includes(${quoted(done)})).className`),'notification-popup','普通完成通知不是错误样式');
   assert.equal(await evaluate(`[...document.querySelectorAll('.notification-popup')].find(box=>box.textContent.includes(${quoted(done)})).dataset.clickable`),'true','有对应页面的完成通知可以点击');
   assert.equal(await evaluate('document.querySelector("#notification-badge").hidden'),false,'完成通知应有未读角标');
+  // 自动关闭的计时基准：8 秒（既不是 3 秒的即时通知，也不是永不关闭）。
+  assert.equal(await evaluate('POPUP_CLOSE_MS'),8000,'提示卡的自动关闭时间应为 8 秒');
   // 面板此时是收起的：主进程只推未读数，历史条目在展开面板时才拉全量快照。
   await evaluate('window.hoyo.call("notifications").then(s=>applyNotifications(s))');
   await waitItem(done);
   assert.equal(await itemUnread(done),'true','未读通知应有未读标记');
   await sleep(3500);
-  assert.ok((await popupTexts()).some(text=>text.includes(done)),'完成通知不会自动消失');
+  assert.ok((await popupTexts()).some(text=>text.includes(done)),'提示卡 8 秒内仍然留在右下角，用户可以看清并手动关掉');
   await sleep(300);
   assert.ok((await saved()).entries.some(entry=>entry.text===done),'完成通知应写入 data/notifications.json');
-  console.log('✓ 完成通知常驻右下角、有关闭按钮与未读角标并落盘');
+  // 8 秒后自动关闭（需求 2）：卡片自己消失，消息仍在通知中心与磁盘历史里。
+  await waitFor(`document.querySelectorAll('.notification-popup').length===0`,'提示卡 8 秒后自动关闭',9000);
+  assert.ok((await historyTexts()).includes(done),'自动关闭不删除消息');
+  assert.equal(await evaluate('document.querySelector("#notification-center").matches(":popover-open")'),false,'最后一项通知结束后再离开顶层，不挡住页面点击');
+  console.log('✓ 完成通知右下角弹出、8 秒后自动关闭，消息与未读角标保留');
 
   // 2b. 手动关闭右下角通知：只是关掉弹窗，消息仍留在通知中心
   await closePopups();

@@ -12,7 +12,7 @@ function normalizeText(value) {
 }
 
 // 通知中心只保留两种通道：
-// ① add()：常驻通知（完成 / 错误）——进历史、计未读、落盘，并弹一张需要手动关闭的右下角卡片；
+// ① add()：完成 / 错误通知——进历史、计未读、落盘，并弹一张右下角卡片（界面 8 秒后自动关闭，也可以手动关）；
 // ② toast()：3 秒即时通知——只弹一次给用户「按钮点成功了」的反馈，不进历史、不计未读、不落盘。
 class NotificationCenter {
   constructor(file, { onChange = () => {}, onPopup = () => {}, onToast = () => {}, limit = 200 } = {}) {
