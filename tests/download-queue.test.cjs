@@ -44,3 +44,48 @@ test('retry validation failure preserves the original failed record',async t=>{
 test('clear preserves installation in progress',async t=>{
  const dir=await root(t);let release,started;const gate=new Promise(r=>release=r),installing=new Promise(r=>started=r);const q=new DownloadQueue(dir,{validate:async()=>{},run:async(row,progress)=>{progress({label:'检查并安装',stage:'installing'});started();await gate;return {};}});await q.init();const item=await q.add({name:'A'});await installing;await q.clear();assert.equal(q.snapshot()[0].status,'installing');await assert.rejects(q.remove(item.id),/进行中/);release();await q.idle();assert.equal(q.snapshot()[0].status,'installed');
 });
+
+// 需求 1：下载中（以及安装中）的任务都能取消，取消不是下载失败。
+test('cancelling a running download aborts it and reports cancelled instead of failed',async t=>{
+ const dir=await root(t),seen=[];let started;
+ const running=new Promise(r=>started=r);
+ const q=new DownloadQueue(dir,{validate:async()=>{},run:async(row,progress,{signal})=>{seen.push(row.name);started();
+  await new Promise((resolve,reject)=>{signal.addEventListener('abort',()=>reject(Object.assign(new Error('已取消下载。'),{cancelled:true})),{once:true});});
+  return {};}});
+ await q.init();const item=await q.add({name:'big',sourceId:1,fileId:2});await running;
+ assert.equal(q.snapshot()[0].canCancel,true,'下载中的任务要标出可以取消');
+ await q.cancel(item.id);
+ await q.idle();
+ const row=q.snapshot()[0];
+ assert.equal(row.status,'cancelled');
+ assert.equal(row.error,'','取消不该留下失败原因');
+ assert.equal(row.message,'已取消下载。');
+ assert.equal(seen.length,1,'取消后不再排下一轮');
+});
+
+test('cancelling while installing also stops the task',async t=>{
+ const dir=await root(t);let started;const installing=new Promise(r=>started=r);
+ const q=new DownloadQueue(dir,{validate:async()=>{},run:async(row,progress,{signal})=>{progress({label:'检查并安装 X',stage:'installing'});started();
+  await new Promise((resolve,reject)=>{signal.addEventListener('abort',()=>reject(Object.assign(new Error('已取消下载。'),{cancelled:true})),{once:true});});return {};}});
+ await q.init();const item=await q.add({name:'A'});await installing;
+ assert.equal(q.snapshot()[0].status,'installing');
+ await q.cancel(item.id);await q.idle();
+ assert.equal(q.snapshot()[0].status,'cancelled');
+});
+
+test('a finished download can no longer be cancelled',async t=>{
+ const dir=await root(t);const q=new DownloadQueue(dir,{validate:async()=>{},run:async()=>({})});
+ await q.init();const item=await q.add({name:'A'});await q.idle();
+ await assert.rejects(q.cancel(item.id),/已经结束/);
+});
+
+test('a cancelled download can be retried and succeeds',async t=>{
+ const dir=await root(t);let attempt=0,started;const running=new Promise(r=>started=r);
+ const q=new DownloadQueue(dir,{validate:async()=>{},run:async(row,progress,{signal})=>{attempt++;
+  if(attempt===1){started();await new Promise((resolve,reject)=>{signal.addEventListener('abort',()=>reject(Object.assign(new Error('已取消下载。'),{cancelled:true})),{once:true});});}
+  return {message:'done'};}});
+ await q.init();const item=await q.add({name:'A'});await running;await q.cancel(item.id);await q.idle();
+ assert.equal(q.snapshot()[0].status,'cancelled');
+ const retry=await q.retry(item.id);assert.equal(retry.id,item.id);await q.idle();
+ assert.equal(q.snapshot()[0].status,'installed');
+});

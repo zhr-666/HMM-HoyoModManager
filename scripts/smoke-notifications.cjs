@@ -117,19 +117,37 @@ async function main(){
   await waitFor('document.querySelector("#notification-list").children.length===0','空历史');
   assert.equal(await evaluate('document.querySelector("#notification-badge").hidden'),true,'没有未读时不显示角标');
 
-  // 1. 界面侧消息（notify）：弹提示卡 + 角标 + 未读标记 + 落盘
-  const done='下载列表全部完成：1 个任务。';
-  await evaluate(`notify(${quoted(done)})`);
-  await waitFor(`[...document.querySelectorAll('.notification-popup')].some(box=>box.textContent.includes(${quoted(done)}))`,'右下角提示卡');
-  assert.equal(await evaluate(`[...document.querySelectorAll('.notification-popup')].find(box=>box.textContent.includes(${quoted(done)})).className`),'notification-popup','普通消息不是错误样式');
-  assert.equal(await evaluate('document.querySelector("#notification-badge").hidden'),false,'有新消息应显示角标');
-  await waitItem(done);
-  assert.equal(await itemUnread(done),'true','未读消息应有未读标记');
+  // 1. 3 秒即时通知：只弹一次，不进通知中心、不计未读、不落盘
+  const instant='已加入下载列表';
+  await evaluate(`showToast(${quoted(instant)})`);
+  await waitFor(`document.querySelector('#notification-toast').hidden===false`,'右下角即时通知');
+  assert.match(await evaluate('document.querySelector("#notification-toast").textContent'),/已加入下载列表/);
+  assert.equal(await evaluate('document.querySelector("#notification-toast").querySelector("button")'),null,'即时通知没有关闭按钮');
+  assert.equal(await evaluate('document.querySelector("#notification-badge").hidden'),true,'即时通知不该产生未读');
+  assert.equal((await historyTexts()).includes(instant),false,'即时通知不进历史');
+  await waitFor(`document.querySelector('#notification-toast').hidden===true`,'即时通知 3 秒后自动消失',8000);
   await sleep(300);
-  assert.ok((await saved()).entries.some(entry=>entry.text===done),'消息应立即写入 data/notifications.json');
-  console.log('✓ 新消息弹出提示卡、显示角标与未读标记并落盘');
+  assert.equal((await saved()).entries.some(entry=>entry.text===instant),false,'即时通知不落盘');
+  console.log('✓ 3 秒即时通知自动消失、不进通知中心、不落盘');
 
-  // 2. 手动关闭提示卡：历史保留
+  // 2. 任务完成通知：右下角常驻（不自动消失），手动关闭后消息留在通知中心
+  const done='全部任务下载完成';
+  await evaluate(`window.hoyo.call("addNotification",{text:${quoted(done)},target:"downloads"})`);
+  await waitFor(`[...document.querySelectorAll('.notification-popup')].some(box=>box.textContent.includes(${quoted(done)}))`,'右下角常驻通知');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.notification-popup')].find(box=>box.textContent.includes(${quoted(done)})).className`),'notification-popup','普通完成通知不是错误样式');
+  assert.equal(await evaluate(`[...document.querySelectorAll('.notification-popup')].find(box=>box.textContent.includes(${quoted(done)})).dataset.clickable`),'true','有对应页面的完成通知可以点击');
+  assert.equal(await evaluate('document.querySelector("#notification-badge").hidden'),false,'完成通知应有未读角标');
+  // 面板此时是收起的：主进程只推未读数，历史条目在展开面板时才拉全量快照。
+  await evaluate('window.hoyo.call("notifications").then(s=>applyNotifications(s))');
+  await waitItem(done);
+  assert.equal(await itemUnread(done),'true','未读通知应有未读标记');
+  await sleep(3500);
+  assert.ok((await popupTexts()).some(text=>text.includes(done)),'完成通知不会自动消失');
+  await sleep(300);
+  assert.ok((await saved()).entries.some(entry=>entry.text===done),'完成通知应写入 data/notifications.json');
+  console.log('✓ 完成通知常驻右下角、有关闭按钮与未读角标并落盘');
+
+  // 2b. 手动关闭右下角通知：只是关掉弹窗，消息仍留在通知中心
   await closePopups();
   assert.ok((await historyTexts()).includes(done),'关闭提示卡不删除历史');
   assert.equal(await itemUnread(done),'true','关闭提示卡不改变未读状态');
@@ -171,18 +189,28 @@ async function main(){
   assert.ok(!(await saved()).entries.some(entry=>entry.text===failed),'磁盘历史同步删除');
   console.log('✓ 单条删除与磁盘同步');
 
-  // 7. 全部清除：列表回到空状态
-  await evaluate('document.querySelector("#notification-clear").click()');
-  await waitFor('window.hoyo.call("notifications").then(s=>s.entries.length===0)','全部清除');
+  // 7a. 「×」只关掉面板：消息与磁盘历史都不动
+  await evaluate('document.querySelector("#notification-close").click()');
+  await waitFor('document.querySelector("#notification-panel").hidden','× 收起面板');
+  await evaluate('document.querySelector("#notification-button").click()');
+  await waitFor('!document.querySelector("#notification-panel").hidden','重新展开面板');
+  assert.ok((await historyTexts()).includes(done),'× 不删除消息');
+  assert.ok((await saved()).entries.length>0,'× 不清空磁盘历史');
+  console.log('✓ × 只关闭面板，不删除消息');
+
+  // 7b. 清空消息（双勾）：清空所有消息，列表回到空状态
+  await evaluate('document.querySelector("#notification-clear-all").click()');
+  await waitFor('window.hoyo.call("notifications").then(s=>s.entries.length===0)','清空消息');
   await waitFor('document.querySelector("#notification-list").children.length===0','列表清空');
   assert.equal(await evaluate('document.querySelector("#notification-empty").hidden'),false);
+  assert.equal(await evaluate('document.querySelector("#notification-badge").hidden'),true,'清空后角标不显示');
   await sleep(300);
   assert.deepEqual((await saved()).entries,[],'磁盘历史应清空');
-  console.log('✓ 全部清除回到空状态');
+  console.log('✓ 清空消息回到空状态');
 
   // 8. 重启：历史与未读状态保留，且不重复弹出提示卡
   const reminder='模组更新提醒：钟离模组有更新';
-  await evaluate(`notify(${quoted(reminder)})`);
+  await evaluate(`window.hoyo.call("addNotification",{text:${quoted(reminder)}})`);
   await waitFor(`window.hoyo.call("notifications").then(s=>s.entries.some(e=>e.text.includes("模组更新提醒")))`,'写入一条未读');
   await sleep(300);
   client.close();

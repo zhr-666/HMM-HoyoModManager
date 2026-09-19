@@ -14,7 +14,7 @@ function summarizeUpdateCheck(result = {}, { automatic = false } = {}) {
   const headline = updates.length ? `${updates.length} 个模组有更新` : '全部模组已是最新';
   const issue = failures.length ? `（${failures.length} 个检查失败）` : '';
   return {
-    text: `检查完成：${headline}${issue}`,
+    text: `检查更新完成：${headline}${issue}`,
     // 有更新时失败只是杂音；一个更新都没有还全线失败，才是真的出错。
     tone: failures.length && !updates.length ? 'error' : 'info',
     target: 'modUpdates',

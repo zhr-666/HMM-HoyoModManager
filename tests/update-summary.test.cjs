@@ -8,14 +8,14 @@ const {summarizeUpdateCheck,summarizeFromLibrary}=require('../src/core/update-su
 test('手动检查即使没有更新也要回一条通知',()=>{
   const notice=summarizeUpdateCheck({updates:[],failures:[],checked:4},{automatic:false});
   assert.ok(notice,'手动检查不能静默结束');
-  assert.equal(notice.text,'检查完成：全部模组已是最新');
+  assert.equal(notice.text,'检查更新完成：全部模组已是最新');
   assert.equal(notice.tone,'info');
   assert.equal(notice.target,'modUpdates');
 });
 
 test('查到更新时报出数量并指向模组更新结果',()=>{
   const notice=summarizeUpdateCheck({updates:[{id:'a'},{id:'b'}],failures:[],checked:7},{automatic:false});
-  assert.equal(notice.text,'检查完成：2 个模组有更新');
+  assert.equal(notice.text,'检查更新完成：2 个模组有更新');
   assert.equal(notice.tone,'info');
   assert.equal(notice.target,'modUpdates');
 });
@@ -26,30 +26,30 @@ test('自动检查没有更新时保持安静',()=>{
 
 test('自动检查查到更新时仍然通知',()=>{
   const notice=summarizeUpdateCheck({updates:[{id:'a'}],failures:[]},{automatic:true});
-  assert.equal(notice.text,'检查完成：1 个模组有更新');
+  assert.equal(notice.text,'检查更新完成：1 个模组有更新');
   assert.equal(notice.target,'modUpdates');
 });
 
 test('全部检查失败且没有更新时按错误上报',()=>{
   const notice=summarizeUpdateCheck({updates:[],failures:[{id:'a'},{id:'b'}],checked:2},{automatic:false});
-  assert.equal(notice.text,'检查完成：全部模组已是最新（2 个检查失败）');
+  assert.equal(notice.text,'检查更新完成：全部模组已是最新（2 个检查失败）');
   assert.equal(notice.tone,'error');
 });
 
 test('有更新的同时有失败时只当作杂音，不升级为错误',()=>{
   const notice=summarizeUpdateCheck({updates:[{id:'a'}],failures:[{id:'b'}],checked:2},{automatic:false});
-  assert.equal(notice.text,'检查完成：1 个模组有更新（1 个检查失败）');
+  assert.equal(notice.text,'检查更新完成：1 个模组有更新（1 个检查失败）');
   assert.equal(notice.tone,'info');
 });
 
 test('缺字段的结果不会抛错',()=>{
   const notice=summarizeUpdateCheck(undefined,undefined);
-  assert.equal(notice.text,'检查完成：全部模组已是最新');
+  assert.equal(notice.text,'检查更新完成：全部模组已是最新');
   assert.equal(notice.tone,'info');
 });
 
 // 检查结果只在内存里，重启后就没了。但每个模组的 updateStatus 已经随模组库落盘，
-// 靠它重建一份结果，历史里那条「检查完成」通知在重启后仍然点得开。
+// 靠它重建一份结果，历史里那条「检查更新完成」通知在重启后仍然点得开。
 
 test('重启后用模组库重建检查结果',()=>{
   const mods=[

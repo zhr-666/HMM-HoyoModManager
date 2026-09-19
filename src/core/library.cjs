@@ -6,12 +6,23 @@ const hashReplace=require('./hash-replace.cjs');
 const {characterGroups}=require('./character-groups.cjs');
 
 const DEFAULT_STATE = Object.freeze({
-  settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
+  settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
   mods: [],
   folders: [],
   presets: [],
   currentPresetId: null,
+  activeGame:'genshin',
+  games:{},
+  hotkeyNotes:{},
 });
+// 随游戏变化的本机路径/背景：按游戏各存一份，互不影响（需求 27）。
+// 其余设置是全局的：软件更新、自动检查、外观、代理等。
+const GAME_SETTING_KEYS = ['modsPath','launchExe','backgroundVersion','xxmiPath'];
+// 当前只有《原神》接入；games 里出现未知编号时按损坏记录丢弃。
+const KNOWN_GAMES = ['genshin'];
+const DEFAULT_GAME = 'genshin';
+const MAX_HOTKEY_NOTES = 20;
+const MAX_NOTE_LENGTH = 4000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // 文件夹相对本机库的路径：总分类-哈希/角色或子分类-哈希。名字里带哈希只为防重名，
@@ -40,6 +51,54 @@ function classificationPieces({rootCategoryName,rootCategoryId,characterName,cha
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+// 每个游戏各自保存的字段；读取时叠加到全局设置上，写入时只动该游戏自己的那一份。
+function normalizeGames(saved) {
+  const raw = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  const games = {};
+  for (const id of KNOWN_GAMES) {
+    const entry = raw[id];
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const settings = {};
+    for (const key of GAME_SETTING_KEYS) if (typeof entry[key] === 'string') settings[key] = entry[key];
+    games[id] = settings;
+  }
+  return games;
+}
+
+// 1.1.2 及更早版本把 GIMI 路径、外部程序、启动器背景存在全局 settings 里。
+// 升级时整体搬进《原神》（首个接入的游戏），其他游戏留空、各自选择；
+// games 里没有原神时全局字段继续充当原神的那一份（镜像），因此不会出现两套生效值。
+function migrateGames({ games, savedSettings }) {
+  const legacy = {};
+  for (const key of GAME_SETTING_KEYS) if (typeof savedSettings?.[key] === 'string' && savedSettings[key]) legacy[key] = savedSettings[key];
+  const hasGames = Object.keys(games).length > 0;
+  if (hasGames || !Object.keys(legacy).length) return { games, changed: false };
+  return { games: { ...games, [DEFAULT_GAME]: legacy }, changed: true };
+}
+
+// 全局 settings 里保留当前游戏那四个键的镜像：部署、启动程序、背景图与旧代码读的都是
+// state.settings，这样它们不用关心设置是按游戏分开放的。
+function applyActiveGameScope(state) {
+  const scoped = state.games?.[state.activeGame];
+  if (!scoped) return state;
+  for (const key of GAME_SETTING_KEYS) if (typeof scoped[key] === 'string') state.settings[key] = scoped[key];
+  return state;
+}
+
+function normalizeHotkeyNotes(saved) {
+  const notes = {};
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return notes;
+  for (const [modId, list] of Object.entries(saved)) {
+    if (!Array.isArray(list)) continue;
+    const kept = list
+      .filter(note => note && typeof note.text === 'string' && note.text.trim())
+      .slice(0, MAX_HOTKEY_NOTES)
+      .map(note => ({ id: typeof note.id === 'string' && note.id ? note.id : randomUUID(), text: note.text.trim().slice(0, MAX_NOTE_LENGTH), at: Number(note.at) || 0 }));
+    if (kept.length) notes[modId] = kept;
+  }
+  return notes;
 }
 
 async function exists(target) {
@@ -108,14 +167,25 @@ class Library {
       await this._recover();
       try {
         const saved = JSON.parse(await fs.readFile(this.stateFile, 'utf8'));
+        const settings = { ...DEFAULT_STATE.settings, ...(saved.settings || {}),autoUpdate:false,autoCheckUpdates:saved.settings?.autoCheckUpdates ?? !!saved.settings?.autoUpdate };
+        // 1.1.3 起只有深色模式：旧 settings.json 里的 theme 字段读取时丢弃，不回写、不报错。
+        delete settings.theme;
+        const games = normalizeGames(saved.games);
+        const activeGame = KNOWN_GAMES.includes(saved.activeGame) ? saved.activeGame : DEFAULT_GAME;
+        const migrated = migrateGames({ games, savedSettings: saved.settings });
         this.state = {
-          settings: { ...DEFAULT_STATE.settings, ...(saved.settings || {}),autoUpdate:false,autoCheckUpdates:saved.settings?.autoCheckUpdates ?? !!saved.settings?.autoUpdate },
+          settings,
           mods: Array.isArray(saved.mods) ? saved.mods.map((mod) => this._rebaseMod(mod)) : [],
           folders: Array.isArray(saved.folders) ? saved.folders.filter((folder)=>this._validFolder(folder)) : [],
           presets: Array.isArray(saved.presets) ? saved.presets : [],
           currentPresetId: typeof saved.currentPresetId==='string'?saved.currentPresetId:null,
           ...(Array.isArray(saved.hashBatches)?{hashBatches:saved.hashBatches}:{}),
+          activeGame,
+          games: migrated.games,
+          hotkeyNotes: normalizeHotkeyNotes(saved.hotkeyNotes),
         };
+        applyActiveGameScope(this.state);
+        if (migrated.changed) await this._writeState(this.state);
       } catch (error) {
         if (error.code !== 'ENOENT') throw error;
         await this._writeState(this.state);
@@ -127,7 +197,20 @@ class Library {
     });
   }
 
-  snapshot() { return clone(this.state); }
+  // 生效设置 = 全局设置 + 当前游戏自己那份（GIMI 路径、外部程序、启动器背景、XXMI）。
+  // 界面、部署、启动程序、背景图都读这一份，行为与「设置只有一份」时一致。
+  effectiveSettings(game=this.state.activeGame) {
+    const scoped = this.state.games?.[game] || {};
+    return { ...this.state.settings, ...scoped };
+  }
+
+  snapshot() {
+    const state = clone(this.state);
+    state.settings = this.effectiveSettings();
+    state.activeGame = this.state.activeGame;
+    state.gameSettings = { ...(this.state.games?.[this.state.activeGame] || {}) };
+    return state;
+  }
 
   statistics(){
     return this._enqueue(async()=>{
@@ -162,7 +245,7 @@ class Library {
   // 手动导入：模组副本存进用户选定的本机库文件夹。带分类时按该分类存放，模组算作
   // 该角色（或子分类）并写进记录；不带分类时保持未分类的本地导入行为。
   async importLocal(folder,{name,target,characterId,characterName,rootCategoryId,rootCategoryName,characterGroupId}={}){
-    const relative=await require('./local-deployment.cjs').validateTarget(this.state.settings.modsPath,target,{create:true});
+    const relative=await require('./local-deployment.cjs').validateTarget(this.effectiveSettings().modsPath,target,{create:true});
     const classified=typeof characterId==='string'&&characterId.trim()!=='';
     if(classified&&(typeof characterName!=='string'||!characterName.trim()))throw Error('缺少角色信息：characterName');
     const classification=classified?{
@@ -220,7 +303,7 @@ class Library {
 
   updateMetadata(id,patch) {
     return this._enqueue(async()=>{
-      const allowed=new Set(['sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','updateStatus','requirements','requirementsKnown']);
+      const allowed=new Set(['sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','updateStatus','requirements','requirementsKnown','ignoredUpdates']);
       if(!patch||typeof patch!=='object'||Object.keys(patch).some(k=>!allowed.has(k)))throw new Error('不支持的 Mod 元数据字段');
       const next=clone(this.state),mod=this._find(next.mods,id,'mod');
       Object.assign(mod,clone(patch));
@@ -390,28 +473,93 @@ class Library {
     });
   }
 
-  settings(patch) {
+  // patch 带 gameId 时只改该游戏自己的那份设置（GIMI 路径、外部程序、启动器背景、XXMI）；
+  // 不带时改全局设置。全局里保留这四个键的默认值：既兼容旧状态文件、也让测试与自动化
+  // 可以像以前一样直接写 settings({modsPath})，界面上这两类设置始终分开显示。
+  settings(patch,{gameId}={}) {
     return this._enqueue(async () => {
       if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('设置内容不能为空');
-      const allowed = new Set(Object.keys(DEFAULT_STATE.settings));
+      // 1.1.3 起只有深色模式：theme 不再是设置项，旧调用（含缓存里的旧界面）直接忽略，不按未知键报错。
+      if ('theme' in patch) { patch = { ...patch }; delete patch.theme; }
+      const scoped = gameId !== undefined && gameId !== null && gameId !== '';
+      if (scoped && !KNOWN_GAMES.includes(String(gameId))) throw new Error('未知的游戏设置。');
+      const allowed = new Set(scoped ? GAME_SETTING_KEYS : Object.keys(DEFAULT_STATE.settings));
       for (const key of Object.keys(patch)) if (!allowed.has(key)) throw new Error(`未知设置项：${key}`);
-      for(const k of ['launchExe','backgroundVersion'])if(k in patch&&typeof patch[k]!=='string')throw Error('无效设置值');
+      for(const k of ['launchExe','backgroundVersion','modsPath','xxmiPath'])if(k in patch&&typeof patch[k]!=='string')throw Error('无效设置值');
       if('libraryView' in patch&&!['list','grid'].includes(patch.libraryView))throw Error('模组视图无效。');
-      if('theme' in patch&&!['light','dark','system'].includes(patch.theme))throw Error('主题选项无效。');
       if('material' in patch&&!['mica','acrylic'].includes(patch.material))throw Error('窗口材质选项无效。');
       if('proxyMode' in patch&&!['system','manual'].includes(patch.proxyMode))throw Error('代理模式无效。');
       if('proxyUrl' in patch&&(typeof patch.proxyUrl!=='string'||patch.proxyUrl.length>300))throw Error('代理地址无效。');
-      require('./preferences.cjs').proxyConfig({...this.state.settings,...patch});
+      const next = clone(this.state);
+      // 带 gameId 的调用只写该游戏；不带时，随游戏变化的键（GIMI 路径、外部程序、背景）
+      // 落进当前游戏的条目，其余写全局。GAME_SETTING_KEYS 在两边都放行：设置文件兼容旧版，
+      // 测试与自动化也可以像以前一样直接 settings({modsPath})。
+      if (scoped) next.games[String(gameId)] = { ...(next.games[String(gameId)] || {}), ...patch };
+      else {
+        const globals = {};
+        for (const [key, value] of Object.entries(patch)) {
+          if (GAME_SETTING_KEYS.includes(key)) next.games[next.activeGame] = { ...(next.games[next.activeGame] || {}), [key]: value };
+          else globals[key] = value;
+        }
+        Object.assign(next.settings, globals);
+      }
+      const effective = { ...next.settings, ...(next.games[next.activeGame] || {}) };
+      require('./preferences.cjs').proxyConfig(effective);
       if ('modsPath' in patch) await this._validateModsPath(patch.modsPath);
       if ('xxmiPath' in patch && patch.xxmiPath && !path.isAbsolute(patch.xxmiPath)) throw new Error('XXMI 路径必须是绝对路径');
       for (const key of ['autoEnable', 'autoUpdate','autoCheckUpdates','autoCheckAppUpdates','blurNsfw','useLinks']) if (key in patch && typeof patch[key] !== 'boolean') throw new Error(`${key} 必须是布尔值`);
-      if ('modsPath' in patch && patch.modsPath !== this.state.settings.modsPath && this.state.mods.some((mod) => mod.active)) {
+      if ('modsPath' in patch && patch.modsPath !== this.effectiveSettings().modsPath && this.state.mods.some((mod) => mod.active)) {
         throw new Error('更改 Mod 路径前请先禁用全部 Mod');
       }
-      const next = clone(this.state);
-      Object.assign(next.settings, patch);
+      // 部署与旧代码读 state.settings.modsPath 等全局字段；这里始终让全局字段等于「当前游戏」
+      // 的值，只是同一份设置的镜像，切换游戏时会重新同步。
+      applyActiveGameScope(next);
       if('modsPath' in patch)await this._commit(next);
       else {await this._writeState(next);this.state=next;}
+      return this.snapshot();
+    });
+  }
+
+  // 切换当前游戏：只改「现在看的是哪个游戏的设置」，各游戏的设置内容互不影响。
+  setActiveGame(gameId) {
+    return this._enqueue(async () => {
+      const id = String(gameId || '');
+      if (!KNOWN_GAMES.includes(id)) throw new Error('未知的游戏。');
+      if (this.state.activeGame === id) return this.snapshot();
+      const next = clone(this.state);
+      next.activeGame = id;
+      applyActiveGameScope(next);
+      await this._writeState(next);this.state = next;
+      return this.snapshot();
+    });
+  }
+
+  // 热键提示：详情页里用户自己选中的文字，按 Mod 分开保存（需求 18/19）。
+  addHotkeyNote(modId, text) {
+    return this._enqueue(async () => {
+      const content = String(text ?? '').replace(/\r\n?/g, '\n').trim();
+      if (!content) throw new Error('请先选中要保存的文字。');
+      if (content.length > MAX_NOTE_LENGTH) throw new Error(`热键提示请控制在 ${MAX_NOTE_LENGTH} 个字符以内。`);
+      const next = clone(this.state);
+      this._find(next.mods, modId, 'mod');
+      const notes = Array.isArray(next.hotkeyNotes?.[modId]) ? next.hotkeyNotes[modId] : [];
+      if (notes.some(note => note.text === content)) return this.snapshot();
+      next.hotkeyNotes = { ...(next.hotkeyNotes || {}), [modId]: [{ id: randomUUID(), text: content, at: Date.now() }, ...notes].slice(0, MAX_HOTKEY_NOTES) };
+      await this._writeState(next);this.state = next;
+      return this.snapshot();
+    });
+  }
+
+  removeHotkeyNote(modId, noteId) {
+    return this._enqueue(async () => {
+      const next = clone(this.state);
+      this._find(next.mods, modId, 'mod');
+      const notes = Array.isArray(next.hotkeyNotes?.[modId]) ? next.hotkeyNotes[modId] : [];
+      const kept = notes.filter(note => note.id !== String(noteId));
+      if (kept.length === notes.length) throw new Error('找不到这条热键提示。');
+      next.hotkeyNotes = { ...(next.hotkeyNotes || {}) };
+      if (kept.length) next.hotkeyNotes[modId] = kept; else delete next.hotkeyNotes[modId];
+      await this._writeState(next);this.state = next;
       return this.snapshot();
     });
   }
@@ -446,7 +594,8 @@ class Library {
     const relative=mod.libraryPath??folderName;
     const pieces=typeof relative==='string'?relative.split('/'):[];
     if(![1,3].includes(pieces.length)||pieces.at(-1)!==folderName||pieces.some(piece=>!piece||piece==='.'||piece==='..'||/[<>:"\\|?*\x00-\x1f]/.test(piece)||/[ .]$/.test(piece)))throw new Error(`Mod ${mod.id} 的资源目录无效`);
-    return { ...mod, folder: path.join(this.libraryRoot,...pieces) };
+    const ignored=Array.isArray(mod.ignoredUpdates)?mod.ignoredUpdates.filter(entry=>entry&&Number.isFinite(Number(entry.uploadedAt))).slice(0,20).map(entry=>({...entry,uploadedAt:Number(entry.uploadedAt)})):undefined;
+    return { ...mod, ...(ignored?{ignoredUpdates:ignored}:{}), folder: path.join(this.libraryRoot,...pieces) };
   }
 
   _validFolder(folder) {

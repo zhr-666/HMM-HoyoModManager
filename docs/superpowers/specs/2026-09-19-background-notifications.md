@@ -2,6 +2,8 @@
 
 日期：2026-09-19　范围：`src/core/notification-center.cjs`、`src/core/update-summary.cjs`、`src/main.cjs`、`src/preload.cjs`、`src/ui/`
 
+> 提示行为已被 [通知系统统一规范](2026-09-19-notification-unification.md) 取代（只保留 3 秒即时通知、进行中的任务、完成/错误常驻通知三种）；本文件保留当时的历史持久化与面板交互取舍。
+
 ## 需求
 
 用户反馈：点「我的模组 → 检查更新」时，页面上方会冒出横条消息；检查一结束又直接弹出更新窗口，既打断手头的事，也不给「我先干别的，回头再看」的余地。

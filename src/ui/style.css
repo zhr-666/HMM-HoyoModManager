@@ -1,6 +1,6 @@
-/* Theme tokens keep all views in place when the system appearance changes. */
-:root{--text:#20242b;--text-secondary:#4a515c;--bg:#f4f5f7;--surface:#fff;--hover:#f4f6f9;--inset:#eef0f3;--control-line:#cfd4dc;--success-bg:#eaf7ef;--success:#25814b;--warning-bg:#fff2d8;--warning:#966300;--danger-bg:#fff1f1;--danger-line:#e6baba;color-scheme:light}
-:root{font-family:"Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif;color:var(--text);background:var(--bg);font-size:14px;--blue:#1769e0;--blue-soft:#eaf2ff;--line:#e2e5ea;--muted:#68707d;--danger:#c93636}
+/* 1.1.3 起只有深色模式：调色板直接写在 :root 上，不再有浅色或跟随系统的分支。 */
+:root{--text:#edf0f5;--text-secondary:#d0d6df;--bg:#191c22;--surface:#242830;--hover:#303640;--inset:#303640;--control-line:#4a515e;--success-bg:#223e31;--success:#8cdbad;--warning-bg:#493b22;--warning:#f4ca77;--danger-bg:#43282d;--danger-line:#72434a;color-scheme:dark}
+:root{font-family:"Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif;color:var(--text);background:var(--bg);font-size:14px;--blue:#7fb2ff;--blue-soft:#233958;--line:#3a414c;--muted:#a4adbb;--danger:#ff9a9a}
 .character-head{display:flex;align-items:center;justify-content:space-between;margin:4px 0 10px}.character-head>strong{font-size:12px;color:var(--muted)}.mini-search{display:flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:0 8px;height:30px;color:#7a828e}.mini-search input{border:0;outline:0;font:inherit;width:130px}.category-list.category-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:7px;max-height:186px;overflow:auto;padding:1px 3px 18px 1px;margin-bottom:4px}.category.category{min-width:0;border-radius:7px;padding:8px 9px;display:flex;align-items:center;gap:7px;text-align:left}.category img{width:22px;height:22px;border-radius:50%;object-fit:cover;background:var(--inset)}.category .category-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.library-thumb{overflow:hidden;object-fit:initial!important}.library-thumb img{width:100%;height:100%;object-fit:cover}.library-thumb .preview-placeholder{font-size:10px}.switch input:focus-visible+span,.button:focus-visible,.nav-item:focus-visible,.category:focus-visible,.link-button:focus-visible,.icon-button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.onboarding{display:grid;grid-template-columns:1fr 34px 1fr 34px 1fr;align-items:center;background:var(--blue-soft);border:1px solid var(--line);border-radius:10px;padding:17px 20px;margin-bottom:16px}.onboarding div{display:grid;grid-template-columns:28px 1fr;column-gap:9px;align-items:center}.onboarding div>span{grid-row:1/3;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--surface);color:var(--blue);font-weight:700;border:1px solid #c8dcf8}.onboarding strong{font-size:13px}.onboarding small{color:#697586;margin-top:3px}.onboarding i{height:1px;background:#c6d8ef;margin:0 8px}
 *{box-sizing:border-box}
 button,.button,.link-button{white-space:nowrap}
@@ -130,13 +130,12 @@ dialog form{margin:0}
 .hash-panel{min-height:120px}.hash-heading{margin:18px 0 0;font-size:13px;color:var(--text-secondary)}.hash-heading:first-child{margin-top:0}
 .hash-actions{margin-top:12px}#hash-preview{margin-top:4px}#hash-preview>p:first-child{font-weight:600}
 
-:root[data-theme="dark"]{color-scheme:dark;--text:#edf0f5;--text-secondary:#d0d6df;--bg:#191c22;--surface:#242830;--hover:#303640;--inset:#303640;--control-line:#4a515e;--blue:#7fb2ff;--blue-soft:#233958;--line:#3a414c;--muted:#a4adbb;--danger:#ff9a9a;--danger-bg:#43282d;--danger-line:#72434a;--success-bg:#223e31;--success:#8cdbad;--warning-bg:#493b22;--warning:#f4ca77}
 :root[data-material="mica"],:root[data-material="acrylic"]{background:transparent}
 :root[data-material="mica"] body,:root[data-material="acrylic"] body{background:transparent}
 :root[data-material="mica"] .sidebar,:root[data-material="acrylic"] .sidebar{background:color-mix(in srgb,var(--surface) 78%,transparent)}
 :root[data-material="mica"] .settings-card,:root[data-material="acrylic"] .settings-card{background:color-mix(in srgb,var(--surface) 88%,transparent)}
 .settings-nav{margin-top:auto;width:100%}input,select,textarea{color:var(--text)}.mini-search input{background:transparent}.setting-row select,.setting-row input[type="url"]{border:1px solid var(--control-line);border-radius:6px;background:var(--surface);padding:8px 10px;font:inherit}.setting-row input[type="url"]{min-width:235px}dialog{background:var(--surface);color:var(--text)}.switch{display:inline-block;flex-shrink:0}.switch input:disabled+span{opacity:.5;cursor:wait}.mod-switch{margin:0 5px}.download-row{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}.download-heading{display:flex;align-items:start;justify-content:space-between;gap:20px}.download-heading h3{font-size:15px;margin:0;overflow-wrap:anywhere}.download-heading .meta{margin-bottom:10px}.download-row>.row-actions{justify-content:flex-end}.download-progress{margin:5px 0 16px}.download-progress>div{display:flex;justify-content:space-between;gap:20px;color:var(--muted);font-size:12px;margin-bottom:8px}.download-progress progress{width:100%;height:7px;accent-color:var(--blue)}.download-failure{color:var(--danger);font-size:12px;overflow-wrap:anywhere}.history-status.installed{background:var(--success-bg);color:var(--success)}.history-status.downloading,.history-status.installing{background:var(--blue-soft);color:var(--blue)}.setup-required{padding:12px;background:var(--warning-bg);border-radius:7px;color:var(--warning)}.setup-required button{margin-left:8px}[hidden]{display:none!important}
-:root[data-theme="dark"] .preview{background:linear-gradient(135deg,#303640,#242830)}
+.preview{background:linear-gradient(135deg,#303640,#242830)}
 
 /* 通知中心：底部一个细线图标按钮，弹窗与面板都用最轻的线条表达。 */
 .notification-button-icon{display:grid;place-items:center}.notification-button-icon .icon{width:19px;height:19px}
@@ -159,12 +158,12 @@ dialog form{margin:0}
 .notification-item-icon{display:grid;place-items:center;width:16px;height:16px;margin-top:1px;color:var(--muted)}
 .notification-item-body strong{font-size:11.5px;font-weight:600;color:var(--text-secondary)}
 .notification-item-remove{font-size:12px;padding:3px 5px}
-:root[data-theme="dark"] .button.primary{color:#102441}
-:root[data-theme="dark"] .button.primary:hover:not(:disabled){background:#a4c9ff}
-:root[data-theme="dark"] .category.active{background:var(--blue-soft);border-color:var(--blue);color:var(--text)}
+.button.primary{color:#102441}
+.button.primary:hover:not(:disabled){background:#a4c9ff}
+.category.active{background:var(--blue-soft);border-color:var(--blue);color:var(--text)}
 .switch{position:relative;width:40px;height:22px}.switch input{inset:0;margin:0;width:40px;height:22px;z-index:1;cursor:pointer}.switch span{pointer-events:none}.switch input:disabled{cursor:wait}
 
-:root[data-theme="dark"] .notice{color:var(--blue)}
+.notice{color:var(--blue)}
 /* A shared, transparent title strip lets Windows material extend to the caption controls. */
 .window-titlebar{display:none}
 html[data-platform="win32"] .window-titlebar{display:flex;align-items:center;position:fixed;inset:0 0 auto;height:40px;padding:0 155px 0 22px;z-index:20;background:transparent;color:var(--muted);font-size:12px;user-select:none;-webkit-app-region:drag}
@@ -188,8 +187,9 @@ html[data-platform="win32"] .sidebar{top:40px}
 .category-arrow{margin-left:auto;flex-shrink:0;color:var(--muted)}
 #category-head[hidden],#category-list[hidden]{display:none}
 
-/* 「已加入下载列表」等操作反馈：和消息卡片同一套右下角栈，从右侧滑入。 */
-.download-toast{z-index:100;padding:13px 22px;max-width:min(344px,calc(100vw - 72px));border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);box-shadow:0 6px 24px #0003;font-size:14px;font-weight:600;pointer-events:none;-webkit-app-region:no-drag}
+/* ① 3 秒即时通知：和消息卡片同一套右下角栈，从右侧滑入；自动消失、无关闭按钮、不可点击。 */
+.notification-toast{z-index:100;padding:13px 22px;max-width:min(344px,calc(100vw - 72px));border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);box-shadow:0 6px 24px #0003;font-size:14px;font-weight:600;pointer-events:none;-webkit-app-region:no-drag}
+.notification-toast.error{border-color:var(--danger-line);background:var(--danger-bg);color:var(--danger)}
 .library-navigation{display:flex;align-items:center;gap:18px;margin-bottom:18px}
 .library-navigation .library-breadcrumb{margin:0;min-width:0}
 .library-breadcrumb [aria-current="page"]{color:var(--text);font-weight:600}
@@ -235,14 +235,14 @@ html[data-platform="win32"] .sidebar{top:40px}
 #library-grid[data-view="grid"] .library-details{padding:14px 14px 12px}#library-grid[data-view="grid"] .item-actions{margin-top:auto;padding:0 14px 14px;flex-wrap:wrap;gap:7px}
 #library-grid[data-view="grid"] .item-actions .button{font-size:12px;min-height:30px;padding:5px 8px}#library-grid[data-view="grid"] .item-actions .link-button{font-size:12px}
 #library-grid[data-view="grid"] .meta{font-size:11px;line-height:1.6}.library-item:hover{border-color:color-mix(in srgb,var(--blue) 32%,var(--line))}
-.download-toast.toast-enter{animation:toast-enter .2s cubic-bezier(.2,.8,.2,1) both}.download-toast.toast-leave{animation:toast-leave .2s ease-in both}
+.notification-toast.toast-enter{animation:toast-enter .2s cubic-bezier(.2,.8,.2,1) both}.notification-toast.toast-leave{animation:toast-leave .2s ease-in both}
 @keyframes toast-enter{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:translateX(0)}}
 @keyframes toast-leave{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(18px)}}
-:root[data-theme="dark"] .game-hero{background:linear-gradient(115deg,#263849,#283c4e 55%,#344b5b);color:#e1ecf4;border-color:#465c6c}
-:root[data-theme="dark"] .hero-eyebrow,:root[data-theme="dark"] .hero-copy p{color:#a6bbc9}:root[data-theme="dark"] .hero-status{background:#203540b3;border-color:#617d8055;color:#bbcdd7}:root[data-theme="dark"] .hero-status[data-ready="true"]{color:#a7d6c0}
-:root[data-theme="dark"] .hero-actions>.secondary{background:#20313ec9;border-color:#677e8a55;color:#d6e4ed}:root[data-theme="dark"] .hero-orbit{background:linear-gradient(145deg,#aac9dd33,#ffffff00);border-color:#aac9dd22}
+.game-hero{background:linear-gradient(115deg,#263849,#283c4e 55%,#344b5b);color:#e1ecf4;border-color:#465c6c}
+.hero-eyebrow,.hero-copy p{color:#a6bbc9}.hero-status{background:#203540b3;border-color:#617d8055;color:#bbcdd7}.hero-status[data-ready="true"]{color:#a7d6c0}
+.hero-actions>.secondary{background:#20313ec9;border-color:#677e8a55;color:#d6e4ed}.hero-orbit{background:linear-gradient(145deg,#aac9dd33,#ffffff00);border-color:#aac9dd22}
 @media(max-width:1100px){main{padding-left:24px;padding-right:24px}.game-hero{padding:30px;min-height:300px}.hero-actions{gap:8px;flex-direction:column;align-items:stretch}.home-summary{grid-template-columns:minmax(230px,.9fr) minmax(270px,1.1fr)}.home-card{padding:20px}.library-navigation .library-breadcrumb{min-width:180px}}
-@media(prefers-reduced-motion:reduce){.download-toast.toast-enter,.download-toast.toast-leave{animation-duration:.01ms}}
+@media(prefers-reduced-motion:reduce){.notification-toast.toast-enter,.notification-toast.toast-leave{animation-duration:.01ms}}
 
 /* Page entrance is restarted by navigation, including reduced-motion support. */
 .page.active{animation:page-enter .22s ease-out both}
@@ -260,8 +260,8 @@ html[data-mode="launcher"][data-page="home"] .app-backdrop:after{background:line
 html[data-page="home"] .topbar{color:#fff;border-color:#ffffff35}
 html[data-page="home"] .topbar .help-note{color:#fff}
 html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex-direction:column;flex:1;min-height:0;justify-content:flex-end;animation-name:home-enter}
-/* Notification center: a floating bell in the bottom-right corner, a popup stack that
-   Windows-style toasts appear in, and the persisted message history behind the bell. */
+/* 通知中心：右下角一个悬浮按钮，上面依次是常驻通知栈与 3 秒即时通知，
+   面板里是「进行中的任务」与持久化的消息历史。 */
 .notification-center{position:fixed;right:32px;bottom:32px;z-index:95;display:flex;flex-direction:column;align-items:flex-end;gap:10px;-webkit-app-region:no-drag}
 .notification-popups{display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}
 .notification-popup{pointer-events:auto;width:min(344px,calc(100vw - 56px));display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(14px);box-shadow:0 10px 28px #0003;animation:notification-enter .2s cubic-bezier(.2,.8,.2,1) both}
@@ -429,13 +429,11 @@ html[data-mode="launcher"] main:has(#page-games.active){max-width:none}
 .game-card small{font-size:12px;color:#adc0d4}
 @media(max-height:700px){html[data-mode="launcher"][data-page="home"] main{padding-bottom:16px}.launcher-status{padding:5px 12px}.home-summary .storage-value{font-size:28px}}
 
-/* 进入工作区：游戏图标从原位飞向左栏顶端 */
+/* 飞行动画：图层按起点矩形定位，靠 --fly-tx/--fly-ty/--fly-scale 走到目标矩形上，
+   只动 transform（能交给合成器逐帧插值，主线程忙也不掉帧），最后一帧与目标元素逐像素重合。
+   交接不在关键帧里淡出：落地后由 JS 给图层加一段 opacity 过渡，只把投影收掉。 */
 .game-icon-fly{position:fixed;margin:0;border-radius:11px;object-fit:cover;pointer-events:none;z-index:40;box-shadow:0 10px 26px #00000073;will-change:transform,opacity;backface-visibility:hidden}
-/* 飞行只用 transform + opacity（能交给合成器逐帧插值，主线程忙也不掉帧）；
-   前 72% 保持不透明，最后一段才淡出，避免「还在飞就开始消失」的断裂感。 */
-@keyframes game-icon-fly{0%{transform:translate3d(var(--fly-x,0),var(--fly-y,0),0) scale(var(--fly-scale,1));opacity:1}72%{opacity:1}100%{transform:translate3d(var(--fly-tx,0),var(--fly-ty,0),0) scale(1);opacity:0}}
-@keyframes rail-icon-land{from{transform:translateY(10px) scale(1.16)}to{transform:translateY(0) scale(1)}}
-html[data-mode="workspace"] .rail-back img{animation:rail-icon-land var(--fly-duration,720ms) cubic-bezier(.22,1,.36,1) both}
+@keyframes game-icon-fly{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(var(--fly-tx,0),var(--fly-ty,0),0) scale(var(--fly-scale,1))}}
 
 /* 窗口滚动条：更细、半透明，滚动时显形，停下后自动淡回几乎透明 */
 *{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 30%,transparent) transparent}
@@ -444,4 +442,113 @@ html[data-mode="workspace"] .rail-back img{animation:rail-icon-land var(--fly-du
 ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 20%,transparent);border-radius:4px;transition:background .25s ease}
 html[data-scrolling] ::-webkit-scrollbar-thumb,::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--muted) 68%,transparent)}
 ::-webkit-scrollbar-corner{background:transparent}
-@media(prefers-reduced-motion:reduce){.game-icon-fly,html[data-mode="workspace"] .rail-back img{animation-duration:.09s!important}}
+@media(prefers-reduced-motion:reduce){.game-icon-fly{animation-duration:.09s!important}}
+
+/* ===== 1.1.3 界面整理 ===== */
+
+/* 悬浮按钮统一尺寸与底线（需求 8）：设置（游戏 Logo 右下角）与「打开程序」在同一排、
+   紧挨着通知按钮左侧，三者等高对齐；通知中心的位置保持不变。
+   注：设置按钮在 HTML 里仍然排在「打开程序」前面，靠 order 放到它右边。 */
+html[data-mode="launcher"] .launcher-actions{right:88px;bottom:32px;flex-direction:row;align-items:center}
+html[data-mode="launcher"] .launcher-actions .program-settings{order:2}
+html[data-mode="launcher"] .launcher-actions .program-settings,
+html[data-mode="launcher"] .launcher-actions .home-launch.button,
+html[data-mode="launcher"] .notification-button{height:46px;min-height:46px}
+html[data-mode="launcher"] .launcher-actions .program-settings{width:46px;min-width:46px;font-size:19px;padding:0;border-radius:23px}
+html[data-mode="launcher"] .launcher-actions .home-launch.button{min-width:174px;padding:0 22px;font-size:15px;border-radius:23px;box-shadow:0 6px 18px #1769e028}
+.notification-button{width:46px;height:46px;flex:0 0 46px}
+
+/* 通知面板：从右下角按钮的位置展开成完整的消息面板（需求 4） */
+.notification-panel{width:min(520px,calc(100vw - 72px));max-height:min(80vh,640px);transform-origin:100% 100%;animation:notification-expand .3s cubic-bezier(.2,.9,.25,1.06) both}
+.notification-panel.closing{animation:notification-expand .22s cubic-bezier(.4,0,.6,1) reverse both}
+@keyframes notification-expand{from{opacity:0;transform:scale(.24) translateY(26px)}60%{opacity:1}to{opacity:1;transform:scale(1) translateY(0)}}
+.notification-section-title{margin:0;padding:10px 14px 6px;font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);background:var(--inset)}
+.notification-section-title:empty{display:none}
+.notification-tasks{display:grid;gap:8px;padding:6px 6px 8px;border-bottom:1px solid var(--line)}
+.notification-tasks:empty{display:none;padding:0;border-bottom:0}
+/* 任务卡：只在通知中心的「进行中的任务」区，含状态、进度条、百分比与取消（需求 23/24） */
+.task-card{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.task-card-head{display:flex;align-items:start;justify-content:space-between;gap:10px}
+.task-card-head strong{display:block;font-size:12.5px;font-weight:600;overflow-wrap:anywhere}
+.task-card-head .task-status{flex:none;font-size:11px;color:var(--muted)}
+.task-card-message{margin:0;font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
+.task-card-current{margin:0;font-size:11.5px;color:var(--text-secondary);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.task-card-queue{margin:0;font-size:11.5px;color:var(--muted);overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.task-card-detail{margin:0;font-size:11px;color:var(--muted);overflow-wrap:anywhere;opacity:.85}
+.task-card-bar{display:flex;align-items:center;gap:9px}
+.task-card-bar progress{flex:1;height:6px;accent-color:var(--blue)}
+.task-card-bar span{flex:none;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.task-card-actions{display:flex;justify-content:flex-end;gap:8px}
+.task-card .button{min-height:26px;padding:3px 10px;font-size:12px}
+.task-card[data-status="failed"]{border-color:var(--danger-line);background:var(--danger-bg)}
+.task-card[data-status="cancelled"]{background:var(--inset)}
+/* 有对应页面才允许点击：指针与悬浮反馈只给点得开的那种卡片（需求 7） */
+.notification-popup[data-clickable="true"] .notification-popup-body{cursor:pointer}
+.notification-popup[data-clickable="true"]:hover{border-color:color-mix(in srgb,var(--blue) 32%,var(--line))}
+.task-card[data-clickable="true"]{cursor:pointer}
+.task-card[data-clickable="true"]:hover{border-color:color-mix(in srgb,var(--blue) 32%,var(--line))}
+/* 通知中心里的任务卡与消息卡：消息可点击时给出指针与轻微背景（需求 7） */
+.notification-item[data-clickable="true"]{cursor:pointer}
+.notification-item[data-clickable="true"]:hover{background:var(--hover)}
+.notification-item-details{margin-top:4px;font-size:11px;color:var(--muted)}
+.notification-item-details summary{cursor:pointer}
+.notification-item-details code{display:block;margin-top:4px;font-size:11px;overflow-wrap:anywhere;white-space:pre-wrap}
+
+/* 详情页：顶部固定图片区，图片未到时也占好位置（需求 15/16） */
+.detail-gallery{display:grid;grid-template-rows:minmax(0,1fr) 68px;gap:10px;height:320px;margin:0 0 18px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
+.detail-gallery-main{position:relative;display:grid;place-items:center;overflow:hidden;border-radius:8px;background:color-mix(in srgb,var(--surface) 70%,transparent)}
+.detail-gallery-main img{width:100%;height:100%;object-fit:contain}
+.detail-gallery-main .preview-placeholder{color:var(--muted);font-size:12px}
+.detail-gallery-thumbs{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
+.detail-gallery-thumbs button{flex:0 0 auto;width:100px;height:64px;padding:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface);cursor:pointer}
+.detail-gallery-thumbs button[aria-current="true"]{border-color:var(--blue);box-shadow:0 0 0 2px color-mix(in srgb,var(--blue) 30%,transparent)}
+.detail-gallery-thumbs img{width:100%;height:100%;object-fit:cover;display:block}
+.detail-gallery.nsfw-detail .detail-gallery-main img,.detail-gallery.nsfw-detail .detail-gallery-thumbs img{filter:blur(18px)}
+.detail-gallery.nsfw-detail{cursor:pointer}
+
+/* 详情页文件条目更紧凑（需求 17） */
+.file-options,.update-files{gap:6px}
+.file-option,.field label.file-option{min-height:56px;padding:10px 14px;gap:12px}
+.file-option strong{font-size:14px;line-height:1.4}
+.file-option small{font-size:11.5px;line-height:1.45;margin-top:3px}
+.file-picker{margin:18px 0 12px}.file-picker legend{margin-bottom:9px}
+
+/* 热键：紧凑网格（需求 21），顶部是用户保存的热键提示（需求 19） */
+.hotkey-notes{padding:0 0 16px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.hotkey-notes h3{margin:0 0 10px;font-size:14px}
+.hotkey-note{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);margin-bottom:8px}
+.hotkey-note pre{margin:0;font-family:inherit;font-size:12.5px;white-space:pre-wrap;overflow-wrap:anywhere}
+.hotkey-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-top:12px}
+.hotkey-card{display:grid;gap:5px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);min-width:0}
+.hotkey-card-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.hotkey-card h3{margin:0;font-size:12.5px;font-weight:600;overflow-wrap:anywhere}
+.hotkey-card p{margin:0;font-size:11.5px;color:var(--muted)}
+.hotkey-card small{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.hotkey-keys{display:flex;flex-wrap:wrap;gap:5px}
+.hotkey-keys kbd{display:inline-block;border:1px solid var(--control-line);border-radius:5px;padding:2px 7px;background:var(--inset);font-family:inherit;font-size:11.5px}
+.hotkey-card .update-badge{padding:2px 6px;font-size:10.5px}
+
+/* 「全部游戏」：大图标网格，不套明显的卡片边框（需求 26） */
+.game-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:16px 18px}
+.game-card{display:grid;gap:8px;justify-items:center;padding:12px 8px;border:1px solid transparent;background:transparent;color:#eef4fa;font:inherit;text-align:center;cursor:pointer;border-radius:14px;transition:.16s}
+.game-card:hover{background:#ffffff1a;transform:translateY(-2px)}
+.game-card.active{border-color:#ffd76a;background:#ffffff14}
+.game-card img{width:104px;height:104px;border-radius:20px;object-fit:cover;box-shadow:0 6px 20px #0000003d}
+.game-card strong{font-size:14px;color:#fff}
+.game-card small{font-size:11.5px;color:#adc0d4}
+
+/* 当前游戏设置（需求 27）：与全局设置区分开，标出属于哪个游戏 */
+.game-settings-panel{margin-top:18px}
+.game-settings-panel h2{margin-bottom:4px}
+.game-settings-panel .settings-card{margin-bottom:0}
+.game-settings-panel .setting-row strong:after{content:" · 当前游戏";font-size:11px;font-weight:600;color:#adc0d4}
+
+/* Logo 飞行动画：飞行期间目标位置的 Logo 与它所在方块的底色都藏起来（需求 2/3），
+   否则落点上会一直立着一块空的深色方块；飞到 88% 时 JS 会撤掉这个标记，目标原位现身。 */
+html[data-icon-flying="true"] .rail-back img,
+html[data-icon-flying="true"] .game-tile[data-game] img,
+html[data-icon-flying="true"] .game-card[data-game] img{visibility:hidden;animation:none}
+html[data-icon-flying="true"] .rail-back,
+html[data-icon-flying="true"] .game-tile[data-game].active{background:transparent;box-shadow:none}
+html[data-icon-flying="true"] .game-tile[data-game].active:before{display:none}
+@media(prefers-reduced-motion:reduce){.notification-panel,.notification-panel.closing{animation-duration:.08s!important}}

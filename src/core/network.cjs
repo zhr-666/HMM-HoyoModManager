@@ -22,17 +22,18 @@ function allowed(url) {
   return u.href;
 }
 
-async function request(url, timeout = 30000, headers = {}) {
+async function request(url, timeout = 30000, headers = {}, signal) {
   for (let i = 0; i < 6; i++) {
     const safeUrl = allowed(url);
     let response;
     try {
       response = await fetchTransport(safeUrl, {
         redirect: 'manual',
-        signal: AbortSignal.timeout(timeout),
+        signal: combineSignals(signal, timeout),
         headers: { 'User-Agent': 'HoYoMod/0.6.0', Accept: 'application/json, */*', 'Accept-Encoding': 'identity', ...headers },
       });
     } catch (error) {
+      if (signal?.aborted) throw cancelledError();
       error.transient = true;
       throw error;
     }
@@ -45,7 +46,12 @@ async function request(url, timeout = 30000, headers = {}) {
     }
     if (!response.ok) {
       await response.body?.cancel();
-      const error = new Error(`网络请求失败（HTTP ${response.status}），请稍后重试。`);
+      // 直接给出用户能看懂的中文，不把状态码当成人话。
+      const reason = response.status === 404 ? '来源页面不存在或已被作者删除。'
+        : response.status === 429 ? '请求过于频繁，请稍后重试。'
+        : response.status >= 500 ? '来源服务器暂时不可用，请稍后重试。'
+        : '请求被服务器拒绝，请稍后重试或检查代理设置。';
+      const error = new Error(reason);
       error.status = response.status;
       error.transient = response.status === 408 || response.status === 429 || response.status >= 500;
       throw error;
@@ -87,6 +93,30 @@ async function hashExisting(hash, file) {
   for await (const chunk of createReadStream(file)) hash.update(chunk);
 }
 
+// 主动取消（用户点了「取消下载」）：不重试、按取消上报，删除未完成的临时文件。
+function cancelledError() {
+  const error = new Error('已取消下载。');
+  error.cancelled = true;
+  return error;
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) throw cancelledError();
+}
+
+// 外部取消信号与单次请求超时合并：任一触发都中止这次网络读取。
+function combineSignals(signal, timeout) {
+  const timeoutSignal = AbortSignal.timeout(timeout);
+  if (!signal) return timeoutSignal;
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any([signal, timeoutSignal]);
+  return timeoutSignal;
+}
+
+async function cleanupPart(part) {
+  await fs.rm(part, { force: true }).catch(() => {});
+  await fs.rm(part + '.json', { force: true }).catch(() => {});
+}
+
 async function partSize(file) {
   try { return (await fs.stat(file)).size; } catch (error) {
     if (error.code === 'ENOENT') return 0;
@@ -102,6 +132,8 @@ async function download(url, destination, onProgress = () => {}, digest, options
     throw new Error('预期文件大小无效或超过 2 GB 限制。');
   }
   const expectedChecksum = checksumValue(digest, options);
+  const signal = options.signal;
+  throwIfAborted(signal);
   const part = `${destination}.part`;
   try { await fs.access(destination); throw new Error('下载目标文件已存在。'); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -117,6 +149,7 @@ async function download(url, destination, onProgress = () => {}, digest, options
   const startedAt = Date.now();
   let lastError;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    throwIfAborted(signal);
     let received = resume ? await partSize(part) : 0;
     const headers = {};
     if (resume && received > 0) {
@@ -125,7 +158,7 @@ async function download(url, destination, onProgress = () => {}, digest, options
     }
     let response;
     try {
-      response = await request(url, 2 * 60 * 60 * 1000, headers);
+      response = await request(url, 2 * 60 * 60 * 1000, headers, signal);
       const encoded = response.headers.get('content-encoding');
       const isIdentity = !encoded || encoded.toLowerCase() === 'identity';
       const responseValidator = validator(response);
@@ -209,6 +242,11 @@ async function download(url, destination, onProgress = () => {}, digest, options
       return destination;
     } catch (error) {
       lastError = error;
+      // 用户点了取消：立刻停下，清掉未完成的临时文件，绝不重试，也不上报成「下载失败」。
+      if (signal?.aborted || error.cancelled) {
+        await cleanupPart(part);
+        throw error.cancelled ? error : cancelledError();
+      }
       const saved = await partSize(part);
       const responseValidator = response && validator(response);
       const encoded = response?.headers.get('content-encoding');

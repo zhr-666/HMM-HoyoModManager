@@ -120,7 +120,7 @@ test('known roles cannot bypass an unresolved active skin in another subcategory
 test('initializes defaults and snapshot is a deep clone', async (t) => {
   const { library } = await fixture(t);
   const snapshot = library.snapshot();
-  assert.deepEqual(snapshot, { currentPresetId:null, settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, theme:'system', material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], folders: [], presets: [] });
+  assert.deepEqual(snapshot, { currentPresetId:null, settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], folders: [], presets: [], activeGame:'genshin', games:{}, hotkeyNotes:{}, gameSettings:{} });
   snapshot.settings.autoEnable = true;
   assert.equal(library.snapshot().settings.autoEnable, false);
 });
@@ -709,4 +709,74 @@ test('removing a folder is refused while it holds mods or hand-placed files, and
  assert.deepEqual(library.snapshot().folders,[]);
  await assert.rejects(fs.access(target));
  await assert.rejects(library.removeFolder('19513'),/找不到/);
+});
+
+// 需求 27：GIMI 文件夹、外部程序、启动器背景按游戏各存一份，互不影响；
+// 升级时把旧版全局值整体搬进《原神》。
+test('legacy single-source settings migrate into the first game and stay isolated per game',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-library-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const data=path.join(root,'data');
+ await fs.mkdir(data,{recursive:true});
+ const gimi=path.join(root,'gimi-mods');
+ await fs.mkdir(gimi,{recursive:true});
+ await fs.writeFile(path.join(data,'state.json'),JSON.stringify({
+  settings:{modsPath:gimi,launchExe:'C:\\Launcher\\genshin.exe',backgroundVersion:'bg-1',theme:'dark',autoEnable:true},
+  mods:[],folders:[],presets:[],
+ },null,2));
+ const library=new Library(data);await library.init();
+ const migrated=library.snapshot();
+ assert.equal(migrated.settings.modsPath,gimi,'旧值要迁移给原神');
+ assert.equal(migrated.settings.launchExe,'C:\\Launcher\\genshin.exe');
+ assert.equal(migrated.settings.backgroundVersion,'bg-1');
+ // 1.1.3 起只有深色模式：旧 settings.json 里的 theme 读取时丢弃。
+ assert.equal('theme' in migrated.settings,false,'旧主题字段要丢弃');
+ assert.equal(migrated.activeGame,'genshin');
+ assert.deepEqual(migrated.gameSettings,{modsPath:gimi,launchExe:'C:\\Launcher\\genshin.exe',backgroundVersion:'bg-1'});
+ const persisted=JSON.parse(await fs.readFile(path.join(data,'state.json'),'utf8'));
+ assert.equal(persisted.games.genshin.modsPath,gimi);
+ assert.equal(persisted.settings.modsPath,gimi,'全局字段保留当前游戏的镜像，旧代码仍可读');
+ assert.equal('theme' in persisted.settings,false,'丢弃后不再把主题字段写回设置文件');
+});
+
+test('changing one game settings never touches another game',async t=>{
+ const {library,modsPath}=await fixture(t);
+ await library.settings({modsPath,launchExe:'C:\\G\\genshin.exe'},{gameId:'genshin'});
+ assert.deepEqual(library.snapshot().gameSettings.modsPath,modsPath);
+ // 目前只接入原神：未接入的游戏编号必须被拒绝，而不是静默写到别的游戏头上。
+ await assert.rejects(library.settings({modsPath:'C:\\other'},{gameId:'starrail'}),/未知的游戏/);
+ await assert.rejects(library.setActiveGame('starrail'),/未知的游戏/);
+ assert.equal(library.snapshot().settings.modsPath,modsPath);
+ // 1.1.3 起只有深色模式：theme 已不是设置项，旧界面缓存传上来的值被忽略（不报错、不写入）。
+ await library.settings({theme:'light'});
+ const after=library.snapshot();
+ assert.equal('theme' in after.settings,false,'theme 不再是设置项');
+ assert.equal(after.settings.modsPath,modsPath);
+ assert.equal(after.gameSettings.modsPath,modsPath);
+});
+
+test('hotkey notes are stored per mod, deduplicated and survive a restart',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const first=await library.install(await modFolder('one'),meta('One','101'));
+ const second=await library.install(await modFolder('two'),meta('Two','102'));
+ await library.addHotkeyNote(first.id,'Ctrl + 1 切换形态');
+ await library.addHotkeyNote(first.id,'Ctrl + 1 切换形态');
+ await library.addHotkeyNote(first.id,'Ctrl + 2 隐藏武器');
+ await library.addHotkeyNote(second.id,'Alt + F 开关特效');
+ const notes=library.snapshot().hotkeyNotes;
+ assert.deepEqual(notes[first.id].map(note=>note.text),['Ctrl + 2 隐藏武器','Ctrl + 1 切换形态'],'同一段文字不重复记录');
+ assert.deepEqual(notes[second.id].map(note=>note.text),['Alt + F 开关特效'],'不同 Mod 的内容不能互相串');
+ const reopened=new Library(library.root);await reopened.init();
+ assert.deepEqual(reopened.snapshot().hotkeyNotes[first.id].map(note=>note.text),['Ctrl + 2 隐藏武器','Ctrl + 1 切换形态']);
+ await reopened.removeHotkeyNote(first.id,notes[first.id][0].id);
+ assert.deepEqual(reopened.snapshot().hotkeyNotes[first.id].map(note=>note.text),['Ctrl + 1 切换形态']);
+ await assert.rejects(reopened.addHotkeyNote(first.id,'   '),/选中/);
+ await assert.rejects(reopened.addHotkeyNote('missing','x'),/找不到/);
+});
+
+test('ignored update versions are recorded on the mod and survive a restart',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const mod=await library.install(await modFolder('skin'),meta('Skin','101'));
+ await library.updateMetadata(mod.id,{ignoredUpdates:[{id:'x',uploadedAt:1700000000,name:'1.1.zip',at:1}]});
+ const reopened=new Library(library.root);await reopened.init();
+ assert.equal(reopened.snapshot().mods[0].ignoredUpdates[0].uploadedAt,1700000000);
 });

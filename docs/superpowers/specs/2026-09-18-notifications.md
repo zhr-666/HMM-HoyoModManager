@@ -2,6 +2,8 @@
 
 日期：2026-09-18　范围：`src/core/notification-center.cjs`、`src/core/download-summary.cjs`、`src/main.cjs`、`src/preload.cjs`、`src/ui/`
 
+> 提示行为已被 [通知系统统一规范](2026-09-19-notification-unification.md) 取代（只保留 3 秒即时通知、进行中的任务、完成/错误常驻通知三种）；本文件保留当时的历史持久化与面板交互取舍。
+
 ## 需求
 
 软件的消息分成两类通道：

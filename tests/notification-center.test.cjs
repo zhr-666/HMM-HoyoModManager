@@ -47,43 +47,67 @@ test('delivers each new message as a popup exactly once',async()=>{
   assert.equal(popups.length,2);
 });
 
-// 瞬时提示用于「开始检查更新」这类只弹一次的反馈：不进历史、不计未读、不落盘，
-// 窗口还没就绪时直接丢弃（而不是排队等下次启动补弹）。
-test('delivers an ephemeral message once and keeps it out of the history',async()=>{
+// 3 秒即时通知（toast）用于「已加入下载列表」「开始检查更新」这类按钮反馈：
+// 只弹一次、不进历史、不计未读、不落盘，窗口还没就绪就直接丢弃（而不是排队等下次启动补弹）。
+test('delivers a toast once and keeps it out of the history',async()=>{
   const {file}=await workspace();
-  const popups=[],unread=[];
-  const center=new NotificationCenter(file,{onPopup:entry=>popups.push(entry),onChange:value=>unread.push(value)});
+  const toasts=[],unread=[];
+  const center=new NotificationCenter(file,{onToast:entry=>toasts.push(entry),onChange:value=>unread.push(value)});
   await center.init();
-  const entry=center.add({text:'开始检查更新',title:'检查更新',ephemeral:true});
-  assert.equal(entry.text,'开始检查更新');
-  assert.equal(popups.length,1);
-  assert.equal(popups[0].title,'检查更新');
+  const entry=center.toast({text:'已加入下载列表',title:'下载'});
+  assert.equal(entry.text,'已加入下载列表');
+  assert.equal(toasts.length,1);
+  assert.equal(toasts[0].title,'下载');
   await center.flush();
   assert.deepEqual(center.snapshot().entries,[]);
-  assert.deepEqual(unread,[],'瞬时提示不该改变未读数');
-  await assert.rejects(()=>fs.readFile(file,'utf8'),/ENOENT/,'瞬时提示不该落盘');
+  assert.deepEqual(unread,[],'即时通知不该改变未读数');
+  await assert.rejects(()=>fs.readFile(file,'utf8'),/ENOENT/,'即时通知不该落盘');
 });
 
-test('drops an ephemeral message while the window is not ready',async()=>{
+test('drops a toast while the window is not ready',async()=>{
   const {file}=await workspace();
-  const popups=[];
-  const center=new NotificationCenter(file,{onPopup:entry=>popups.push(entry.text)});
-  center.add({text:'开始检查更新',ephemeral:true});
+  const toasts=[];
+  const center=new NotificationCenter(file,{onToast:entry=>toasts.push(entry.text)});
+  center.toast({text:'已加入下载列表'});
   await center.init();
   const delivered=[];center.flushPending(entry=>delivered.push(entry.text));
-  assert.deepEqual(delivered,[],'瞬时提示不该进待发队列');
-  assert.deepEqual(popups,[]);
+  assert.deepEqual(delivered,[],'即时通知不该进待发队列');
+  assert.deepEqual(toasts,[]);
   assert.deepEqual(center.snapshot().entries,[]);
 });
 
-test('keeps ephemeral messages out of the unread count',async()=>{
+test('keeps toasts out of the unread count',async()=>{
   const {file}=await workspace();
   const center=new NotificationCenter(file);
   await center.init();
-  center.add({text:'开始检查更新',ephemeral:true});
-  center.add({text:'检查完成：2 个模组有更新',target:'modUpdates'});
+  center.toast({text:'已加入下载列表'});
+  center.add({text:'全部任务下载完成',target:'downloads'});
   assert.equal(center.unread(),1);
-  assert.deepEqual(center.snapshot().entries.map(e=>e.text),['检查完成：2 个模组有更新']);
+  assert.deepEqual(center.snapshot().entries.map(e=>e.text),['全部任务下载完成']);
+});
+
+// 完成通知是常驻通知：必须手动关闭，关闭只是关掉屏幕上的卡片，消息留在历史里。
+test('keeps a completion notice in the history so closing the card never loses it',async()=>{
+  const {file}=await workspace();
+  const popups=[];
+  const center=new NotificationCenter(file,{onPopup:entry=>popups.push(entry)});
+  await center.init();
+  center.add({text:'全部任务下载完成',target:'downloads'});
+  assert.equal(popups.length,1,'完成通知要有一张右下角卡片');
+  assert.equal(popups[0].target,'downloads');
+  await center.flush();
+  const reopened=new NotificationCenter(file);await reopened.init();
+  assert.deepEqual(reopened.snapshot().entries.map(e=>e.text),['全部任务下载完成'],'关闭卡片后历史里仍然找得到');
+});
+
+// 三种通知状态之外没有第四条路：add() 不再接受 ephemeral，瞬时反馈只能走 toast()。
+test('add() always persists, even when the caller passes ephemeral',async()=>{
+  const {file}=await workspace();
+  const center=new NotificationCenter(file);
+  await center.init();
+  center.add({text:'旧参数不该再开一条通道',ephemeral:true});
+  await center.flush();
+  assert.deepEqual(center.snapshot().entries.map(e=>e.text),['旧参数不该再开一条通道']);
 });
 
 test('reports the unread count whenever the history changes',async()=>{
@@ -218,4 +242,18 @@ test('starts with an empty history when no file exists yet',async()=>{
   const center=new NotificationCenter(file);
   const snapshot=await center.init();
   assert.deepEqual(snapshot,{entries:[],unread:0});
+});
+
+// 需求 25：普通用户第一眼看到通俗中文，原始英文只作为可展开的详细信息保留。
+test('keeps a details line apart from the user-facing message',async()=>{
+ const {file}=await workspace();
+ const center=new NotificationCenter(file);
+ await center.init();
+ center.add({text:'找不到指定文件，请检查文件是否被移动或删除。',tone:'error',details:"ENOENT: no such file or directory, open 'C:\\Mods\\a.ini'"});
+ const entry=center.snapshot().entries[0];
+ assert.equal(entry.text,'找不到指定文件，请检查文件是否被移动或删除。');
+ assert.match(entry.details,/ENOENT/);
+ await center.flush();
+ const reopened=new NotificationCenter(file);await reopened.init();
+ assert.equal(reopened.snapshot().entries[0].details,entry.details,'详细信息要跟着历史落盘');
 });

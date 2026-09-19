@@ -128,3 +128,30 @@ test('official launcher background sources are trusted, lookalike and plaintext 
   await assert.rejects(network.download('https://launcher-webstatic.mihoyo.com/bg.webp', destination), /可信来源/);
   await assert.rejects(fs.access(destination));
 });
+
+// 需求 1：用户主动取消下载时立刻停下、清理未完成临时文件，并且绝不重试。
+test('an aborted download stops immediately and removes the partial file',async t=>{
+ t.after(()=>network.setFetch(globalThis.fetch));const dest=await temp(t);const controller=new AbortController();let calls=0;
+ network.setFetch(async(_u,options)=>{
+  calls++;
+  assert.equal(options.signal.aborted,false);
+  return new Response(new ReadableStream({async pull(stream){stream.enqueue(Buffer.from('abc'));await new Promise(r=>setTimeout(r,30));controller.abort();await new Promise(r=>setTimeout(r,30));stream.error(new Error('aborted'));}}),{headers:{'content-length':'6'}});
+ });
+ await assert.rejects(network.download('https://gamebanana.com/file.zip',dest,()=>{},undefined,{signal:controller.signal}),error=>{
+  assert.equal(error.cancelled,true,'取消要有明确的标记，不能被当成下载失败');
+  assert.match(error.message,/已取消下载/);
+  return true;
+ });
+ assert.equal(calls,1,'取消后不重试');
+ await assert.rejects(fs.access(dest));
+ await assert.rejects(fs.access(`${dest}.part`),'未完成的临时文件要清理');
+ await assert.rejects(fs.access(`${dest}.part.json`));
+});
+
+test('an already aborted signal never starts a request',async t=>{
+ t.after(()=>network.setFetch(globalThis.fetch));const dest=await temp(t);const controller=new AbortController();controller.abort();let calls=0;
+ network.setFetch(async()=>{calls++;return new Response('abc');});
+ await assert.rejects(network.download('https://gamebanana.com/file.zip',dest,()=>{},undefined,{signal:controller.signal}),/已取消下载/);
+ assert.equal(calls,0);
+ await assert.rejects(fs.access(`${dest}.part`));
+});

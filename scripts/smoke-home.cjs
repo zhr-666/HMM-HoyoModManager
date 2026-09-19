@@ -71,7 +71,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
   await page.locator('#library-view-list').click();await page.waitForFunction(()=>document.querySelector('#library-grid').dataset.view==='list');
   assert.ok((await page.locator('.library-thumb').first().boundingBox()).width<100);
   await page.screenshot({path:path.resolve(__dirname,'../test-results/library-list-light.png')});
-  await gotoPage('settings');await page.locator('#theme-select').selectOption('dark');
+  // 1.1.3 起只有深色模式：不再切换主题，直接截图。
   await gotoPage('home');await page.screenshot({path:path.resolve(__dirname,'../test-results/home-dark.png')});
   await gotoPage('library');await page.locator('#library-view-grid').click();await page.screenshot({path:path.resolve(__dirname,'../test-results/library-grid-dark.png')});
   await page.emulateMedia({reducedMotion:'reduce'});
@@ -93,6 +93,6 @@ const path=require('node:path'),assert=require('node:assert/strict');
     await gotoPage('library');
     await page.screenshot({path:path.resolve(__dirname,`../test-results/library-buttons-${width}.png`)});
   }
-  assert.deepEqual(errors,[]);console.log('Home and explorer passed: scoped contents, list/grid geometry, persistent view, preset identity, totals, launch placement, themes, single-line buttons at 980/1280px.');
+  assert.deepEqual(errors,[]);console.log('Home and explorer passed: scoped contents, list/grid geometry, persistent view, preset identity, totals, launch placement, dark-only appearance, single-line buttons at 980/1280px.');
  }finally{await app.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

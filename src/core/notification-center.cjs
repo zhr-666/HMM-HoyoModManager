@@ -11,14 +11,15 @@ function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-// Persisted message history behind the notification centre. Every message that is not a
-// top-of-window toast reaches this store: it is saved to disk, reported to the renderer so
-// the tray can be refreshed, and delivered once as a bottom-right popup.
+// 通知中心只保留两种通道：
+// ① add()：常驻通知（完成 / 错误）——进历史、计未读、落盘，并弹一张需要手动关闭的右下角卡片；
+// ② toast()：3 秒即时通知——只弹一次给用户「按钮点成功了」的反馈，不进历史、不计未读、不落盘。
 class NotificationCenter {
-  constructor(file, { onChange = () => {}, onPopup = () => {}, limit = 200 } = {}) {
+  constructor(file, { onChange = () => {}, onPopup = () => {}, onToast = () => {}, limit = 200 } = {}) {
     this.file = file;
     this.onChange = onChange;
     this.onPopup = onPopup;
+    this.onToast = onToast;
     this.limit = limit;
     this.entries = [];
     this.pending = [];
@@ -47,11 +48,9 @@ class NotificationCenter {
     return this.entries.filter(entry => !entry.read).length;
   }
 
-  // Adds one message. Messages raised before the window is listening are queued and replayed
-  // by flushPending(); nothing is ever popped twice, because the queue is drained once.
-  // 瞬时提示（ephemeral）只弹一次：不进历史、不计未读、不落盘，窗口还没就绪就直接丢弃，
-  // 否则「开始检查更新」这类提示会在下次启动时补弹。
-  add({ text, title, tone, target, ephemeral } = {}) {
+  // Adds one persistent message. Messages raised before the window is listening are queued and
+  // replayed by flushPending(); nothing is ever popped twice, because the queue is drained once.
+  add({ text, title, tone, target, details } = {}) {
     const message = normalizeText(text);
     if (!message) return null;
     const entry = { id: randomUUID(), text: message, tone: normalizeTone(tone), read: false, createdAt: Date.now() };
@@ -59,10 +58,9 @@ class NotificationCenter {
     if (name) entry.title = name;
     const destination = normalizeText(target);
     if (destination) entry.target = destination.slice(0, 40);
-    if (ephemeral) {
-      if (this.ready) this.onPopup(entry);
-      return entry;
-    }
+    // 开发调试用的原始信息（例如英文异常）：界面折叠成「查看详细信息」，不干扰普通用户。
+    const extra = normalizeText(details);
+    if (extra) entry.details = extra.slice(0, 600);
     this.entries.unshift(entry);
     if (this.entries.length > this.limit) this.entries.length = this.limit;
     if (this.ready) {
@@ -72,6 +70,19 @@ class NotificationCenter {
     } else {
       this.pending.push(entry);
     }
+    return entry;
+  }
+
+  // 3 秒即时通知：窗口还没就绪就直接丢弃（而不是排队等下次启动补弹），
+  // 否则「已加入下载列表」这类提示会在下次启动时莫名其妙地冒出来一次。
+  toast({ text, title, tone } = {}) {
+    const message = normalizeText(text);
+    if (!message) return null;
+    const entry = { id: randomUUID(), text: message, tone: normalizeTone(tone), createdAt: Date.now() };
+    const name = normalizeText(title);
+    if (name) entry.title = name;
+    if (!this.ready) return entry;
+    this.onToast(entry);
     return entry;
   }
 
