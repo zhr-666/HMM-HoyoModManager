@@ -55,3 +55,16 @@ test('点消息按钮时面板从右下角放大展开',()=>{
   assert.match(css,/\.notification-panel\{[^}]*transform-origin:100% 100%[^}]*animation:notification-zoom/,'面板要以右下角为原点放大');
   assert.match(css,/@keyframes notification-zoom\{from\{[^}]*scale\(\.22\)/,'面板要从按钮大小放大到完整面板');
 });
+
+test('图标飞行动画只用 transform / opacity 并预先提升图层',()=>{
+  const css=read('src/ui/style.css');
+  const fly=css.split('\n').find(line=>line.startsWith('.game-icon-fly{'));
+  assert.ok(fly,'缺少 .game-icon-fly 样式');
+  assert.match(fly,/will-change:transform,opacity/,'飞行图标要预先提升图层，逐帧才不会重排重绘');
+  const keyframes=css.split('\n').find(line=>line.startsWith('@keyframes game-icon-fly'));
+  assert.ok(keyframes,'缺少 game-icon-fly 关键帧');
+  assert.equal(/(left|top|width|height|filter|box-shadow):/.test(keyframes),false,'关键帧不能动会引起重排重绘的属性，只有 transform / opacity 能交给合成器逐帧插值');
+  assert.match(keyframes,/72%\{opacity:1\}/,'还在飞的时候不该先淡掉，淡出只留最后一段');
+  const duration=Number(/const FLY_DURATION=(\d+)/.exec(read('src/ui/app.js'))?.[1]);
+  assert.ok(duration>=600,`飞行动画时长 ${duration}ms 太短，掉帧会很明显`);
+});
