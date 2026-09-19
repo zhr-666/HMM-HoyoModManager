@@ -165,6 +165,9 @@ function renderGameRails(){
   }
 }
 function syncGameTiles(){for(const el of $$('.game-tile[data-game],.game-card[data-game]'))el.classList.toggle('active',el.dataset.game===activeGame)}
+// 进入工作区：游戏图标从原位飞向左栏顶端。
+// 时长与缓动只在这里定义：CSS 的落地动画用同一个 --fly-duration，两边始终同步。
+const FLY_DURATION=720,FLY_EASING='cubic-bezier(.22,1,.36,1)';
 // 双击进入工作空间：图标从原位飞向左栏顶端，页面同时切换。
 // origin 是双击的游戏图标（左栏按钮或「全部游戏」卡片）：切换页面后它会被隐藏，
 // 所以起点的位置必须在切换之前量好。
@@ -178,15 +181,19 @@ function enterWorkspace(game,origin){
   if(!to?.width)return;
   const fly=document.createElement('img');
   fly.className='game-icon-fly';fly.src=source.getAttribute('src')||gameById(id).icon;fly.alt='';fly.setAttribute('aria-hidden','true');
-  Object.assign(fly.style,{left:`${from.left}px`,top:`${from.top}px`,width:`${from.width}px`,height:`${from.height}px`,animation:'game-icon-fly .42s cubic-bezier(.2,.8,.25,1) both'});
+  Object.assign(fly.style,{left:`${from.left}px`,top:`${from.top}px`,width:`${from.width}px`,height:`${from.height}px`});
   fly.style.setProperty('--fly-x',`${snapshot.left-from.left}px`);
   fly.style.setProperty('--fly-y',`${snapshot.top-from.top}px`);
   fly.style.setProperty('--fly-scale',String(Math.min(1,Math.max(.5,snapshot.width/from.width))));
   fly.style.setProperty('--fly-tx',`${to.left-from.left+(to.width-from.width)/2}px`);
   fly.style.setProperty('--fly-ty',`${to.top-from.top+(to.height-from.height)/2}px`);
+  fly.style.setProperty('--fly-duration',`${FLY_DURATION}ms`);
   document.body.append(fly);
+  // 先让这一帧把飞行图层挂上屏（停在起点，与刚隐藏的图标重合，不会闪），
+  // 下一帧才起动画：切页面本身要重排重绘，和动画抢同一帧是掉帧的主因。
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{fly.style.animation=`game-icon-fly ${FLY_DURATION}ms ${FLY_EASING} both`}));
   fly.addEventListener('animationend',()=>fly.remove(),{once:true});
-  setTimeout(()=>fly.remove(),900);
+  setTimeout(()=>fly.remove(),FLY_DURATION+600);
 }
 function showPage(name){if(!titles[name])return;if(name!=='settings')setMode(launcherPages.has(name)?'launcher':'workspace');document.documentElement.dataset.page=name;$('#open-mods-button').hidden=name!=='library';$('#open-library-button').hidden=name!=='library';$('#replace-hash').hidden=name!=='library';hideContextMenu();pageScroll[activePage]=window.scrollY;activePage=name;$$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===name));$$('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+name));[$('#page-title').textContent,$('#page-subtitle').textContent]=titles[name];window.scrollTo(0,launcherPages.has(name)?0:(pageScroll[name]||0));syncGameTiles();if(name==='home')renderHome()}
 function flattenCategories(nodes,path=[]){return nodes.flatMap(n=>[{...n,path:[...path,n.name]},...flattenCategories(n.children||[],[...path,n.name])])}

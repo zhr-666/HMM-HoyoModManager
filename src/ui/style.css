@@ -430,10 +430,12 @@ html[data-mode="launcher"] main:has(#page-games.active){max-width:none}
 @media(max-height:700px){html[data-mode="launcher"][data-page="home"] main{padding-bottom:16px}.launcher-status{padding:5px 12px}.home-summary .storage-value{font-size:28px}}
 
 /* 进入工作区：游戏图标从原位飞向左栏顶端 */
-.game-icon-fly{position:fixed;margin:0;border-radius:11px;object-fit:cover;pointer-events:none;z-index:40;box-shadow:0 10px 26px #00000073;will-change:transform,opacity}
-@keyframes game-icon-fly{from{transform:translate3d(var(--fly-x,0),var(--fly-y,0),0) scale(var(--fly-scale,1))}to{transform:translate3d(var(--fly-tx,0),var(--fly-ty,0),0) scale(1);opacity:0}}
+.game-icon-fly{position:fixed;margin:0;border-radius:11px;object-fit:cover;pointer-events:none;z-index:40;box-shadow:0 10px 26px #00000073;will-change:transform,opacity;backface-visibility:hidden}
+/* 飞行只用 transform + opacity（能交给合成器逐帧插值，主线程忙也不掉帧）；
+   前 72% 保持不透明，最后一段才淡出，避免「还在飞就开始消失」的断裂感。 */
+@keyframes game-icon-fly{0%{transform:translate3d(var(--fly-x,0),var(--fly-y,0),0) scale(var(--fly-scale,1));opacity:1}72%{opacity:1}100%{transform:translate3d(var(--fly-tx,0),var(--fly-ty,0),0) scale(1);opacity:0}}
 @keyframes rail-icon-land{from{transform:translateY(10px) scale(1.16)}to{transform:translateY(0) scale(1)}}
-html[data-mode="workspace"] .rail-back img{animation:rail-icon-land .42s cubic-bezier(.2,.8,.25,1) both}
+html[data-mode="workspace"] .rail-back img{animation:rail-icon-land var(--fly-duration,720ms) cubic-bezier(.22,1,.36,1) both}
 
 /* 窗口滚动条：更细、半透明，滚动时显形，停下后自动淡回几乎透明 */
 *{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 30%,transparent) transparent}
