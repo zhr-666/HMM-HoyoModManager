@@ -81,13 +81,39 @@ test('通知中心面板右上角：× 只关面板，双勾＝清空消息',()=
   assert.match(app,/\$\('#notification-close'\)\.onclick=\(\)=>closeNotificationPanel\(\)/,'× 只收起面板，不删消息');
 });
 
-test('完成通知是常驻的：只有「×」能关掉，关闭后消息仍在通知中心',()=>{
+test('完成通知 8 秒后自动关闭，也能提前点「×」，关闭后消息仍在通知中心',()=>{
   const app=read('src/ui/app.js');
   const popup=/function showNotificationPopup\(entry\)\{([\s\S]*?)\n\}/.exec(app);
   assert.ok(popup,'缺少 showNotificationPopup');
-  assert.match(popup[1],/notification-popup-close/,'常驻通知要有关闭按钮');
+  assert.match(popup[1],/notification-popup-close/,'完成通知要有关闭按钮');
   assert.equal(popup[1].includes('addNotification'),false,'关闭弹窗不等于删除消息');
-  assert.equal(/\},\s*(?:3000|5000|7000|10000)\)/.test(popup[1]),false,'常驻通知不自动消失');
+  // 自动关闭的时间只由 POPUP_CLOSE_MS 定义：改动必须同时更新这里的期望值。
+  assert.match(app,/const POPUP_CLOSE_MS=8000;/,'提示卡的自动关闭时间应为 8 秒');
+  assert.match(popup[1],/setTimeout\(remove,POPUP_CLOSE_MS\)/,'提示卡弹出后要按 POPUP_CLOSE_MS 自动关闭');
+});
+
+test('通知系统整体在浏览器顶层：不被对话框、遮罩或背景模糊影响',()=>{
+  const html=read('src/ui/index.html');
+  const center=/<section id="notification-center"[^>]*>/.exec(html);
+  assert.ok(center,'缺少通知中心容器');
+  assert.match(center[0],/popover="manual"/,'通知中心要作为顶层 popover 打开，才能盖住对话框与遮罩');
+  const app=read('src/ui/app.js');
+  assert.match(app,/function syncNotificationLayer\(\)/,'缺少顶层显隐的同步函数');
+  assert.match(app,/center\.showPopover\(\)/,'有通知时要打开顶层');
+  assert.match(app,/center\.hidePopover\(\)/,'最后一项通知结束后要关闭顶层');
+  // 顶层容器自己不能有模糊：通知与面板必须始终清晰。
+  const reset=/\.notification-center\[popover\]\{([^}]*)\}/.exec(read('src/ui/style.css'));
+  assert.ok(reset,'缺少 popover 默认样式重置');
+  assert.equal(reset[1].includes('filter'),false,'顶层通知容器不能加滤镜');
+});
+
+test('下载任务卡：整批只报位置，不画整批的进度条与百分比',()=>{
+  const app=read('src/ui/app.js');
+  const renderer=/function taskCard\(task\)\{([\s\S]*?)\n\}/.exec(app);
+  assert.ok(renderer,'缺少 taskCard');
+  assert.match(renderer[1],/if\(queue\)rows\.push\(`<p class="task-card-queue">\$\{esc\(queue\.text\|\|''\)\}<\/p>`\)/,'整批任务只显示位置文字');
+  assert.equal(renderer[1].includes('taskProgressBar(queue)'),false,'整批任务不再画进度条');
+  assert.match(renderer[1],/rows\.push\(taskProgressBar\(current\)\)/,'当前文件的进度条与百分比要保留');
 });
 
 test('主进程：下载只挂一张队列任务卡，同一张卡里放两条进度',()=>{
@@ -120,4 +146,16 @@ test('三种状态之外没有第四条路：旧的 ephemeral 与页面提示都
   const app=read('src/ui/app.js');
   assert.match(app,/function notify\(message,error=false\)\{return showToast\(message,error\?'error':'info'\)\}/,'成功与校验提示走 3 秒即时通知');
   assert.match(app,/function notifyError\(error[\s\S]{0,200}tone:'error'/,'真实错误仍写常驻通知与历史');
+});
+
+test('模组工坊翻页：换页时先回到页面最上方',()=>{
+  const app=read('src/ui/app.js');
+  const browse=/async function browse\(\)\{([\s\S]*?)\n\}/.exec(app);
+  assert.ok(browse,'缺少 browse');
+  const body=browse[1],fetchAt=body.indexOf("api.call('browse'"),scrollAt=body.indexOf("window.scrollTo({top:0");
+  assert.ok(scrollAt>0,'换页时要滚回页面最上方');
+  assert.ok(scrollAt<fetchAt,'滚动要在请求之前：加载失败或取消时也停在最上面');
+  assert.match(app,/function showBrowsePage\(next\)\{page=Math\.max\(1,Number\(next\)\|\|1\);browse\(\)\}/,'上一页 / 下一页要统一走 showBrowsePage');
+  assert.match(app,/\$\('#prev-page'\)\.onclick=\(\)=>\{if\(page>1\)showBrowsePage\(page-1\)\}/,'上一页按钮');
+  assert.match(app,/\$\('#next-page'\)\.onclick=\(\)=>showBrowsePage\(page\+1\)/,'下一页按钮');
 });

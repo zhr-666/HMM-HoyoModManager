@@ -664,11 +664,23 @@ test('a local mod imported into a character folder counts as that character and 
  assert.equal(library.snapshot().mods.find(mod=>mod.id===local.id).characterGroupId,'19513');
 });
 
+// 导入本地模组的第二步只做「解压 → 复制进安装库 → 登记并启用」：不再询问 GIMI 内的
+// 安装文件夹，mod.deploymentRelative 因此保持未设置，启用时按默认规则进 HoYoModManaged。
+test('local import without a target folder installs into the library and enables in the default folder',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const mod=await library.importLocal(await modFolder('plain-import'),{name:'本地导入'});
+ assert.equal(mod.deploymentRelative,undefined,'不再有用户选择的 GIMI 安装文件夹');
+ assert.equal(mod.active,true,'导入后自动启用');
+ assert.equal(path.dirname(mod.folder),library.libraryRoot,'未分类的本地导入存放在安装库根目录');
+ assert.equal(String(mod.characterId).startsWith('local:'),true);
+ const deployed=path.join(modsPath,'HoYoModManaged',mod.id);
+ assert.equal(await fs.realpath(deployed),await fs.realpath(mod.folder),'启用后走与其他模组相同的启用库规则');
+});
+
 test('unclassified local imports stay out of character exclusivity',async t=>{
  const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
- const target=path.join(modsPath,'HoYoModManaged','BufferValues');
- const first=await library.importLocal(await modFolder('plain-one'),{name:'普通一',target});
- const second=await library.importLocal(await modFolder('plain-two'),{name:'普通二',target});
+ const first=await library.importLocal(await modFolder('plain-one'),{name:'普通一'});
+ const second=await library.importLocal(await modFolder('plain-two'),{name:'普通二'});
  assert.equal(first.characterId.startsWith('local:'),true);
  assert.equal(second.characterId.startsWith('local:'),true);
  assert.deepEqual(library.snapshot().mods.filter(mod=>mod.active).map(mod=>mod.id).sort(),[first.id,second.id].sort());

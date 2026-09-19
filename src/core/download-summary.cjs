@@ -7,7 +7,7 @@ function downloadNames(rows) {
 }
 
 // 下载队列只追加不重排，本批完成的行就是尾部连续的已结束行。
-// 完成通知是常驻通知（界面右下角不自动消失，手动关闭后进通知中心）；
+// 完成通知走通知中心（界面右下角弹出 8 秒后自动关闭，也可以手动关掉；消息保留在通知中心）；
 // 有对应页面（下载列表）所以可以点击跳转。
 function summarizeDownloadBatch(rows) {
   const finished = [];

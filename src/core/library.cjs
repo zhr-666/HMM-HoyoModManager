@@ -242,10 +242,12 @@ class Library {
     });
   }
 
-  // 手动导入：模组副本存进用户选定的本机库文件夹。带分类时按该分类存放，模组算作
-  // 该角色（或子分类）并写进记录；不带分类时保持未分类的本地导入行为。
+  // 手动导入：模组副本存进本机库，并立即启用。
+  // target 是用户选定的启用库文件夹（相对 GIMI Mods），只有个别老流程会带上；导入界面不再
+  // 询问它，省略时就与其他模组一样用默认的 HoYoModManaged（见 local-deployment 的 deployedPath）。
+  // 带分类时按该分类存放并算作该角色（或子分类）；不带分类时按未分类的本地导入处理。
   async importLocal(folder,{name,target,characterId,characterName,rootCategoryId,rootCategoryName,characterGroupId}={}){
-    const relative=await require('./local-deployment.cjs').validateTarget(this.effectiveSettings().modsPath,target,{create:true});
+    const relative=target===undefined?undefined:await require('./local-deployment.cjs').validateTarget(this.effectiveSettings().modsPath,target,{create:true});
     const classified=typeof characterId==='string'&&characterId.trim()!=='';
     if(classified&&(typeof characterName!=='string'||!characterName.trim()))throw Error('缺少角色信息：characterName');
     const classification=classified?{
@@ -253,8 +255,8 @@ class Library {
       characterName:characterName.trim(),
       ...(typeof rootCategoryId==='string'&&rootCategoryId.trim()&&typeof rootCategoryName==='string'&&rootCategoryName.trim()?{rootCategoryId:rootCategoryId.trim(),rootCategoryName:rootCategoryName.trim()}:{}),
       characterGroupId:characterGroupId===undefined||characterGroupId===null?null:String(characterGroupId),
-    }:{characterId:'local:'+randomUUID(),characterName:path.basename(target)};
-    const mod=await this.install(folder,{name,...classification,deploymentRelative:relative});
+    }:{characterId:'local:'+randomUUID(),characterName:'本地导入'};
+    const mod=await this.install(folder,{name,...classification,...(relative===undefined?{}:{deploymentRelative:relative})});
     await this.enable(mod.id);return this.snapshot().mods.find(m=>m.id===mod.id);
   }
 

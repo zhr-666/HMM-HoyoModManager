@@ -51,7 +51,7 @@ const TASK={
   downloads:'download-queue',
 };
 function send(channel,data){if(win&&!win.isDestroyed())win.webContents.send('hoyo:'+channel,data);}
-// 通知中心：完成 / 错误这类常驻通知进入这里，历史持久化在 data 目录。
+// 通知中心：完成 / 错误这类通知进入这里，历史持久化在 data 目录；右下角提示卡由界面在 8 秒后自动收起。
 function pushNotification(text,{title,tone='info',target,details}={}){if(!text)return null;return notifications?.add({text,title,tone,target,details})||null;}
 // 3 秒即时通知：只告诉用户「按钮点成功了，任务已经开始」；不进历史、不计未读、不可点击。
 function pushToast(text,{title,tone='info'}={}){if(!text)return null;return notifications?.toast({text,title,tone})||null;}
@@ -70,9 +70,9 @@ function notifyError(error,{title='操作失败',fallback}={}){
 function flushNotifications(){if(win&&!win.isDestroyed()&&notifications)notifications.flushPending(entry=>win.webContents.send('hoyo:notification-popups',[entry]));}
 const dependencyPrompts=new (require('./core/dependency-prompts.cjs').DependencyPrompts)(detail=>send('dependency',detail));
 function snapshot(){return {...lib.snapshot(),runtime:{version:app.getVersion(),platform:process.platform,dataRoot:root,materialSupported:nativeMaterial}};}
-// 成功反馈统一走 3 秒即时通知（不进通知中心）；只有错误才写常驻通知与历史。
+// 成功反馈统一走 3 秒即时通知（不进通知中心）；只有错误才写通知与历史。
 function notify(message,tone='info'){return tone==='error'?notifyError(message):pushToast(message);}
-// 下载队列从「有进行中的任务」变为「全部结束」时，发一条常驻完成通知（可点击进入下载列表）。
+// 下载队列从「有进行中的任务」变为「全部结束」时，发一条完成通知（可点击进入下载列表）。
 function reportDownloadBatch(rows){return downloadReporter?.update(rows);}
 function id(value){if(!/^\d+$/.test(String(value)))throw new Error('无效的 GameBanana 编号。');return Number(value);}
 function character(p){
@@ -141,32 +141,11 @@ async function taxonomyRows(){
   try{const rows=await api.taxonomy();await fs.writeFile(cache,JSON.stringify(rows));return rows;}
   catch(e){try{return JSON.parse(await fs.readFile(cache,'utf8'));}catch{throw e;}}
 }
-function categoryPath(nodes,id,parents=[]){
-  for(const node of nodes||[]){
-    const next=[...parents,node];
-    if(String(node.id)===String(id))return next;
-    const found=categoryPath(node.children,id,next);
-    if(found)return found;
-  }
-  return null;
-}
-// 用户选定的库文件夹：优先用已登记的文件夹（离线也能用），否则在 GameBanana 分类树里
-// 查找，取它的顶层大分类作为库内第一层、节点自身作为第二层。停在总分类上也可以，这时
-// 库内只有一层，模组直接放在大分类文件夹里，不必强制选到最小子分类。
-async function resolveCategory(categoryId){
-  const id=String(categoryId??'').trim();
-  if(!/^\d+$/.test(id))throw new Error('无效的分类编号。');
-  const registered=lib.snapshot().folders.find(folder=>String(folder.id)===id);
-  if(registered)return {characterId:registered.id,characterName:registered.name,rootCategoryId:registered.rootCategoryId,rootCategoryName:registered.rootCategoryName,characterGroupId:registered.characterGroupId??null};
-  const taxonomy=await taxonomyRows(),trail=categoryPath(taxonomy,id);
-  if(!trail)throw new Error('找不到该分类，请联网打开模组工坊刷新分类后重试。');
-  const root=trail[0],node=trail.at(-1),group=require('./core/character-groups.cjs').characterGroups(taxonomy).get(id);
-  return {characterId:id,characterName:String(node.name||''),rootCategoryId:String(root.id),rootCategoryName:String(root.name||''),characterGroupId:group===undefined||group===null?null:String(group)};
-}
-
+// 分类 → 本机库文件夹的换算留在 core/library.cjs：导入不再由用户选位置，
+// 这里只保留工坊需要的分类树读取。
 // 检查更新一律在后台跑：开始时只弹一条 3 秒即时通知「开始检查更新」，进行中只在通知中心的
 // 任务卡上显示「正在检查更新第 X 个，共 X 个」与进度条（没有独立任务页面，任务卡不可点击），
-// 完成后只发一条常驻通知 + 点亮按钮红点，绝不自动弹出结果窗口；自动检查保持安静，
+// 完成后只发一条通知 + 点亮按钮红点，绝不自动弹出结果窗口；自动检查保持安静，
 // 只有查到更新时才通知。被用户忽略过的版本不算更新（需求 9）。
 async function checkUpdates(automatic=false){
   const mods=lib.snapshot().mods.filter(m=>m.sourceId),result={updates:[],failures:[],unknown:[],ignored:[],checked:0,total:mods.length};
@@ -288,7 +267,7 @@ const actions={
   },
   // 安装成功时程序自己会删掉压缩包；这个入口用来清掉此前遗留的、以及失败任务留下的包。
   cleanupPackages:async()=>{const result=await installer.purgePackages();return {...result,downloads:await downloadRows()};},
-  // 手动导入分两步：先选压缩包，再在软件内选择本机库的存放文件夹（importApply）。
+  // 手动导入两步：先选压缩包（这里），再选安装库位置（importApply）。
   import:p=>exclusive(async()=>{
     await requireMods(lib.snapshot().settings);
     const result=await dialog.showOpenDialog(win,{title:'导入本地 Mod',properties:['openFile'],filters:[{name:'Mod 压缩包',extensions:['zip','7z','rar']}]});
@@ -296,26 +275,23 @@ const actions={
     const file=result.filePaths[0];
     return {file,name:path.basename(file,path.extname(file))};
   }),
+  // 第二步：解压、复制进安装库并登记，不再询问 GIMI 内的安装文件夹。
+  // 本地导入没有 GameBanana 分类，模组按未分类的本地导入处理（各角色互不影响）；
+  // 要生效时和其他模组一样进 HoYoModManaged/<模组 ID>（local-deployment 的默认启用库规则）。
   importApply:p=>exclusive(async()=>{
     await requireMods(lib.snapshot().settings);
     const file=String(p.file||'');
     if(!path.isAbsolute(file)||!['.zip','.7z','.rar'].includes(path.extname(file).toLowerCase()))throw new Error('请选择 ZIP、7Z 或 RAR 压缩包。');
     if(!(await fs.stat(file).catch(()=>null))?.isFile())throw new Error('找不到所选压缩包，请重新选择。');
-    const classification=await resolveCategory(p.characterId);
-    const target=await dialog.showOpenDialog(win,{title:'选择 Mods 内的安装文件夹',defaultPath:lib.snapshot().settings.modsPath,properties:['openDirectory','createDirectory']});
-    if(target.canceled)return {cancelled:true};
-    await require('./core/local-deployment.cjs').validateTarget(lib.snapshot().settings.modsPath,target.filePaths[0]);
     const temp=await fs.mkdtemp(path.join(root,'import-'));
     try{
       await extract(file,path.join(temp,'unpacked'));
       let requirements=[],known=true;try{requirements=await require('./core/dependencies.cjs').scanLocal(path.join(temp,'unpacked'));}catch{known=false;}
       if(!await dependencyReminder({name:path.basename(file),requirements,requirementsKnown:known},true))return {cancelled:true};
-      await lib.createFolder(classification);
-      await lib.importLocal(path.join(temp,'unpacked'),{name:path.basename(file,path.extname(file)),target:target.filePaths[0],...classification});
+      await lib.importLocal(path.join(temp,'unpacked'),{name:path.basename(file,path.extname(file))});
       return snapshot();
     }finally{await fs.rm(temp,{recursive:true,force:true});}
   }),
-  createLibraryFolder:p=>exclusive(async()=>{await lib.createFolder(await resolveCategory(p.characterId));return snapshot();}),
   removeLibraryFolder:p=>exclusive(async()=>{await lib.removeFolder(p.id);return snapshot();}),
   rename:p=>exclusive(()=>lib.rename(p.id,p.name)),
   enable:p=>exclusive(async()=>{const mod=lib.snapshot().mods.find(m=>m.id===p.id);if(!mod)throw Error('找不到模组');if(!await modDependencies(mod))return snapshot();return changed(()=>lib.enable(p.id));}),
@@ -429,7 +405,7 @@ const actions={
   openData:async()=>{const error=await shell.openPath(root);if(error)throw new Error(error);}
 };
 // 下载只挂一张队列任务卡：当前文件进度与整个队列进度都在同一张卡上，不拆成两个任务。
-// 队列清空时这张卡收尾；「全部任务下载完成」的常驻通知由 DownloadBatchReporter 发出。
+// 队列清空时这张卡收尾；「全部任务下载完成」的通知由 DownloadBatchReporter 发出。
 // 本批下载任务的 id：队列从空闲变成有任务时记下，之后排进来的行补进去，队列空闲时清空。
 // 任务卡上的「正在下载第 X 个，共 X 个」数的是这一批的全部任务，不是剩下的任务。
 let downloadBatchIds=[];
@@ -451,7 +427,7 @@ function syncDownloadTasks(rows){
   tasks.setCancel(taskId,cancelable?()=>downloadQueue.cancel(currentId):null);
 }
 // 软件更新也在通知中心里显示进度：检查、下载、校验各有自己的阶段文案（需求 24）。
-// 有对应页面（设置里的软件更新卡片），任务卡可点击；状态真正落到终态时补一条常驻完成通知。
+// 有对应页面（设置里的软件更新卡片），任务卡可点击；状态真正落到终态时补一条完成通知。
 let appUpdateStatus='idle';
 function syncAppUpdateTask(state){
   if(!tasks)return;
@@ -493,7 +469,7 @@ if(lock)app.whenReady().then(async()=>{
   notifications=new NotificationCenter(path.join(root,'notifications.json'),{onChange:unread=>send('notifications',{unread}),onPopup:entry=>send('notification-popups',[entry]),onToast:entry=>send('toast',entry)});
   await notifications.init();
   tasks=new TaskReporter({push:snapshot=>send('tasks',snapshot)});
-  // 下载批次全部结束：任务卡收尾 + 一条常驻完成通知（可点击进入下载列表）。
+  // 下载批次全部结束：任务卡收尾 + 一条完成通知（可点击进入下载列表）。
   downloadReporter=new DownloadBatchReporter(summary=>pushNotification(summary.text,{title:'下载',tone:summary.tone,target:summary.target}));
   installer=new InstallService(root,{lib,api,download:network.download,extract,progress:v=>downloadQueue?.progress(v),validate:()=>requireMods(lib.snapshot().settings),refresh:async()=>{},confirmEnable:(mod,detail,retry)=>operationContext.run(retry||{action:'enable',payload:{id:mod.id}},async()=>dependencyReminder(detail,true,await enableState(mod)))});
   downloadQueue=new DownloadQueue(root,{validate:p=>p.kind==='component'?Promise.resolve():requireMods(lib.snapshot().settings),onChange:()=>{const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key),...downloadQueue.hiddenKeysSnapshot()]);send('downloads',[...rows,...legacyDownloads.filter(r=>!keys.has(r.key))]);reportDownloadBatch(rows);syncDownloadTasks(rows);},run:async(row,progress,{signal}={})=>{
