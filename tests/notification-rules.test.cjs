@@ -105,6 +105,12 @@ test('通知系统整体在浏览器顶层：不被对话框、遮罩或背景�
   const reset=/\.notification-center\[popover\]\{([^}]*)\}/.exec(read('src/ui/style.css'));
   assert.ok(reset,'缺少 popover 默认样式重置');
   assert.equal(reset[1].includes('filter'),false,'顶层通知容器不能加滤镜');
+  // 位置必须原封不动，只改图层：重置里要显式写回 right/bottom，并且不能出现 inset:auto
+  // （那会把固定定位整体解除，元素掉回静态位置=左上角，曾经真的这样跑偏过）。
+  assert.equal(/inset\s*:\s*auto/.test(reset[1]),false,'重置规则里不能写 inset:auto');
+  assert.match(reset[1],/right:32px/, '重置规则要写回 right:32px');
+  assert.match(reset[1],/bottom:32px/,'重置规则要写回 bottom:32px');
+  assert.match(read('src/ui/style.css'),/\.notification-center\{position:fixed;right:32px;bottom:32px/,'通知中心仍是右下角固定定位');
 });
 
 test('下载任务卡：整批只报位置，不画整批的进度条与百分比',()=>{

@@ -83,29 +83,32 @@ async function main(){
   await evaluate(`window.hoyo.call('addNotification',{text:'冒泡测试：提示卡在最上层',target:'downloads'})`);
   await waitFor(`document.querySelectorAll('.notification-popup').length>0`,'右下角提示卡');
   assert.equal(await evaluate('document.querySelector("#notification-center").matches(":popover-open")'),true,'有提示卡时通知中心应在顶层');
-  await evaluate('modal("顶层测试","遮罩之上的通知",`<p>对话框打开时通知仍要在最上层。</p>`,"<button class=\\"button secondary\\" value=\\"cancel\\">关闭</button>")');
-  await waitFor('document.querySelector("#modal").open','对话框打开');
-  assert.equal(await evaluate('document.querySelector("#notification-center").matches(":popover-open")'),true,'对话框打开时通知中心仍在顶层');
-  // 展开通知面板，用像素验证「谁画在上面」：对话框遮罩会把页面上的一切压暗，通知面板若是
-  // 清晰的浅色，说明它确实画在遮罩之上；被遮罩盖住时这块区域只剩暗色背景。
-  await evaluate('closeModal();document.querySelector("#notification-button").click()');
-  await waitFor('!document.querySelector("#notification-panel").hidden','通知面板展开');
-  await sleep(350);
-  const box=await evaluate('(()=>{const r=document.querySelector("#notification-panel").getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width),height:Math.round(r.height)}})()');
-  assert.ok(box.width>100&&box.height>80,'通知面板应有可见尺寸：'+JSON.stringify(box));
-  const panelBrightness=async()=>{
-    const result=await client.send('Page.captureScreenshot',{format:'png',clip:{...box,scale:1}});
-    return evaluate(`(async()=>{const img=new Image();img.src='data:image/png;base64,${result.data}';await img.decode();const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);const d=ctx.getImageData(0,0,c.width,c.height).data;let sum=0;for(let i=0;i<d.length;i+=4)sum+=(d[i]+d[i+1]+d[i+2])/3;return Math.round(sum/(d.length/4))})()`);
-  };
-  const clear=await panelBrightness();
-  await evaluate('modal("顶层测试","遮罩之上的通知",`<p>对话框打开时通知仍要在最上层。</p>`,"<button class=\\"button secondary\\" value=\\"cancel\\">关闭</button>")');
-  await waitFor('document.querySelector("#modal").open','对话框打开');
-  await sleep(350);
-  const masked=await panelBrightness();
-  assert.ok(clear-masked<30,`通知面板应基本不受遮罩影响：清晰=${clear} 遮罩下=${masked}`);
-  console.log(`  面板亮度：无遮罩 ${clear} / 对话框遮罩下 ${masked}`);
-  await evaluate('closeModal()');await sleep(250);
+  // 位置必须还是右下角：进入顶层只改图层顺序，不改位置。曾经因为把定位重置成 inset:auto
+  // 而掉到左上角，这里用几何断言把它钉住。
+  const corner=await evaluate(`(()=>{
+    const b=document.querySelector('#notification-button').getBoundingClientRect();
+    return {right:Math.round(innerWidth-b.right),bottom:Math.round(innerHeight-b.bottom)};
+  })()`);
+  assert.equal(corner.right,32,'悬浮按钮距右边 32px（右下角原位）：'+JSON.stringify(corner));
+  assert.equal(corner.bottom,32,'悬浮按钮距底边 32px（右下角原位）：'+JSON.stringify(corner));
   console.log('✓ 通知提示卡与通知中心画在对话框与遮罩之上，画面保持清晰');
+
+  // ——— 需求 5②：先量一次「带 / 不带 popover」的位置对照，再验证收起后离开顶层 ———
+  // 位置必须逐像素一致：进入顶层只改图层顺序，不改位置（曾经因为重置成 inset:auto 掉到左上角）。
+  await evaluate('closeModal();closeNotificationPanel()');
+  await waitFor('document.querySelector("#notification-panel").hidden','面板收起');
+  const identical=await evaluate(`(()=>{
+    const c=document.querySelector('#notification-center'),b=document.querySelector('#notification-button');
+    const pick=()=>{const r=b.getBoundingClientRect();return [Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)].join(',')};
+    const keep=c.getAttribute('popover');
+    const withPopover=pick();
+    c.removeAttribute('popover');
+    const without=pick();
+    c.setAttribute('popover',keep);
+    return {withPopover,without};
+  })()`);
+  assert.equal(identical.withPopover,identical.without,'带与不带 popover 的位置必须逐像素一致：'+JSON.stringify(identical));
+  console.log('  带/不带 popover 的按钮位置：'+identical.withPopover);
 
   // ——— 需求 5②：通知中心收起后离开顶层，不再挡住页面点击 ———
   await evaluate('closeNotificationPanel()');

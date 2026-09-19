@@ -266,7 +266,10 @@ html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex
    整块带 popover="manual"（见 index.html）：打开后进入浏览器顶层（top layer），永远画在
    对话框、遮罩、背景模糊与其他页面元素之上，因此通知弹窗、悬浮按钮和展开的面板都不会被
    盖住，也不会跟着背景一起模糊。这里把 popover 的默认样式清掉，只保留原来的右下角定位。 */
-.notification-center[popover]{inset:auto;margin:0;border:0;padding:0;width:auto;max-width:none;max-height:none;overflow:visible;background:transparent;color:inherit;box-shadow:none}
+/* 位置必须与不带 popover 时逐像素一致：右下角按钮与它上面的弹窗栈。popover 的浏览器默认
+   样式在这里会被覆盖，所以 right/bottom 要显式写回来；left/top 保持 auto，让固定的
+   right/bottom 生效（写成 inset:auto 会把定位整体解除，元素会掉到静态位置=左上角）。 */
+.notification-center[popover]{top:auto;left:auto;right:32px;bottom:32px;margin:0;border:0;padding:0;width:auto;max-width:none;max-height:none;overflow:visible;background:transparent;color:inherit;box-shadow:none}
 .notification-center{position:fixed;right:32px;bottom:32px;z-index:95;display:flex;flex-direction:column;align-items:flex-end;gap:10px;-webkit-app-region:no-drag}
 .notification-popups{display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}
 .notification-popup{pointer-events:auto;width:min(344px,calc(100vw - 56px));display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(14px);box-shadow:0 10px 28px #0003;animation:notification-enter .2s cubic-bezier(.2,.8,.2,1) both}
