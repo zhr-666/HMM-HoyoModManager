@@ -30,7 +30,7 @@ async function replacementPlan(appDir,staging,protectedPaths=[]){
 }
 async function sha256(file){const h=createHash('sha256');for await(const chunk of createReadStream(file))h.update(chunk);return 'sha256:'+h.digest('hex');}
 class AppUpdate{
- constructor({appDir,version,protectedPaths=()=>[],json,download,extract,onChange=()=>{},spawnHelper=spawn,host={},platform=process.platform}){Object.assign(this,{appDir:path.resolve(appDir),version,protectedPaths,json,download,extract,onChange,spawnHelper,host,platform});this.home=path.join(this.appDir,'.hoyo-updates');this.state={status:'idle',currentVersion:version};this.operation=null;this.job=null;}
+ constructor({appDir,version,protectedPaths=()=>[],json,download,extract,onChange=()=>{},spawnHelper=spawn,host={},platform=process.platform}){Object.assign(this,{appDir:path.resolve(appDir),version,protectedPaths,json,download,extract,onChange,spawnHelper,host,platform});this.home=path.join(this.appDir,'.hoyo-updates');this.state={status:'idle',currentVersion:version};this.operation=null;this.job=null;this.cleanup=Promise.resolve();}
  snapshot(){return JSON.parse(JSON.stringify(this.state));}
  emit(patch){Object.assign(this.state,patch);this.onChange(this.snapshot());}
  // 引擎与兜底脚本都必须落在真实文件系统里：更新过程中 app.asar 本身会被替换。
@@ -43,57 +43,119 @@ class AppUpdate{
   }
  }
  async init(){
-  try{const pointer=JSON.parse(await fs.readFile(path.join(this.home,'current.json'),'utf8'));if(!/^[0-9a-f-]{36}$/.test(pointer.job))throw Error('更新记录无效');const job=path.join(this.home,pointer.job),result=await fs.readFile(path.join(job,'status.txt'),'utf8').catch(e=>{if(e.code==='ENOENT')return 'pending';throw e;});
+  const finished=[];
+  try{const pointer=JSON.parse(await fs.readFile(path.join(this.home,'current.json'),'utf8'));if(!/^[0-9a-f-]{36}$/.test(pointer.job))throw Error('更新记录无效');const job=path.join(this.home,pointer.job),result=await fs.readFile(path.join(job,'status.txt'),'utf8').catch(e=>{if(e.code==='ENOENT')return 'pending';throw e;}),state=String(result).trim();
+   if(!await exists(job)){
+    // 用户可能已经手动删掉 .hoyo-updates 来释放空间：记录没有对应文件，
+    // 既无法恢复也不该继续拦住检查和下载，直接作废这条记录。
+    await fs.rm(path.join(this.home,'current.json'),{force:true}).catch(()=>{});
+    this.emit({status:'idle',message:'过期的更新记录已清理。'});
+    return this._sweep(finished);
+   }
    // Older builds wrote the journal before launching PowerShell. No status and
    // an empty backup mean replacement never began; validate before permitting retry.
-   if(result==='pending'){
+   if(state==='pending'){
     try{
      await noLinks(job);
      const plan=JSON.parse(await fs.readFile(path.join(job,'plan.json'),'utf8'));
      if(path.resolve(plan.appDir)!==this.appDir||path.resolve(plan.staging)!==path.join(job,'staging'))throw Error('更新记录路径无效');
      if((await fs.readdir(path.join(job,'backup'))).length)throw Error('已有恢复备份');
      const checked=await replacementPlan(this.appDir,plan.staging,this.protectedPaths());
-     if(notNewer(plan.version,this.version)){this.emit({status:'idle',message:'旧更新未执行，当前程序已是相同或更新版本。'});return this.snapshot();}
+     if(notNewer(plan.version,this.version)){finished.push(job);this.emit({status:'idle',message:'旧更新未执行，当前程序已是相同或更新版本。'});return this._sweep(finished);}
      if(JSON.stringify(checked.entries)!==JSON.stringify(plan.entries))throw Error('更新文件已改变');
-     this.job=job;this.emit({status:'ready',update:{version:plan.version},message:'上次更新助手未启动，可以重新点击重启并安装。'});return this.snapshot();
+     this.job=job;this.emit({status:'ready',update:{version:plan.version},message:'上次更新助手未启动，可以重新点击重启并安装。'});return this._sweep(finished);
     }catch{/* Incomplete or changed staging must retain the recovery path. */}
-   }
-   if(!['complete','rolledback'].includes(result.trim())){
+   }else if(state==='complete'||state==='rolledback'){
+    // 更新已经生效（或已回滚）：原下载包、暂存目录和旧程序备份都不再需要，
+    // 继续留着只会占用空间（一次完整更新约 1 GB，而且是每次更新累加）。
+    const done=state==='rolledback'||await this._versionReached(job);
+    if(done){finished.push(job);this.emit({status:'idle',message:state==='complete'?'上次软件更新已完成，更新临时文件已清理。':'上次软件更新已回滚，更新临时文件已清理。'});}
+    else{this.emit({status:'idle',message:state==='complete'?'上次软件更新已完成。':'上次软件更新已回滚，配置保持不变。'});return this._sweep(finished,[job]);}
+    return this._sweep(finished);
+   }else if(await this._versionReached(job)){
     // A manual overwrite replaces program files but leaves .hoyo-updates behind.
     // When the running program already reached the planned version that record
     // describes a finished update; close it instead of demanding a recovery.
-    if(result.trim()!=='pending'&&await this._finishStaleUpdate(job)){this.emit({status:'idle',message:'上次软件更新已完成，过期的更新记录已清理。'});return this.snapshot();}
-    this.job=job;this.emit({status:'recovery',error:'上次软件更新未完成，请恢复旧版本后重试。'});
-   }else this.emit({status:'idle',message:result.trim()==='complete'?'上次软件更新已完成。':'上次软件更新已回滚，配置保持不变。'});
+    finished.push(job);this.emit({status:'idle',message:'上次软件更新已完成，更新临时文件已清理。'});return this._sweep(finished);
+   }
+   // 恢复脚本靠 plan.json 与 backup 还原旧程序文件。备份为空说明没有任何旧程序
+   // 文件被移走（程序就是现在运行的这个），这条记录既不需要、也做不到恢复。
+   if(!await this._hasBackup(job)){
+    if(await this._helperRunning(job)){this.job=job;this.emit({status:'handoff'});return this._sweep(finished);}
+    finished.push(job);this.emit({status:'idle',message:'上次更新没有开始替换程序文件，残留的更新文件已清理。'});return this._sweep(finished);
+   }
+   this.job=job;this.emit({status:'recovery',error:'上次软件更新未完成，请恢复旧版本后重试。'});
   }catch(e){if(e.code!=='ENOENT')this.emit({status:'error',error:e.message});}
-  return this.snapshot();
+  return this._sweep(finished);
  }
  // Replacement had already started, so the staging check above does not apply.
- // Compare the planned version with the running one and keep the logs and backup.
- async _finishStaleUpdate(job){
-  try{
-   const plan=JSON.parse(await fs.readFile(path.join(job,'plan.json'),'utf8'));
-   if(!notNewer(plan.version,this.version))return false;
-   await fs.writeFile(path.join(job,'status.txt'),'complete');
-   await fs.rm(path.join(this.home,'current.json'),{force:true});
+ // Only the planned version compared with the running one decides whether a
+ // record written before the replacement describes a finished update.
+ async _versionReached(job){
+  try{const plan=JSON.parse(await fs.readFile(path.join(job,'plan.json'),'utf8'));return notNewer(plan.version,this.version);}catch{return false;}
+ }
+ // 清理放在后台：删除几百 MB 到 1 GB 的目录会明显拖慢启动，而它不影响本次会话
+ // 的任何状态。删除失败（文件被占用）也不报错，下次启动会重新扫描。
+ _sweep(finished=[],kept=[]){
+  this.cleanup=(async()=>{const jobs=[...finished,...await this._orphans(finished,kept)];await this._discard(jobs);})().catch(()=>{});
+  return this.snapshot();
+ }
+ // 只清理"确定无用"的残留任务：已完成的、从未开始替换的、放弃下载的。
+ // 替换途中中断的任务仍要靠 HoYoMod-Recover.cmd 与 backup 恢复，必须保留。
+ async _orphans(skip=[],kept=[]){
+  const guarded=new Set([...skip,...kept].map(dir=>path.resolve(dir)));
+  if(this.job)guarded.add(path.resolve(this.job));
+  const entries=await fs.readdir(this.home,{withFileTypes:true}).catch(()=>[]),jobs=[];
+  for(const entry of entries){
+   if(!entry.isDirectory()||!/^[0-9a-f-]{36}$/.test(entry.name))continue;
+   const job=path.join(this.home,entry.name);
+   if(guarded.has(path.resolve(job))||await this._helperRunning(job))continue;
+   const state=String(await fs.readFile(path.join(job,'status.txt'),'utf8').catch(()=>'')).trim();
+   // 没有状态文件＝下载或解包中途放弃；pending 且备份为空＝助手从未开始替换。
+   if(!state){jobs.push(job);continue;}
+   if(state==='pending'){if(!await this._hasBackup(job))jobs.push(job);continue;}
+   // 没有被 current.json 指向的完成任务没有任何恢复入口，状态即结论。
+   if(state==='complete'||state==='rolledback')jobs.push(job);
+  }
+  return jobs;
+ }
+ async _helperRunning(job){
+  const holder=Number(String(await fs.readFile(path.join(job,'helper.lock'),'utf8').catch(()=>'')).trim());
+  if(!Number.isSafeInteger(holder)||holder<=0)return false;
+  try{process.kill(holder,0);return true;}catch(e){return e.code==='EPERM';}
+ }
+ async _hasBackup(job){return(await fs.readdir(path.join(job,'backup')).catch(()=>[])).length>0;}
+ async _discard(jobs){
+  let pointer='';
+  try{pointer=String(JSON.parse(await fs.readFile(path.join(this.home,'current.json'),'utf8')).job||'');}catch{}
+  for(const job of jobs)await fs.rm(job,{recursive:true,force:true}).catch(()=>{});
+  if(pointer&&jobs.some(job=>path.basename(job)===pointer))await fs.rm(path.join(this.home,'current.json'),{force:true}).catch(()=>{});
+  // 没有活动任务时才收走恢复脚本；有任务在等用户恢复时必须留着。
+  if(!this.job){
    const recovery=path.join(this.appDir,'HoYoMod-Recover.cmd');
    if((await fs.readFile(recovery,'utf8').catch(()=>'')).startsWith('@echo off\r\nrem HoYoMod update recovery'))await fs.rm(recovery,{force:true}).catch(()=>{});
-   return true;
-  }catch{return false;}
+  }
  }
  async check(){if(this.operation||['ready','recovery','handoff'].includes(this.state.status))return this.snapshot();this.emit({status:'checking',error:''});try{const update=selectRelease(this.version,await this.json(API));this.emit({status:update?'available':'current',update});}catch(e){this.emit({status:'error',error:e.message});throw e;}return this.snapshot();}
  prepare(){if(['recovery','handoff'].includes(this.state.status))return Promise.reject(Error('请先完成更新恢复'));if(this.operation)return this.operation;this.operation=this._prepare().finally(()=>{this.operation=null});return this.operation;}
  async _prepare(){
   if(!this.state.update)throw Error('请先检查软件更新。');if(this.state.status==='ready')return this.snapshot();
   this.emit({status:'downloading',error:'',received:0,total:this.state.update.size});
+  let job='';
   try{
-   await fs.mkdir(this.home,{recursive:true});await noLinks(this.home);const job=path.join(this.home,randomUUID());await fs.mkdir(job);const archive=path.join(job,'update.zip'),staging=path.join(job,'staging'),update=this.state.update;
+   await fs.mkdir(this.home,{recursive:true});await noLinks(this.home);job=path.join(this.home,randomUUID());await fs.mkdir(job);const archive=path.join(job,'update.zip'),staging=path.join(job,'staging'),update=this.state.update;
    await this.download(update.url,archive,p=>this.emit({received:p.received||0,total:p.total||update.size}),update.digest,{expectedSize:update.size});
    if(await sha256(archive)!==update.digest)throw Error('更新包 SHA256 校验失败，原程序和配置未更改。');
    this.emit({status:'preparing'});await this.extract(archive,staging);const plan=await replacementPlan(this.appDir,staging,this.protectedPaths());
+   // 解包并校验通过后原包就没用了：替换和重试用的是暂存目录，留着它只占空间。
+   await fs.rm(archive,{force:true}).catch(()=>{});
    await fs.mkdir(path.join(job,'backup'));await this._installHelpers(job);await fs.writeFile(path.join(job,'plan.json'),JSON.stringify({...plan,version:update.version},null,2));
    this.job=job;this.emit({status:'ready',received:update.size,total:update.size});return this.snapshot();
-  }catch(e){this.emit({status:'error',error:e.message});throw e;}
+  }catch(e){
+   // 失败或放弃的这次准备不留残骸，避免同一个程序目录里堆起多个半成品任务。
+   if(job)await fs.rm(job,{recursive:true,force:true}).catch(()=>{});
+   this.emit({status:'error',error:e.message});throw e;
+  }
  }
  async handoff({packaged,parentPid=process.pid,recover=false}={}){
   if(this.platform!=='win32'||!packaged)throw Error('自动替换仅支持 Windows 便携版。');

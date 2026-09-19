@@ -609,6 +609,7 @@ for(const card of $$('.game-card[data-game]')){const gameId=()=>card.dataset.gam
 syncGameTiles();
 $('#library-view-list').onclick=()=>setLibraryView('list');$('#library-view-grid').onclick=()=>setLibraryView('grid');
 $('#clear-downloads').onclick=()=>enqueue('clearDownloads',{});
+$('#cleanup-packages').onclick=async()=>{try{const result=await call('cleanupPackages',{},{foreground:false,silent:true});if(result?.downloads){downloads=result.downloads;renderDownloads()}notify(result?.removed?`已清理 ${result.removed} 个安装包，释放 ${formatSize(result.freed)}。`:'没有可清理的安装包。')}catch(e){notify(e.message,true)}};
 $$('.nav-item').forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==='settings')markAppUpdateSeen()});$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};$('#prev-page').onclick=()=>{if(page>1){page--;browse()}};$('#next-page').onclick=()=>{page++;browse()};$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=()=>call('launch').catch(()=>{});// 导入本地模组：选压缩包 → 选存放位置 → 解压复制注册 → 刷新列表（需求 13）。
 // 整个过程用 importRunning 锁住，避免重复触发系统文件选择器；导入成功后再重载状态。
 let importRunning=false;

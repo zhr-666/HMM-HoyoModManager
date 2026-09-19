@@ -15,18 +15,23 @@ test('update rejects protected paths under replaceable runtime directories and l
 });
 test('checksum failure never invokes extraction or changes existing configuration',async t=>{
  const {AppUpdate}=require('../src/core/app-update.cjs');const {appDir}=await fixture(t);let extracted=false;
+ const home=path.join(appDir,'.hoyo-updates'),before=await fs.readdir(home);
  const updater=new AppUpdate({appDir,version:'0.8.0',json:async()=>release(),download:async(_u,file)=>fs.writeFile(file,'bad'),extract:async()=>{extracted=true;}});
  await updater.check();await assert.rejects(updater.prepare(),/校验/);assert.equal(extracted,false);assert.equal(await fs.readFile(path.join(appDir,'data','state.json'),'utf8'),'keep-exact');assert.equal(updater.snapshot().status,'error');
+ assert.deepEqual(await fs.readdir(home),before,'一次失败的准备不留任务目录');
 });
 module.exports={release,fixture};
 test('successful preparation writes only updater workspace, deduplicates downloads, and preserves settings bytes',async t=>{
  const {AppUpdate}=require('../src/core/app-update.cjs'),{createHash}=require('node:crypto');const {appDir,staging}=await fixture(t),r=release();r.assets[0].size=3;r.assets[0].digest='sha256:'+createHash('sha256').update('zip').digest('hex');let downloads=0;
  const service=new AppUpdate({appDir,version:'0.8.0',json:async()=>r,download:async(_url,file)=>{downloads++;await fs.writeFile(file,'zip')},extract:async(_zip,out)=>fs.cp(staging,out,{recursive:true})});
  await service.check();const [a,b]=await Promise.all([service.prepare(),service.prepare()]);assert.equal(a.status,'ready');assert.equal(b.status,'ready');assert.equal(downloads,1);assert.equal(await fs.readFile(path.join(appDir,'data','state.json'),'utf8'),'keep-exact');await assert.rejects(fs.access(path.join(appDir,'HoYoMod.exe')));
+ await assert.rejects(fs.access(path.join(service.job,'update.zip')),'解包校验通过后原下载包立即删除');
+ await fs.access(path.join(service.job,'staging','resources','app.asar'));
 });
 test('interrupted update is surfaced as recovery and cannot silently check/download over its journal',async t=>{
- const {AppUpdate}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');const {appDir}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);await fs.mkdir(dir);await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));await fs.writeFile(path.join(dir,'status.txt'),'updating');let calls=0;
+ const {AppUpdate}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');const {appDir}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);await fs.mkdir(path.join(dir,'backup'),{recursive:true});await fs.writeFile(path.join(dir,'backup','old.dll'),'old');await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));await fs.writeFile(path.join(dir,'status.txt'),'updating');let calls=0;
  const service=new AppUpdate({appDir,version:'0.8.0',json:async()=>{calls++;return release()}});await service.init();assert.equal((await service.check()).status,'recovery');assert.equal(calls,0);await assert.rejects(service.prepare());
+ await service.cleanup;await fs.access(dir);await fs.access(path.join(appDir,'.hoyo-updates','current.json'));
 });
 test('legacy launch failure can retry only with intact staging and an empty backup',async t=>{
  const {AppUpdate,replacementPlan}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');const {appDir,staging}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);await fs.rename(path.dirname(staging),dir);const prepared=path.join(dir,'staging');await fs.mkdir(path.join(dir,'backup'));await fs.writeFile(path.join(dir,'plan.json'),JSON.stringify({...await replacementPlan(appDir,prepared),version:'0.9.3'}));await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));
@@ -37,14 +42,17 @@ test('a leftover in-progress record is closed when the running program already r
  const {AppUpdate,replacementPlan}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');const {appDir,staging}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);await fs.rename(path.dirname(staging),dir);const prepared=path.join(dir,'staging');
  await fs.writeFile(path.join(dir,'plan.json'),JSON.stringify({...await replacementPlan(appDir,prepared),version:'0.9.8'}));await fs.writeFile(path.join(dir,'status.txt'),'updating');await fs.writeFile(path.join(dir,'helper-startup.log'),'Update helper launch');
  await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));await fs.writeFile(path.join(appDir,'HoYoMod-Recover.cmd'),'@echo off\r\nrem HoYoMod update recovery\r\nold');
- const finished=new AppUpdate({appDir,version:'0.9.8'}),state=await finished.init();assert.equal(state.status,'idle');assert.match(state.message,/已完成/);
+ const finished=new AppUpdate({appDir,version:'0.9.8'}),state=await finished.init();assert.equal(state.status,'idle');assert.match(state.message,/更新临时文件已清理/);
+ await finished.cleanup;
  await assert.rejects(fs.access(path.join(appDir,'.hoyo-updates','current.json')));await assert.rejects(fs.access(path.join(appDir,'HoYoMod-Recover.cmd')));
- assert.equal(await fs.readFile(path.join(dir,'status.txt'),'utf8'),'complete');assert.equal(await fs.readFile(path.join(dir,'helper-startup.log'),'utf8'),'Update helper launch');
- assert.equal(await fs.readFile(path.join(appDir,'data','state.json'),'utf8'),'keep-exact');assert.equal((await new AppUpdate({appDir,version:'0.9.8'}).init()).status,'idle');
+ assert.equal(await fs.readFile(path.join(appDir,'data','state.json'),'utf8'),'keep-exact');
+ await assert.rejects(fs.access(dir),'已完成更新的暂存、备份与日志不再占用空间');
+ assert.equal((await new AppUpdate({appDir,version:'0.9.8'}).init()).status,'idle');
 });
 test('a leftover record for a newer or unreadable plan keeps the recovery path',async t=>{
  const {AppUpdate,replacementPlan}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');const {appDir,staging}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);await fs.rename(path.dirname(staging),dir);const prepared=path.join(dir,'staging');
  await fs.writeFile(path.join(dir,'plan.json'),JSON.stringify({...await replacementPlan(appDir,prepared),version:'0.9.9'}));await fs.writeFile(path.join(dir,'status.txt'),'updating');await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));
+ await fs.mkdir(path.join(dir,'backup'),{recursive:true});await fs.writeFile(path.join(dir,'backup','old.dll'),'old');
  const pending=new AppUpdate({appDir,version:'0.9.8'}),state=await pending.init();assert.equal(state.status,'recovery');assert.match(state.error,/未完成/);
  await fs.access(path.join(appDir,'.hoyo-updates','current.json'));await assert.rejects(pending.prepare());
  await fs.rm(path.join(dir,'plan.json'));const unknown=new AppUpdate({appDir,version:'0.9.9'});assert.equal((await unknown.init()).status,'recovery');
@@ -122,4 +130,77 @@ test('handoff refuses to overwrite an unrelated recovery script',async t=>{
  const service=new AppUpdate({appDir,version:'0.9.9',platform:'win32'});
  await service.init();
  await assert.rejects(service.handoff({packaged:true}),/恢复脚本名称已被其他文件占用/);
+});
+async function jobDir(appDir,files={}){
+ const {randomUUID}=require('node:crypto'),dir=path.join(appDir,'.hoyo-updates',randomUUID());
+ await fs.mkdir(dir,{recursive:true});
+ for(const [file,value] of Object.entries(files)){await fs.mkdir(path.dirname(path.join(dir,file)),{recursive:true});await fs.writeFile(path.join(dir,file),value);}
+ return dir;
+}
+test('an update that already took effect releases its package, staging and backup on the next start',async t=>{
+ const {AppUpdate,replacementPlan}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');
+ const {appDir,staging}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);
+ await fs.rename(path.dirname(staging),dir);const prepared=path.join(dir,'staging');
+ await fs.mkdir(path.join(dir,'backup'),{recursive:true});
+ await fs.writeFile(path.join(dir,'backup','app.asar'),'old-asar');
+ await fs.writeFile(path.join(dir,'update.zip'),'zip-bytes');
+ await fs.writeFile(path.join(dir,'plan.json'),JSON.stringify({...await replacementPlan(appDir,prepared),version:'1.1.3'}));
+ await fs.writeFile(path.join(dir,'status.txt'),'complete');
+ await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));
+ await fs.writeFile(path.join(appDir,'HoYoMod-Recover.cmd'),'@echo off\r\nrem HoYoMod update recovery\r\nold');
+ const service=new AppUpdate({appDir,version:'1.1.3'}),state=await service.init();
+ assert.equal(state.status,'idle');assert.match(state.message,/更新临时文件已清理/);
+ await service.cleanup;
+ await assert.rejects(fs.access(dir));
+ await assert.rejects(fs.access(path.join(appDir,'.hoyo-updates','current.json')));
+ await assert.rejects(fs.access(path.join(appDir,'HoYoMod-Recover.cmd')));
+ assert.equal(await fs.readFile(path.join(appDir,'data','state.json'),'utf8'),'keep-exact');
+ assert.equal((await new AppUpdate({appDir,version:'1.1.3'}).init()).status,'idle');
+});
+test('a finished record for a version the running program has not reached keeps its backup',async t=>{
+ const {AppUpdate,replacementPlan}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');
+ const {appDir,staging}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);
+ await fs.rename(path.dirname(staging),dir);const prepared=path.join(dir,'staging');
+ await fs.mkdir(path.join(dir,'backup'),{recursive:true});await fs.writeFile(path.join(dir,'backup','app.asar'),'old-asar');
+ await fs.writeFile(path.join(dir,'plan.json'),JSON.stringify({...await replacementPlan(appDir,prepared),version:'1.1.3'}));
+ await fs.writeFile(path.join(dir,'status.txt'),'complete');
+ await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));
+ const service=new AppUpdate({appDir,version:'1.1.2'}),state=await service.init();
+ assert.equal(state.status,'idle');assert.doesNotMatch(state.message,/清理/);
+ await service.cleanup;
+ await fs.access(dir);await fs.access(path.join(appDir,'.hoyo-updates','current.json'));
+});
+test('abandoned jobs are cleaned up while a replacement that can still be recovered is kept',async t=>{
+ const {AppUpdate}=require('../src/core/app-update.cjs');const {appDir}=await fixture(t);
+ const abandoned=await jobDir(appDir,{'update.zip':'zip'});
+ const neverStarted=await jobDir(appDir,{'status.txt':'pending'});
+ const finished=await jobDir(appDir,{'status.txt':'complete'});
+ const interrupted=await jobDir(appDir,{'status.txt':'updating','backup/old.dll':'old'});
+ const locked=await jobDir(appDir,{'helper.lock':String(process.pid)});
+ const service=new AppUpdate({appDir,version:'1.1.2'});
+ assert.equal((await service.init()).status,'idle');
+ await service.cleanup;
+ for(const dir of [abandoned,neverStarted,finished])await assert.rejects(fs.access(dir));
+ await fs.access(interrupted);
+ await fs.access(locked);
+});
+test('a journal without any replaced program file is discarded instead of demanding a recovery',async t=>{
+ const {AppUpdate}=require('../src/core/app-update.cjs');const {appDir}=await fixture(t),dir=await jobDir(appDir,{'status.txt':'pending'});
+ await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job:path.basename(dir)}));
+ const service=new AppUpdate({appDir,version:'0.8.0',json:async()=>release()});
+ const state=await service.init();assert.equal(state.status,'idle');assert.match(state.message,/没有开始替换/);
+ await service.cleanup;
+ await assert.rejects(fs.access(dir));await assert.rejects(fs.access(path.join(appDir,'.hoyo-updates','current.json')));
+ assert.equal((await service.check()).status,'available','清理后检查更新不再被卡住的记录拦住');
+});
+test('a journal pointing at a deleted update directory is dropped instead of blocking updates',async t=>{
+ const {AppUpdate}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');const {appDir}=await fixture(t);
+ await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job:randomUUID()}));
+ await fs.writeFile(path.join(appDir,'HoYoMod-Recover.cmd'),'@echo off\r\nrem HoYoMod update recovery\r\nold');
+ const service=new AppUpdate({appDir,version:'0.8.0',json:async()=>release()});
+ const state=await service.init();assert.equal(state.status,'idle');assert.match(state.message,/过期/);
+ await service.cleanup;
+ await assert.rejects(fs.access(path.join(appDir,'.hoyo-updates','current.json')));
+ await assert.rejects(fs.access(path.join(appDir,'HoYoMod-Recover.cmd')));
+ assert.equal((await service.check()).status,'available');
 });
