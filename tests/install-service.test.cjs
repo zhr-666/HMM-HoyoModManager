@@ -13,7 +13,22 @@ test('failed installation preserves download and metadata and retry does not dow
   fail=false;await service.retry(history[0].key);
   assert.equal(downloads,1);
   const installed=lib.snapshot().mods[0];assert.equal(installed.sourceFileUploadedAt,200);assert.equal(installed.nsfw,true);assert.equal(installed.sourceFileId,88);
-  assert.equal((await service.history())[0].status,'installed');
+  const done=(await service.history())[0];assert.equal(done.status,'installed');
+  assert.equal(done.cached,false,'安装成功后安装包被删除，不再占用空间');
+  await assert.rejects(fs.access(path.join(service.folder('55-88'),'package.zip')));
+});
+test('package cleanup removes leftover installers without touching download records',async t=>{
+  const {InstallService}=require('../src/core/install-service.cjs');
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-purge-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const lib=new Library(root);await lib.init();let fail=true;
+  const service=new InstallService(root,{lib,api:{detail:async()=>({id:2,name:'Test',files:[{id:3,name:'mod.zip',size:3,uploadedAt:200}]})},download:async(u,p)=>fs.writeFile(p,'zip'),extract:async(a,d)=>{if(fail)throw Error('extract failed');await fs.mkdir(d);await fs.writeFile(path.join(d,'mod.ini'),'[mod]');}});
+  await assert.rejects(service.install({sourceId:2,fileId:3,characterId:'1',characterName:'Amber'}));
+  const archive=path.join(service.folder('2-3'),'package.zip');await fs.access(archive);
+  const result=await service.purgePackages();
+  assert.equal(result.removed,1);assert.equal(result.freed,3);assert.equal(result.kept,0);
+  await assert.rejects(fs.access(archive));
+  assert.equal((await service.history())[0].status,'failed','清理安装包不动下载记录');
+  assert.deepEqual(await service.purgePackages(),{removed:0,freed:0,kept:1});
 });
 test('automatic enable failure does not turn an installed mod into a failed download',async t=>{
   const {InstallService}=require('../src/core/install-service.cjs');

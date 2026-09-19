@@ -48,6 +48,9 @@ class InstallService{
       job.installedId=mod.id;job.status='installed';
       let message='模组已安装。';
       try{await this.save(job);}catch(e){message='模组已安装，但下载记录保存失败：'+e.message;}
+      // 安装成功后压缩包已无用途（模组副本在本机库里），留在 downloads 里只会
+      // 随着模组数量一直占空间。失败、取消与中断的记录仍然保留它，重试不必重新下载。
+      if(await this.dropPackage(archive))message+=' 安装包已清理。';
       try{if(!old&&this.lib.snapshot().settings.autoEnable){if(await this.confirmEnable(mod,detail))await this.lib.enable(mod.id);else message+=' 已取消自动启用。';}if(this.lib.snapshot().mods.find(m=>m.id===mod.id)?.active)await this.refresh();}
       catch(e){message+=' 启用或刷新未完成：'+e.message;}
       return {message,modId:mod.id};
@@ -56,6 +59,19 @@ class InstallService{
       try{await this.save(job);}catch{saved=false;}
       throw new Error(e.message+(saved?'（下载记录已保留，可在“下载列表”重试。）':'（下载记录也未能保存，请检查磁盘空间和目录权限。）'));
     }finally{this.running.delete(key);await fs.rm(unpacked,{recursive:true,force:true}).catch(()=>{});this.progress({label:'',received:0,total:0});}
+  }
+  // 删除一个安装包，返回是否真的删掉了文件；删除失败不影响安装结果。
+  async dropPackage(file){return await fs.rm(file,{force:true}).then(()=>true,()=>false);}
+  // 清理所有已结束任务留下的安装包：本次改动之前安装的模组也会把包留在 downloads 里。
+  // 进行中的任务不动；删除后从「下载列表」重试会重新下载。
+  async purgePackages(){
+    const result={removed:0,freed:0,kept:0};
+    for(const row of await this.history()){
+      if(!row.cached||this.running.has(row.key)){result.kept++;continue;}
+      const file=path.join(this.folder(row.key),path.basename(row.archive||'package.zip')),size=(await fs.stat(file).catch(()=>null))?.size||0;
+      if(await this.dropPackage(file)){result.removed++;result.freed+=size;}else result.kept++;
+    }
+    return result;
   }
 }
 module.exports={InstallService};

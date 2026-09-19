@@ -199,6 +199,8 @@ const actions={
     await downloadQueue.clear(rows.filter(r=>String(r.id).startsWith('legacy:')&&!['queued','downloading','installing'].includes(r.status)).map(r=>r.key));
     return downloadRows();
   },
+  // 安装成功时程序自己会删掉压缩包；这个入口用来清掉此前遗留的、以及失败任务留下的包。
+  cleanupPackages:async()=>{const result=await installer.purgePackages();return {...result,downloads:await downloadRows()};},
   // 手动导入分两步：先选压缩包，再在软件内选择本机库的存放文件夹（importApply）。
   import:p=>exclusive(async()=>{
     await requireMods(lib.snapshot().settings);

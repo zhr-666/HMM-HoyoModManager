@@ -121,6 +121,21 @@ test('engine refuses linked update paths and takes over a stale helper lock',asy
  assert.equal(await main(['--plan',f.planFile,'--token','token-3']),0);
  assert.equal(await fs.readFile(path.join(f.job,'status.txt'),'utf8'),'complete');
 });
+test('a completed update is swept on the next start, releasing the package, staging and backup',async t=>{
+ const f=await fixture(t);
+ f.plan.version='0.9.9';
+ await fs.writeFile(f.planFile,JSON.stringify(f.plan));
+ assert.equal(await main(['--plan',f.planFile,'--token','token-clean']),0);
+ assert.equal(await fs.readFile(path.join(f.job,'status.txt'),'utf8'),'complete');
+ await fs.access(path.join(f.job,'backup','resources','app.asar'));
+ await fs.writeFile(path.join(f.appDir,'.hoyo-updates','current.json'),JSON.stringify({job:path.basename(f.job)}));
+ const {AppUpdate}=require('../src/core/app-update.cjs'),updater=new AppUpdate({appDir:f.appDir,version:'0.9.9'});
+ assert.equal((await updater.init()).status,'idle');
+ await updater.cleanup;
+ await assert.rejects(fs.access(f.job));
+ await assert.rejects(fs.access(path.join(f.appDir,'.hoyo-updates','current.json')));
+ assert.equal(await fs.readFile(path.join(f.data,'state.json'),'utf8'),'keep-exact');
+});
 test('engine command line and allowlist match the application side',()=>{
  const {rootAllowed}=require('../src/core/app-update.cjs');
  for(const name of ['HoYoMod.exe','resources','locales','LICENSE.electron.txt','LICENSES.chromium.html','LICENSE-HoYoMod.txt','THIRD-PARTY-NOTICES.md','使用说明.md','Windows验收说明.md','vk_swiftshader_icd.json','d3dcompiler_47.dll','chrome_100_percent.pak','v8_context_snapshot.bin','icudtl.dat','data','GIMI','.hoyo-updates','HoYoMod-Recover.cmd','坏.dll'])
