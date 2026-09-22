@@ -6,7 +6,7 @@ const hashReplace=require('./hash-replace.cjs');
 const {characterGroups}=require('./character-groups.cjs');
 
 const DEFAULT_STATE = Object.freeze({
-  settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
+  settings: { autoCheckAppUpdates:true, launchExe:'', secondaryExe:'', programTabs:false, backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
   mods: [],
   folders: [],
   presets: [],
@@ -17,8 +17,8 @@ const DEFAULT_STATE = Object.freeze({
 });
 // 随游戏变化的本机路径/背景：按游戏各存一份，互不影响（需求 27）。
 // 其余设置是全局的：软件更新、自动检查、外观、代理等。
-const GAME_SETTING_KEYS = ['modsPath','launchExe','backgroundVersion','xxmiPath','autoBackground'];
-const validGameSetting=(key,value)=>typeof value===(key==='autoBackground'?'boolean':'string');
+const GAME_SETTING_KEYS = ['modsPath','launchExe','secondaryExe','programTabs','backgroundVersion','xxmiPath','autoBackground'];
+const validGameSetting=(key,value)=>typeof value===(['autoBackground','programTabs'].includes(key)?'boolean':'string');
 // 当前只有《原神》接入；games 里出现未知编号时按损坏记录丢弃。
 const KNOWN_GAMES = ['genshin'];
 const DEFAULT_GAME = 'genshin';
@@ -527,7 +527,8 @@ class Library {
       const allowed = new Set(scoped ? GAME_SETTING_KEYS : Object.keys(DEFAULT_STATE.settings));
       allowed.add('autoBackground');
       for (const key of Object.keys(patch)) if (!allowed.has(key)) throw new Error(`未知设置项：${key}`);
-      for(const k of ['launchExe','backgroundVersion','modsPath','xxmiPath'])if(k in patch&&typeof patch[k]!=='string')throw Error('无效设置值');
+      for(const k of ['launchExe','secondaryExe','backgroundVersion','modsPath','xxmiPath'])if(k in patch&&typeof patch[k]!=='string')throw Error('无效设置值');
+      if('programTabs' in patch&&typeof patch.programTabs!=='boolean')throw Error('窗口标签页设置无效');
       if('autoBackground' in patch&&typeof patch.autoBackground!=='boolean')throw Error('自动更新背景设置无效');
       if('libraryView' in patch&&!['list','grid'].includes(patch.libraryView))throw Error('模组视图无效。');
       if('material' in patch&&!['mica','acrylic'].includes(patch.material))throw Error('窗口材质选项无效。');

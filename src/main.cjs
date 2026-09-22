@@ -40,6 +40,8 @@ app.setPath('sessionData',path.join(root,'session'));
 const lock=app.requestSingleInstanceLock();
 if(!lock)app.quit();
 let appUpdater,updateHandoff=false,pendingActions=0;
+let programTabs,programHost,programTimer,programClosing=false,programExitAllowed=false;
+const externalLaunches=new Set();
 let win,updateTimer,notifications,tasks;let nativeMaterial=materialSupported();
 const workspaces=new Workspaces(root);
 const workspace=()=>workspaces.current;
@@ -113,6 +115,19 @@ function character(p){
   if(Number.isSafeInteger(p.characterId)&&p.characterId>0)p={...p,characterId:String(p.characterId)};
   if(typeof p.characterId!=='string'||!p.characterId.trim()||typeof p.characterName!=='string'||!p.characterName.trim())throw new Error('请先选择 Mod 对应的角色。');
   return {characterId:p.characterId.trim(),characterName:p.characterName.trim()};
+}
+async function validateExternalProgram(file){
+  require('./core/external-launcher.cjs').externalSpec(file);
+  const actual=await fs.realpath(file);
+  if(!(await fs.stat(actual)).isFile())throw Error('指定程序不存在，请重新选择。');
+  for(const folder of [...workspaces.contexts.values()].flatMap(ctx=>[ctx.lib.libraryRoot,ctx.lib.snapshot().settings.modsPath]).filter(Boolean)){
+    const canonical=await fs.realpath(folder).catch(()=>path.resolve(folder)),relative=path.relative(canonical,actual);
+    if(relative===''||(!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative)))throw Error('请选择模组目录之外的外部程序。');
+  }
+}
+async function closeProgramWindows(){
+  try{await Promise.allSettled([...externalLaunches]);return !programTabs||await programTabs.closeAll();}
+  catch(error){notifyError(error,{title:'程序尚未关闭'});return false;}
 }
 async function exclusive(work){
   if(updateHandoff)throw new Error('软件正在准备重启更新，请稍候。');
@@ -278,7 +293,7 @@ const actions={
   installAppUpdate:async()=>{
     if(pendingActions>1||updateHandoff||[...workspaces.contexts.values()].some(ctx=>ctx.busy||ctx.downloadQueue.worker||ctx.downloadQueue.snapshot().some(r=>['queued','downloading','installing'].includes(r.status))))throw Error('请等待模组下载和安装完成，再重启更新软件。');
     updateHandoff=true;
-    try{await Promise.all([...workspaces.contexts.values()].flatMap(ctx=>[ctx.lib.queue,ctx.downloadQueue.serial]));await appUpdater.handoff({packaged:app.isPackaged,recover:appUpdater.snapshot().status==='recovery'});setTimeout(()=>app.quit(),150);return {restarting:true};}
+    try{if(!await closeProgramWindows())throw Error('请先正常退出一级、二级程序，再重启更新。');await Promise.all([...workspaces.contexts.values()].flatMap(ctx=>[ctx.lib.queue,ctx.downloadQueue.serial]));await appUpdater.handoff({packaged:app.isPackaged,recover:appUpdater.snapshot().status==='recovery'});setTimeout(()=>app.quit(),150);return {restarting:true};}
     catch(e){updateHandoff=false;throw e;}
   },
   state:()=>snapshot(),
@@ -397,7 +412,7 @@ const actions={
     // 左下角设置页写全局设置；游戏设置（加载器 Mods 路径、外部程序、启动器背景）带 gameId，
     // 只改当前游戏那一份（需求 27）。
     const globalKeys=['autoEnable','autoCheckUpdates','blurNsfw','material','proxyMode','proxyUrl','libraryView','autoCheckAppUpdates','useLinks'];
-    const gameKeys=['modsPath','launchExe','backgroundVersion','autoBackground'];
+    const gameKeys=['modsPath','launchExe','secondaryExe','programTabs','backgroundVersion','autoBackground'];
     const patch={},gamePatch={};for(const k of globalKeys)if(k in p)patch[k]=p[k];
     for(const k of gameKeys)if(k in p)gamePatch[k]=p[k];
     if(Object.keys(patch).length||Object.keys(gamePatch).length)await workspaces.setSettings(workspace().game.id,{...patch,...gamePatch});
@@ -423,8 +438,8 @@ const actions={
     return snapshot();
   }),
   chooseProgram:p=>exclusive(async()=>{
-    const r=await dialog.showOpenDialog(win,{title:'选择要打开的 EXE 程序',properties:['openFile'],filters:[{name:'程序',extensions:['exe']}]});
-    if(!r.canceled){const file=r.filePaths[0];if(!/[.]exe$/i.test(file))throw Error('请选择 EXE 程序');for(const rootPath of [...workspaces.contexts.values()].flatMap(ctx=>[ctx.lib.libraryRoot,ctx.lib.snapshot().settings.modsPath]).filter(Boolean)){const relative=path.relative(rootPath,file);if(!relative.startsWith('..')&&!path.isAbsolute(relative))throw Error('请选择模组目录之外的外部程序。');}await lib.settings({launchExe:file},{gameId:gameScope(p)});}
+    const r=await dialog.showOpenDialog(win,{title:p.level===2?'选择二级程序':'选择一级程序',properties:['openFile'],filters:[{name:'程序',extensions:['exe']}]});
+    if(!r.canceled){const file=r.filePaths[0];await validateExternalProgram(file);await lib.settings({[p.level===2?'secondaryExe':'launchExe']:file},{gameId:gameScope(p)});}
     return snapshot();
   }),
   chooseBackground:p=>exclusive(async()=>{
@@ -453,7 +468,14 @@ const actions={
     const error=await shell.openPath(folder);if(error)throw Error(error);
     return {};
   },
-  launch:async()=>{const result=await require('./core/external-launcher.cjs').open(lib.snapshot().settings.launchExe);notify(result.message||'已打开指定程序。');return result;},
+  programTabState:()=>programTabs?.snapshot()||{selected:'',tabs:[]},
+  selectProgramTab:p=>programTabs.select(String(p.id||'')),
+  launch:async()=>{
+    if(programClosing||updateHandoff)throw Error('正在关闭程序，请稍后再启动。');
+    const settings=lib.snapshot().settings,gameId=workspace().game.id;
+    const operation=(async()=>{await validateExternalProgram(settings.launchExe);const result=settings.programTabs?await programTabs.launch(gameId,settings):await require('./core/external-launcher.cjs').open(settings.launchExe);notify(result.message||'已打开指定程序。');return result;})();
+    externalLaunches.add(operation);try{return await operation;}finally{externalLaunches.delete(operation);}
+  },
   refresh:()=>snapshot(),
   checkUpdates:()=>exclusive(()=>checkUpdates()),
   updateMod:async p=>{
@@ -568,7 +590,7 @@ if(lock)app.whenReady().then(async()=>{
   await downloadQueue.init();
   await downloadQueue.change(()=>{for(const row of downloadQueue.rows){if(row.payload?.kind==='component'&&['queued','downloading','installing'].includes(row.status)){row.status='cancelled';row.message='已停止管理 XXMI 组件，请直接选择启用目录。';row.canCancel=false;}const mod=lib.snapshot().mods.find(m=>m.downloadQueueId===row.id);if(mod&&row.status==='failed'){row.status='installed';row.modId=mod.id;row.message='已从安装记录恢复完成状态。';row.error='';}}});
   });
-  appUpdater=new (require('./core/app-update.cjs').AppUpdate)({appDir:app.isPackaged?path.dirname(app.getPath('exe')):path.dirname(__dirname),version:app.getVersion(),protectedPaths:()=>[root,...[...workspaces.contexts.values()].flatMap(ctx=>[ctx.lib.snapshot().settings.modsPath,ctx.lib.snapshot().settings.launchExe])].filter(Boolean),json:network.json,download:network.download,extract,onChange:s=>{send('appUpdate',s);syncAppUpdateTask(s);}});
+  appUpdater=new (require('./core/app-update.cjs').AppUpdate)({appDir:app.isPackaged?path.dirname(app.getPath('exe')):path.dirname(__dirname),version:app.getVersion(),protectedPaths:()=>[root,...[...workspaces.contexts.values()].flatMap(ctx=>[ctx.lib.snapshot().settings.modsPath,ctx.lib.snapshot().settings.launchExe,ctx.lib.snapshot().settings.secondaryExe])].filter(Boolean),json:network.json,download:network.download,extract,onChange:s=>{send('appUpdate',s);syncAppUpdateTask(s);}});
   await appUpdater.init();
   session.defaultSession.setPermissionRequestHandler((wc,perm,cb)=>cb(false));
   protocol.handle('hoyo',async request=>{
@@ -594,6 +616,17 @@ if(lock)app.whenReady().then(async()=>{
     return noStoreResponse(await net.fetch(pathToFileURL(path.join(__dirname,'ui',name)).href));
   });
   win=new BrowserWindow({icon:appIcon(),width:1260,height:860,minWidth:980,minHeight:650,title:'HMM · HoYo 模组管理',backgroundColor:'#171a21',autoHideMenuBar:true,...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{color:'#00000000',symbolColor:'#edf0f5',height:40}}:{}),webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  programHost=new (require('./core/program-window-host.cjs').ProgramWindowHost)(win);
+  programTabs=new (require('./core/program-tabs.cjs').ProgramTabs)({host:programHost,validate:validateExternalProgram,onChange:value=>send('programTabs',value),onError:error=>notifyError(error,{title:'程序窗口'})});
+  let programTickPending=false,programError='';
+  programTimer=setInterval(()=>{if(programTickPending||!programTabs.sessions.size)return;programTickPending=true;programTabs.tick().then(()=>{programError='';}).catch(error=>{if(programError!==error.message){programError=error.message;notifyError(error,{title:'程序窗口'});}}).finally(()=>{programTickPending=false;});},1000);programTimer.unref();
+  win.on('resize',()=>{if(programTabs.sessions.size)programTabs.resize(40).catch(error=>logError('程序窗口尺寸',error.message));});
+  win.on('close',event=>{
+    if(programExitAllowed||(!programTabs.hasWork&&!externalLaunches.size))return;
+    event.preventDefault();if(programClosing)return;programClosing=true;
+    closeProgramWindows().then(ok=>{if(ok){programExitAllowed=true;win.close();}}).finally(()=>{programClosing=false;});
+  });
+  win.webContents.on('did-start-loading',()=>{if(programTabs.sessions.size)programTabs.select('').catch(()=>{});});
   applyAppearance();
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',(event,url)=>{if(url!=='hoyo://app/index.html')event.preventDefault();});
@@ -624,4 +657,6 @@ if(lock)app.whenReady().then(async()=>{
 process.on('uncaughtException',e=>notify('程序发生未预期的错误：'+describeError(e).message,'error'));
 process.on('unhandledRejection',reason=>notify('后台任务失败：'+describeError(reason).message,'error'));
 app.on('second-instance',()=>{if(win){if(win.isMinimized())win.restore();win.focus();}});
+app.on('before-quit',event=>{if((programTabs?.hasWork||externalLaunches.size)&&!programExitAllowed){event.preventDefault();win?.close();}});
+app.on('will-quit',()=>{clearInterval(programTimer);programHost?.dispose();});
 app.on('window-all-closed',()=>app.quit());

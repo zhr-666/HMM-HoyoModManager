@@ -62,7 +62,7 @@
     </div>
     <button type="button" id="notification-button" class="notification-button" aria-label="通知中心" aria-expanded="false" title="通知中心"><span class="notification-button-icon" aria-hidden="true"><svg class="icon"><use href="#i-message"/></svg></span><span id="notification-badge" class="notification-badge" hidden>0</span></button>
   </section>
-  <div class="window-titlebar" aria-hidden="true"></div>
+  <div class="window-titlebar"><nav id="program-tabs" aria-label="程序标签页" hidden></nav></div>
   <div class="app-shell">
     <aside class="sidebar">
       <nav class="rail rail-workspace" aria-label="模组工作空间">
@@ -114,7 +114,7 @@
           <h2 id="game-settings-title">当前游戏设置 · <span data-game-name>原神</span></h2>
           <div class="settings-card">
             <div class="setting-row"><div><strong data-loader-label>GIMI 文件夹</strong><p data-game-value="modsPath">尚未选择</p></div><button class="button secondary" id="choose-mods">选择 GIMI 文件夹</button></div>
-            <div class="setting-row"><div><strong>外部程序</strong><p data-game-value="launchExe">尚未选择</p></div><button class="button secondary" id="choose-program">选择 EXE</button></div>
+            <div class="setting-row"><div><strong>一级程序</strong><p data-game-value="launchExe">尚未选择</p></div><button class="button secondary" id="choose-program">选择 EXE</button></div>
             <div class="setting-row"><div><strong>启动器背景</strong><p data-game-value="background">默认使用米哈游官方启动器《原神》背景图；可替换为本地图片</p></div><div class="row-actions"><button class="button secondary" id="fetch-background">获取官方最新背景</button><button class="button secondary" id="reset-background">恢复默认</button><button class="button secondary" id="choose-background">选择图片</button></div></div>
           </div>
         </div>
@@ -184,5 +184,6 @@
   <script src="library-categories.js"></script>
   <script src="dialog-stack.js"></script>
   <script src="app.js"></script>
+  <script src="program-tabs.js"></script>
 </body>
 </html>

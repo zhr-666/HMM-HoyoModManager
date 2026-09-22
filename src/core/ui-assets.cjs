@@ -7,7 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 // 允许下发的界面文件白名单：这里加文件时，主进程的协议处理器与测试会同时跟上。
-const UI_ASSETS = ['index.html', 'style.css', 'app.js', 'library-categories.js', 'dialog-stack.js', 'home-background.jpg', 'genshin-icon.png', 'zzz-icon.png', 'hsr-icon.png', 'zzz-logo.svg', 'hsr-logo.png', 'zzz-background.webp', 'hsr-background.webp', 'app-icon.png'];
+const UI_ASSETS = ['index.html', 'style.css', 'app.js', 'program-tabs.js', 'library-categories.js', 'dialog-stack.js', 'home-background.jpg', 'genshin-icon.png', 'zzz-icon.png', 'hsr-icon.png', 'zzz-logo.svg', 'hsr-logo.png', 'zzz-background.webp', 'hsr-background.webp', 'app-icon.png'];
 // Chromium 会写进 data/session 的缓存目录；只清这些，不动登录、设置等会话数据。
 const ASSET_CACHE_DIRS = ['Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'DawnGraphiteCache', 'DawnWebGPUCache'];
 

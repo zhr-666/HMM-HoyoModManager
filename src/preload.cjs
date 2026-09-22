@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('hoyo',{
     if(!result.ok)throw new Error(result.error);
     return result.value;
   },
+  onProgramTabs:callback=>{const listener=(_,value)=>callback(value);ipcRenderer.on('hoyo:programTabs',listener);return()=>ipcRenderer.removeListener('hoyo:programTabs',listener);},
   onDependency:callback=>{const listener=(_,v)=>callback(v);ipcRenderer.on('hoyo:dependency',listener);return()=>ipcRenderer.removeListener('hoyo:dependency',listener);},
   onAppUpdate:callback=>{const listener=(_,v)=>callback(v);ipcRenderer.on('hoyo:appUpdate',listener);return()=>ipcRenderer.removeListener('hoyo:appUpdate',listener);},
   onDownloads:callback=>{const listener=(_,v)=>callback(v);ipcRenderer.on('hoyo:downloads',listener);return()=>ipcRenderer.removeListener('hoyo:downloads',listener);},

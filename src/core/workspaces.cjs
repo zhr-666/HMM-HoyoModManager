@@ -4,7 +4,7 @@ const {AsyncLocalStorage}=require('node:async_hooks');
 const {randomUUID}=require('node:crypto');
 const Library=require('./library.cjs');
 const {GAMES}=require('./games.cjs');
-const GAME_KEYS=new Set(['modsPath','launchExe','backgroundVersion','xxmiPath','autoBackground']);
+const GAME_KEYS=new Set(['modsPath','launchExe','secondaryExe','programTabs','backgroundVersion','xxmiPath','autoBackground']);
 
 // Resolve existing ancestors too: a newly chosen directory may not exist yet.
 async function canonical(value){

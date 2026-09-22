@@ -120,7 +120,7 @@ test('known roles cannot bypass an unresolved active skin in another subcategory
 test('initializes defaults and snapshot is a deep clone', async (t) => {
   const { library } = await fixture(t);
   const snapshot = library.snapshot();
-  assert.deepEqual(snapshot, { currentPresetId:null, settings: { autoCheckAppUpdates:true, launchExe:'', backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], folders: [], presets: [], activeGame:'genshin', games:{}, hotkeyNotes:{}, gameSettings:{} });
+  assert.deepEqual(snapshot, { currentPresetId:null, settings: { autoCheckAppUpdates:true, launchExe:'', secondaryExe:'', programTabs:false, backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], folders: [], presets: [], activeGame:'genshin', games:{}, hotkeyNotes:{}, gameSettings:{} });
   snapshot.settings.autoEnable = true;
   assert.equal(library.snapshot().settings.autoEnable, false);
 });

@@ -169,6 +169,11 @@ html[data-platform="win32"] body{padding-top:40px}
 html[data-platform="win32"] .app-shell{min-height:calc(100vh - 40px)}
 html[data-platform="win32"] .sidebar{top:40px}
 .window-titlebar button,.window-titlebar a,.window-titlebar input{-webkit-app-region:no-drag}
+html[data-platform="win32"] .window-titlebar:has(#program-tabs:not([hidden])){left:0;padding-left:12px;background:#171a21;z-index:100}
+#program-tabs:not([hidden]){display:flex;gap:4px;max-width:100%;overflow-x:auto;height:36px;align-items:center;-webkit-app-region:no-drag}
+.program-tab{border:0;border-radius:6px;background:transparent;color:#adc0d4;white-space:nowrap;padding:7px 14px;cursor:pointer}
+.program-tab[aria-pressed="true"]{background:#ffffff20;color:#fff}
+html[data-program-tab="external"] .app-shell{visibility:hidden;pointer-events:none}
 .toolbar{max-width:760px}.toolbar>select{width:180px;min-width:130px;border:1px solid var(--control-line);border-radius:7px;padding:0 10px;background:var(--surface);font:inherit}
 .category-list.category-list{grid-template-columns:repeat(auto-fill,minmax(155px,1fr));max-height:220px}
 .category.category{min-height:54px}.category-label{display:grid;min-width:0;gap:3px}.category-label small{font-size:10px;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.category .category-name{display:block}

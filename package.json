@@ -56,6 +56,8 @@
       }
     ],
     "asarUnpack": [
+      "src/core/program-window-host.ps1",
+      "src/core/program-window-host.cs",
       "node_modules/7zip-bin/**/*",
       "node_modules/node-unrar-js/**/*.wasm"
     ],
