@@ -30,7 +30,7 @@
 
 1. **基础检查**：代码、依赖或构建配置变化时运行 `pnpm check`。纯文档修改检查内容、链接和差异即可。
 2. **专项回归**：修改业务行为时补充正常、失败、取消或恢复路径中相关的测试；缺陷修复先获得复现证据。
-3. **界面与集成**：UI/IPC 变更按影响范围运行现有 `scripts/smoke-*.cjs`。例如首页用 `node scripts/smoke-home.cjs`，详情竞态用 `node scripts/smoke-detail-race.cjs`，工坊导航用 `node scripts/smoke-workshop-navigation.cjs`，更新界面用 `node scripts/smoke-app-update.cjs`，本机库文件夹与导入存放位置用 `node scripts/smoke-library-folders.cjs`，通知中心用 `node scripts/smoke-notifications.cjs`，通知的顶层显示与工坊翻页回顶用 `node scripts/smoke-notification-layer-and-pager.cjs`（这几个通过 Electron 远程调试端口驱动界面，不依赖 Playwright，但需要图形会话）。全量界面回归还需 renderer、desktop、management、queue 和 dependency-queue 脚本。
+3. **界面与集成**：UI/IPC 变更按影响范围运行现有 `scripts/smoke-*.cjs`。例如首页用 `node scripts/smoke-home.cjs`，详情竞态用 `node scripts/smoke-detail-race.cjs`，工坊导航用 `node scripts/smoke-workshop-navigation.cjs`，更新界面用 `node scripts/smoke-app-update.cjs`，本机库文件夹与导入存放位置用 `node scripts/smoke-library-folders.cjs`，三游戏隔离与切换用 `node scripts/smoke-multi-game.cjs`，通知中心用 `node scripts/smoke-notifications.cjs`，通知的顶层显示与工坊翻页回顶用 `node scripts/smoke-notification-layer-and-pager.cjs`（这几个通过 Electron 远程调试端口驱动界面，不依赖 Playwright，但需要图形会话）。全量界面回归还需 renderer、desktop、management、queue 和 dependency-queue 脚本。
 4. **产物检查**：发布前构建当前源码，验证 Windows 包内容及实际 ZIP 的更新准备流程。
 5. **Windows 实机**：按 [验收说明](acceptance.md) 验证启动、文件替换与恢复、游戏和 GIMI 行为。macOS 单元测试及模拟界面不能代替这些结果。
 
@@ -43,6 +43,8 @@
 ### Windows 产物检查命令
 
 先运行 `pnpm pack:win`，然后使用 Electron 的 Node 模式，使检查脚本能够读取 ASAR：
+
+注：若 PATH 上的 `node` 其实是 Electron 的 node 模式（`node -p "process.versions.electron"` 有值，例如 DSH 开发会话里的 shim），electron-builder 的 CLI 会把脚本路径当成多余参数并报 `Unknown argument: …/cli.js`。此时用系统真实 Node 直接构建：`<真实 node> node_modules/electron-builder/cli.js --win zip --x64`（等价于 `pack:win` 的目标与配置）。
 
 macOS / Linux shell：
 

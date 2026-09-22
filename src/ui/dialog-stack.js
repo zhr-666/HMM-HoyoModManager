@@ -1,4 +1,13 @@
 'use strict';
+// 顶层右键菜单必须跟着对话框待在顶层里：它画在普通层会被 <dialog> 完全盖住，
+// 挂进对话框又可能在对话框离场时被一起删掉，所以每次打开或关闭一层都先把它搬回 body。
+const FLOATING_LAYERS=['selection-menu'];
+function detachFloatingLayers(dialog){
+ for(const id of FLOATING_LAYERS){
+  const node=document.getElementById(id);
+  if(node&&dialog.contains(node)){node.hidden=true;document.body.append(node);}
+ }
+}
 // Keep real parent nodes alive: selections, scroll positions and listeners survive.
 class DialogStack {
  constructor(ids){this.templates=new Map(ids.map(id=>[id,document.getElementById(id).cloneNode(true)]));this.layers=[];this.serial=0;}
@@ -6,7 +15,7 @@ class DialogStack {
   const previous=document.getElementById(id),suspended=[];
   let dialog=previous;
   if(previous.open){
-   const tip=document.getElementById('help-tooltip');if(tip&&previous.contains(tip)){tip.hidden=true;document.body.append(tip);}
+   detachFloatingLayers(previous);
    for(const node of [previous,...previous.querySelectorAll('[id]')]){suspended.push([node,node.id]);node.dataset.layerId=node.id;node.id='suspended-'+(++this.serial)+'-'+node.id;}
    dialog=this.templates.get(id).cloneNode(true);document.body.append(dialog);
   }
@@ -22,7 +31,8 @@ class DialogStack {
  back(dialog){
   const index=this.layers.findIndex(x=>x.dialog===dialog);if(index<0)return;
   if(index!==this.layers.length-1)return;
-  const layer=this.layers.pop();const tip=document.getElementById('help-tooltip');if(tip&&dialog.contains(tip)){tip.hidden=true;document.body.append(tip);}
+  const layer=this.layers.pop();
+  detachFloatingLayers(dialog);
   dialog.close();dialog.querySelector('.dialog-back')?.remove();
   if(layer.suspended.length){dialog.remove();for(const [node,id] of layer.suspended)node.id=id;for(const node of layer.suspended[0][0].querySelectorAll('[data-layer-id]'))node.id=node.dataset.layerId;}
  }

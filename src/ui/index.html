@@ -28,9 +28,9 @@
     <symbol id="i-warning" viewBox="0 0 24 24"><path d="M10.3 3.9 1.9 18.4A2 2 0 0 0 3.6 21.4h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9.4v4"/><path d="M12 17.2h.01"/></symbol>
     <symbol id="i-check-check" viewBox="0 0 24 24"><path d="m2 12.6 3.4 3.4 7.6-8.4"/><path d="m9.6 15.2 1.6 1.6 8.8-9.6"/></symbol>
   </svg>
-  <div class="app-backdrop" aria-hidden="true"><img id="app-background" src="home-background.jpg" alt=""></div>
-  <div id="help-tooltip" class="help-tooltip" role="tooltip" hidden></div>
+  <div class="app-backdrop" aria-hidden="true"><img id="app-background" src="home-background.jpg" alt=""><video id="background-video" muted loop playsinline hidden></video></div>
   <div id="context-menu" class="context-menu" role="menu" hidden><button id="context-refresh" role="menuitem" type="button"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>　刷新</button></div>
+  <!-- 选中文字后的「设置为热键提示」菜单：显示时由 app.js 挂进当前对话框。 -->
   <div id="selection-menu" class="context-menu" role="menu" hidden><button id="selection-hotkey" role="menuitem" type="button"><svg class="icon" aria-hidden="true"><use href="#i-check-check"/></svg>　设置为热键提示</button></div>
   <!-- 通知系统整块走 popover="manual"：浏览器把它放进顶层（top layer），因此右下角弹窗、
        悬浮按钮与展开的面板永远在对话框、遮罩和背景模糊之上，也不会被 dialog::backdrop 的
@@ -42,18 +42,23 @@
     <div id="notification-popups" class="notification-popups" aria-live="polite"></div>
     <div id="notification-panel" class="notification-panel" role="region" aria-label="通知中心" hidden>
       <div class="notification-panel-head">
-        <span class="notification-panel-title" aria-hidden="true"><svg class="icon"><use href="#i-message"/></svg><strong>消息</strong></span>
+        <span class="notification-panel-title" aria-hidden="true"><svg class="icon"><use href="#i-message"/></svg><strong>通知中心</strong></span>
         <div class="row-actions">
           <!-- 双勾＝清空消息：展开面板时消息已经自动标为已读，这个按钮把消息历史一并清空（不动进行中的任务）。×＝关掉这块小窗，不删消息。 -->
           <button type="button" class="icon-button" id="notification-clear-all" aria-label="清空消息" title="清空消息"><svg class="icon" aria-hidden="true"><use href="#i-check-check"/></svg></button>
           <button type="button" class="icon-button" id="notification-close" aria-label="关闭通知中心" title="关闭通知中心"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button>
         </div>
       </div>
-      <h2 class="notification-section-title" id="notification-tasks-title">进行中的任务</h2>
-      <div id="notification-tasks" class="notification-tasks"></div>
-      <h2 class="notification-section-title">消息</h2>
-      <div id="notification-list" class="notification-list"></div>
-      <p id="notification-empty" class="notification-empty">还没有消息</p>
+      <details class="notification-section" id="notification-task-section" open>
+        <summary class="notification-section-title" id="notification-tasks-title">进行中的任务</summary>
+        <div id="notification-tasks" class="notification-tasks"></div>
+        <p id="notification-tasks-empty" class="notification-empty">暂无进行中的任务</p>
+      </details>
+      <details class="notification-section" id="notification-message-section" open>
+        <summary class="notification-section-title">消息</summary>
+        <div id="notification-list" class="notification-list"></div>
+        <p id="notification-empty" class="notification-empty">还没有消息</p>
+      </details>
     </div>
     <button type="button" id="notification-button" class="notification-button" aria-label="通知中心" aria-expanded="false" title="通知中心"><span class="notification-button-icon" aria-hidden="true"><svg class="icon"><use href="#i-message"/></svg></span><span id="notification-badge" class="notification-badge" hidden>0</span></button>
   </section>
@@ -77,11 +82,12 @@
 
     <main>
       <header class="topbar">
-        <div><h1 id="page-title">首页</h1><p id="page-subtitle">准备好下一次冒险</p></div>
+        <div><h1 id="page-title">首页</h1></div>
         <div class="top-actions"><button class="button secondary" id="open-library-button" hidden>安装库</button><button class="button secondary" id="open-mods-button" hidden>启用库</button></div>
       </header>
 
       <section id="page-home" class="page active launcher-page" data-testid="home-page">
+        <img id="game-logo" class="game-logo" alt="" hidden>
         <div class="launcher-stage">
           <div class="launcher-main">
             <span id="home-ready-state" class="launcher-status">检查游戏配置…</span>
@@ -100,16 +106,14 @@
       <section id="page-games" class="page launcher-page" data-testid="games-page">
         <div class="launcher-panel">
           <h2>全部游戏</h2>
-          <p class="meta">单击选中游戏，双击进入该游戏的模组工作空间。当前版本内置《原神》。</p>
           <div class="game-grid">
             <button type="button" class="game-card active" data-game="genshin" data-testid="game-card" title="双击进入模组工作空间"><img src="genshin-icon.png" alt="" draggable="false"><strong>原神</strong><small data-game-state>检查游戏配置…</small></button>
           </div>
         </div>
         <div class="launcher-panel game-settings-panel" id="game-settings-panel">
           <h2 id="game-settings-title">当前游戏设置 · <span data-game-name>原神</span></h2>
-          <p class="meta">这一组设置随游戏各自保存：原神的 GIMI 路径和启动器背景不会影响其他游戏；切换到别的游戏时，这里显示该游戏自己的值。</p>
           <div class="settings-card">
-            <div class="setting-row"><div><strong>GIMI 文件夹</strong><p data-game-value="modsPath">尚未选择</p></div><button class="button secondary" id="choose-mods">选择 GIMI 文件夹</button></div>
+            <div class="setting-row"><div><strong data-loader-label>GIMI 文件夹</strong><p data-game-value="modsPath">尚未选择</p></div><button class="button secondary" id="choose-mods">选择 GIMI 文件夹</button></div>
             <div class="setting-row"><div><strong>外部程序</strong><p data-game-value="launchExe">尚未选择</p></div><button class="button secondary" id="choose-program">选择 EXE</button></div>
             <div class="setting-row"><div><strong>启动器背景</strong><p data-game-value="background">默认使用米哈游官方启动器《原神》背景图；可替换为本地图片</p></div><div class="row-actions"><button class="button secondary" id="fetch-background">获取官方最新背景</button><button class="button secondary" id="reset-background">恢复默认</button><button class="button secondary" id="choose-background">选择图片</button></div></div>
           </div>
@@ -136,7 +140,7 @@
       </section>
 
       <section id="page-library" class="page" data-testid="library-page">
-        <div class="section-head"><div class="row-actions"><button class="button secondary" id="replace-hash" hidden>替换 Hash</button><button class="button secondary" id="check-updates-library">检查更新<span class="button-dot" aria-hidden="true" hidden></span></button><button class="button primary" id="import-button" data-tip-text="选择文件后选择安装库位置">导入本地模组<span class="button-hint" aria-hidden="true">?</span></button></div></div>
+        <div class="section-head"><div class="row-actions"><button class="button secondary" id="replace-hash" hidden>替换 Hash</button><button class="button secondary" id="check-updates-library">检查更新<span class="button-dot" aria-hidden="true" hidden></span></button><button class="button primary" id="import-button">导入本地模组</button></div></div>
         <div class="library-navigation"><button type="button" id="library-back" class="button secondary library-back" aria-label="返回上一级分类" disabled><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg> 返回</button><nav id="library-breadcrumb" class="library-breadcrumb" aria-label="模组分类路径"></nav><div class="library-view-switch" role="group" aria-label="模组显示方式"><button type="button" id="library-view-list" aria-pressed="true" title="横向列表"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg> 列表</button><button type="button" id="library-view-grid" aria-pressed="false" title="大图网格"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg> 网格</button></div></div><div id="library-folders" class="folder-grid"></div>
         <div id="library-grid" class="list-grid"></div><div id="library-empty" class="empty" hidden></div>
       </section>
@@ -156,27 +160,27 @@
           <div class="setting-row"><div><strong>软件更新 <span id="software-version"></span></strong><p id="software-update-status" role="status">尚未检查</p></div><div class="row-actions"><button class="button secondary" id="software-check">检查软件更新<span class="button-dot" aria-hidden="true" hidden></span></button><button class="button primary" id="software-action" hidden>下载更新</button></div></div>
           <div id="software-progress" hidden><progress id="software-progress-bar"></progress><span id="software-progress-text"></span></div>
           <div id="software-notes" hidden><h3>更新内容</h3><pre id="software-notes-text" class="description"></pre></div>
-          <div class="setting-row"><div><strong>启动时检查软件更新</strong><p data-tip>只检查 GitHub 正式版并提示，不自动下载；重启更新不会替换 data 或 GIMI 模组。</p></div><label class="switch"><input id="auto-check-app-updates" type="checkbox" aria-label="启动时检查软件更新"><span></span></label></div>
+          <div class="setting-row"><div><strong>启动时检查软件更新</strong></div><label class="switch"><input id="auto-check-app-updates" type="checkbox" aria-label="启动时检查软件更新"><span></span></label></div>
         </div>
         <div class="settings-card">
-          <div class="setting-row"><div><strong>下载后自动启用</strong><p data-tip>安装完成后立即切换该角色使用此模组</p></div><label class="switch"><input id="auto-enable" type="checkbox" aria-label="下载后自动启用"><span></span></label></div>
-          <div class="setting-row"><div><strong>自动检查更新</strong><p data-tip>启动时检查更新；安装哪个文件仍由你决定</p></div><label class="switch"><input id="auto-check-updates" type="checkbox" aria-label="自动检查更新"><span></span></label></div>
-          <div class="setting-row"><div><strong>模糊 NSFW 预览</strong><p data-tip>仅作用于模组工坊与详情；本机模组预览始终清晰</p></div><label class="switch"><input id="blur-nsfw" type="checkbox" aria-label="模糊 NSFW 预览"><span></span></label></div>
-          <div class="setting-row"><div><strong>用快捷文件夹启用模组</strong><p data-tip>在 GIMI 的 HoYoModManaged 下创建指向本机库的文件夹链接（junction），不再复制文件，省磁盘、改动即时生效；关闭后改回复制文件</p></div><label class="switch"><input id="use-links" type="checkbox" aria-label="用快捷文件夹启用模组"><span></span></label></div>
+          <div class="setting-row"><div><strong>下载后自动启用</strong></div><label class="switch"><input id="auto-enable" type="checkbox" aria-label="下载后自动启用"><span></span></label></div>
+          <div class="setting-row"><div><strong>自动检查更新</strong></div><label class="switch"><input id="auto-check-updates" type="checkbox" aria-label="自动检查更新"><span></span></label></div>
+          <div class="setting-row"><div><strong>模糊 NSFW 预览</strong></div><label class="switch"><input id="blur-nsfw" type="checkbox" aria-label="模糊 NSFW 预览"><span></span></label></div>
+          <div class="setting-row"><div><strong>用快捷文件夹启用模组</strong></div><label class="switch"><input id="use-links" type="checkbox" aria-label="用快捷文件夹启用模组"><span></span></label></div>
         </div>
         <div class="settings-card">
-          <div class="setting-row"><div><strong>窗口材质</strong><p id="material-note">使用 Windows 原生窗口背景材质</p></div><select id="material-select" aria-label="窗口材质"><option value="mica">云母 Mica</option><option value="acrylic">亚克力 Acrylic</option></select></div>
-          <div class="setting-row"><div><strong>网络代理</strong><p>系统代理自动跟随系统设置，也可指定代理地址</p></div><select id="proxy-mode" aria-label="网络代理"><option value="system">系统代理</option><option value="manual">手动代理</option></select></div>
+          <div class="setting-row"><div><strong>窗口材质</strong></div><select id="material-select" aria-label="窗口材质"><option value="mica">云母 Mica</option><option value="acrylic">亚克力 Acrylic</option></select></div>
+          <div class="setting-row"><div><strong>网络代理</strong></div><select id="proxy-mode" aria-label="网络代理"><option value="system">系统代理</option><option value="manual">手动代理</option></select></div>
           <div class="setting-row" id="proxy-url-row" hidden><label for="proxy-url">代理地址</label><div class="row-actions"><input id="proxy-url" type="url" placeholder="http://127.0.0.1:7890" aria-label="代理地址"><button class="button secondary" id="save-proxy">保存</button></div></div>
-          <div class="setting-row"><p id="proxy-result" role="status">测试当前网络连接与代理路由</p><button class="button secondary" id="test-proxy">测试连接</button></div>
+          <div class="setting-row"><p id="proxy-result" role="status"></p><button class="button secondary" id="test-proxy">测试连接</button></div>
         </div>
         <div class="settings-card compact"><div class="setting-row"><div><strong>维护与诊断</strong><p id="data-root">数据位置加载中…</p></div><div class="row-actions"><button class="button secondary" id="open-data">打开数据目录</button><button class="button secondary" id="check-updates">检查更新<span class="button-dot" aria-hidden="true" hidden></span></button></div></div></div>
       </section>
     </main>
   </div>
 
-  <dialog id="modal"><form method="dialog"><div class="dialog-head"><div><h2 id="modal-title"></h2><p id="modal-subtitle"></p></div><button class="icon-button" value="cancel" aria-label="关闭"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="modal-body" class="dialog-body"></div><p id="inline-progress" class="inline-progress" role="status" aria-live="polite" hidden></p><div id="modal-actions" class="dialog-actions"></div></form></dialog>
-  <dialog id="dependency-modal" aria-labelledby="dependency-title"><div class="dialog-head"><div><h2 id="dependency-title">前置模组提醒</h2><span class="help-note" tabindex="0" role="button">作者可能未列出全部依赖；手动安装的前置可能无法按来源编号识别。查看 GameBanana 前置时保留当前窗口；返回后可重新检查。其他网址由浏览器打开，需手动安装。</span></div><button type="button" class="icon-button" id="dependency-close" aria-label="关闭"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div class="dialog-body"><p id="dependency-name"></p><p id="dependency-status"></p><div id="dependency-list"></div><p id="dependency-error" class="notice error" role="status" hidden></p></div><div class="dialog-actions"><button type="button" class="button secondary" id="dependency-cancel">取消</button><button type="button" class="button primary" id="dependency-continue">仍然继续</button></div></dialog>
+  <dialog id="modal"><form method="dialog"><div class="dialog-head"><div><h2 id="modal-title"></h2></div><button class="icon-button" value="cancel" aria-label="关闭"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="modal-body" class="dialog-body"></div><p id="inline-progress" class="inline-progress" role="status" aria-live="polite" hidden></p><div id="modal-actions" class="dialog-actions"></div></form></dialog>
+  <dialog id="dependency-modal" aria-labelledby="dependency-title"><div class="dialog-head"><div><h2 id="dependency-title">前置模组提醒</h2></div><button type="button" class="icon-button" id="dependency-close" aria-label="关闭"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div class="dialog-body"><p id="dependency-name"></p><p id="dependency-status"></p><div id="dependency-list"></div><p id="dependency-error" class="notice error" role="status" hidden></p></div><div class="dialog-actions"><button type="button" class="button secondary" id="dependency-cancel">取消</button><button type="button" class="button primary" id="dependency-continue">仍然继续</button></div></dialog>
   <script src="library-categories.js"></script>
   <script src="dialog-stack.js"></script>
   <script src="app.js"></script>

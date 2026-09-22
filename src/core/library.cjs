@@ -17,7 +17,8 @@ const DEFAULT_STATE = Object.freeze({
 });
 // 随游戏变化的本机路径/背景：按游戏各存一份，互不影响（需求 27）。
 // 其余设置是全局的：软件更新、自动检查、外观、代理等。
-const GAME_SETTING_KEYS = ['modsPath','launchExe','backgroundVersion','xxmiPath'];
+const GAME_SETTING_KEYS = ['modsPath','launchExe','backgroundVersion','xxmiPath','autoBackground'];
+const validGameSetting=(key,value)=>typeof value===(key==='autoBackground'?'boolean':'string');
 // 当前只有《原神》接入；games 里出现未知编号时按损坏记录丢弃。
 const KNOWN_GAMES = ['genshin'];
 const DEFAULT_GAME = 'genshin';
@@ -61,7 +62,7 @@ function normalizeGames(saved) {
     const entry = raw[id];
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     const settings = {};
-    for (const key of GAME_SETTING_KEYS) if (typeof entry[key] === 'string') settings[key] = entry[key];
+    for (const key of GAME_SETTING_KEYS) if (validGameSetting(key,entry[key])) settings[key] = entry[key];
     games[id] = settings;
   }
   return games;
@@ -72,7 +73,7 @@ function normalizeGames(saved) {
 // games 里没有原神时全局字段继续充当原神的那一份（镜像），因此不会出现两套生效值。
 function migrateGames({ games, savedSettings }) {
   const legacy = {};
-  for (const key of GAME_SETTING_KEYS) if (typeof savedSettings?.[key] === 'string' && savedSettings[key]) legacy[key] = savedSettings[key];
+  for (const key of GAME_SETTING_KEYS) if (validGameSetting(key,savedSettings?.[key]) && savedSettings[key]) legacy[key] = savedSettings[key];
   const hasGames = Object.keys(games).length > 0;
   if (hasGames || !Object.keys(legacy).length) return { games, changed: false };
   return { games: { ...games, [DEFAULT_GAME]: legacy }, changed: true };
@@ -83,7 +84,7 @@ function migrateGames({ games, savedSettings }) {
 function applyActiveGameScope(state) {
   const scoped = state.games?.[state.activeGame];
   if (!scoped) return state;
-  for (const key of GAME_SETTING_KEYS) if (typeof scoped[key] === 'string') state.settings[key] = scoped[key];
+  for (const key of GAME_SETTING_KEYS) if (validGameSetting(key,scoped[key])) state.settings[key] = scoped[key];
   return state;
 }
 
@@ -150,13 +151,20 @@ function intersects(a, b) {
 }
 
 class Library {
-  constructor(root,{resolveTaxonomy}={}) {
+  constructor(root,{resolveTaxonomy,gameId,libraryRoot,previewRoot,dataRoot,getGlobalSettings,validateModsPath}={}) {
     if (!path.isAbsolute(root)) throw new Error('资源库根目录必须是绝对路径');
     this.root = path.resolve(root);
-    this.libraryRoot = path.join(this.root, 'library');
+    this.gameId = gameId;
+    if(gameId)require('./games.cjs').getGame(gameId);
+    this.libraryRoot = libraryRoot || path.join(this.root, 'library');
+    this.previewRoot = previewRoot || this.root;
+    this.dataRoot = dataRoot || this.root;
+    this.getGlobalSettings = getGlobalSettings;
+    this.validateModsPath = validateModsPath;
     this.stateFile = path.join(this.root, 'state.json');
     this.journalFile = path.join(this.root, 'deployment-journal.json');
     this.state = clone(DEFAULT_STATE);
+    if(gameId)this.state.activeGame=gameId;
     this.queue = Promise.resolve();
     this.resolveTaxonomy=resolveTaxonomy;
   }
@@ -170,8 +178,12 @@ class Library {
         const settings = { ...DEFAULT_STATE.settings, ...(saved.settings || {}),autoUpdate:false,autoCheckUpdates:saved.settings?.autoCheckUpdates ?? !!saved.settings?.autoUpdate };
         // 1.1.3 起只有深色模式：旧 settings.json 里的 theme 字段读取时丢弃，不回写、不报错。
         delete settings.theme;
-        const games = normalizeGames(saved.games);
-        const activeGame = KNOWN_GAMES.includes(saved.activeGame) ? saved.activeGame : DEFAULT_GAME;
+        const games = this.gameId ? { [this.gameId]: Object.fromEntries(GAME_SETTING_KEYS.map(key=>{
+          const own=saved.games?.[this.gameId]?.[key];
+          const legacy=this.gameId===DEFAULT_GAME||saved.activeGame===this.gameId?saved.settings?.[key]:'';
+          return [key,validGameSetting(key,own)?own:validGameSetting(key,legacy)?legacy:key==='autoBackground'?false:''];
+        })) } : normalizeGames(saved.games);
+        const activeGame = this.gameId || (KNOWN_GAMES.includes(saved.activeGame) ? saved.activeGame : DEFAULT_GAME);
         const migrated = migrateGames({ games, savedSettings: saved.settings });
         this.state = {
           settings,
@@ -201,7 +213,7 @@ class Library {
   // 界面、部署、启动程序、背景图都读这一份，行为与「设置只有一份」时一致。
   effectiveSettings(game=this.state.activeGame) {
     const scoped = this.state.games?.[game] || {};
-    return { ...this.state.settings, ...scoped };
+    return { ...this.state.settings, ...this.getGlobalSettings?.(), ...scoped };
   }
 
   snapshot() {
@@ -246,7 +258,7 @@ class Library {
   // target 是用户选定的启用库文件夹（相对 GIMI Mods），只有个别老流程会带上；导入界面不再
   // 询问它，省略时就与其他模组一样用默认的 HoYoModManaged（见 local-deployment 的 deployedPath）。
   // 带分类时按该分类存放并算作该角色（或子分类）；不带分类时按未分类的本地导入处理。
-  async importLocal(folder,{name,target,characterId,characterName,rootCategoryId,rootCategoryName,characterGroupId}={}){
+  async importLocal(folder,{name,target,characterId,characterName,rootCategoryId,rootCategoryName,characterGroupId,profileMetadata={}}={}){
     const relative=target===undefined?undefined:await require('./local-deployment.cjs').validateTarget(this.effectiveSettings().modsPath,target,{create:true});
     const classified=typeof characterId==='string'&&characterId.trim()!=='';
     if(classified&&(typeof characterName!=='string'||!characterName.trim()))throw Error('缺少角色信息：characterName');
@@ -256,8 +268,9 @@ class Library {
       ...(typeof rootCategoryId==='string'&&rootCategoryId.trim()&&typeof rootCategoryName==='string'&&rootCategoryName.trim()?{rootCategoryId:rootCategoryId.trim(),rootCategoryName:rootCategoryName.trim()}:{}),
       characterGroupId:characterGroupId===undefined||characterGroupId===null?null:String(characterGroupId),
     }:{characterId:'local:'+randomUUID(),characterName:'本地导入'};
-    const mod=await this.install(folder,{name,...classification,...(relative===undefined?{}:{deploymentRelative:relative})});
-    await this.enable(mod.id);return this.snapshot().mods.find(m=>m.id===mod.id);
+    const mod=await this.install(folder,{...profileMetadata,name,...classification,...(relative===undefined?{}:{deploymentRelative:relative})});
+    try{await this.enable(mod.id);}catch(error){return {...this.snapshot().mods.find(m=>m.id===mod.id),enableError:error.message};}
+    return this.snapshot().mods.find(m=>m.id===mod.id);
   }
 
   // 按 GameBanana 分类创建空白文件夹。磁盘目录与下载使用的命名公式一致，因此该分类
@@ -303,12 +316,25 @@ class Library {
     });
   }
 
+  saveProfile(id,profile) {
+    return this._enqueue(async()=>{
+      const next=clone(this.state),mod=this._find(next.mods,id,'mod');
+      const prepared=await require('./mod-profile.cjs').prepareProfile(this.previewRoot,profile,mod);
+      try{
+        Object.assign(mod,prepared.patch);
+        await this._writeState(next);this.state=next;
+      }catch(error){await prepared.rollback();throw error;}
+      await prepared.cleanup();return this.snapshot();
+    });
+  }
+
   updateMetadata(id,patch) {
     return this._enqueue(async()=>{
-      const allowed=new Set(['sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','updateStatus','requirements','requirementsKnown','ignoredUpdates']);
+      const allowed=new Set(['sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','updateStatus','requirements','requirementsKnown','ignoredUpdates','previewLocal']);
       if(!patch||typeof patch!=='object'||Object.keys(patch).some(k=>!allowed.has(k)))throw new Error('不支持的 Mod 元数据字段');
       const next=clone(this.state),mod=this._find(next.mods,id,'mod');
-      Object.assign(mod,clone(patch));
+      const safePatch=clone(patch);if(mod.customSourceUrl)delete safePatch.sourceUrl;
+      Object.assign(mod,safePatch);
       await this._writeState(next);this.state=next;return this.snapshot();
     });
   }
@@ -347,10 +373,12 @@ class Library {
         libraryPath:path.relative(this.libraryRoot,destination).split(path.sep).join('/'),
         hotkeys: await scanHotkeys(destination),
       };
-      for (const field of ['characterGroupId','customName','deploymentRelative','requirements','requirementsKnown','rootCategoryId','rootCategoryName','sourceId', 'sourceFileName', 'updatedAt', 'preview', 'author','sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','downloadReceipt','downloadQueueId']) {
+      for (const field of ['isSkinMod','previews','customAuthor','customSourceUrl','characterGroupId','customName','deploymentRelative','requirements','requirementsKnown','rootCategoryId','rootCategoryName','sourceId', 'sourceFileName', 'updatedAt', 'preview', 'previewLocal', 'author','sourceUrl','sourceUploadedAt','sourceFileId','sourceFileUploadedAt','sourceChecksum','nsfw','downloadReceipt','downloadQueueId']) {
         if (metadata[field] !== undefined) mod[field] = metadata[field];
         else if (old?.[field] !== undefined) mod[field] = old[field];
       }
+      if(old?.customAuthor)mod.author=old.author;
+      if(old?.customSourceUrl)mod.sourceUrl=old.sourceUrl;
       const next = clone(this.state);
       const index = next.mods.findIndex((item) => item.id === id);
       if (index < 0) next.mods.push(mod); else next.mods[index] = mod;
@@ -369,6 +397,15 @@ class Library {
     });
   }
 
+  setSkinMod(id,value) {
+    if(typeof value!=='boolean')return Promise.reject(new Error('皮肤模组标记必须是布尔值'));
+    return this._change(async next=>{
+      const mod=this._find(next.mods,id,'mod');
+      mod.isSkinMod=value;
+      if(mod.active)await this._enableSelection(next,id);
+    });
+  }
+
   enable(id) {
     return this._change(next=>this._enableSelection(next,id));
   }
@@ -383,10 +420,11 @@ class Library {
 
   async _enableSelection(next,id) {
     const mod=this._find(next.mods,id,'mod');
+    if(mod.isSkinMod===true){next.currentPresetId=null;mod.active=true;return;}
     const groups=await this._characterGroups(next.mods),group=groups.get(id);
-    if(group===undefined||(group&&next.mods.some(item=>item.active&&groups.get(item.id)===undefined)))throw new Error('无法确认模组之间的角色分类，请联网打开模组工坊刷新分类后重试。');
+    if(group===undefined||(group&&next.mods.some(item=>item.active&&item.isSkinMod!==true&&groups.get(item.id)===undefined)))throw new Error('无法确认模组之间的角色分类，请联网打开模组工坊刷新分类后重试。');
     next.currentPresetId=null;
-    if(group)for(const item of next.mods)if(groups.get(item.id)===group)item.active=false;
+    if(group)for(const item of next.mods)if(item.isSkinMod!==true&&groups.get(item.id)===group)item.active=false;
     mod.active=true;
   }
 
@@ -395,18 +433,19 @@ class Library {
       try{return JSON.parse(await fs.readFile(path.join(this.root,name),'utf8'));}
       catch{return [];}
     };
-    let categories=characterGroups(await readCache('taxonomy.json'));
+    const game=this.gameId?require('./games.cjs').getGame(this.gameId):{charactersCategoryId:'18140',skinsCategoryId:'17510'};
+    let categories=characterGroups(await readCache('taxonomy.json'),game.charactersCategoryId);
     const legacy=await readCache('categories.json');
     for(const row of Array.isArray(legacy)?legacy:[])if(!categories.has(String(row.id)))categories.set(String(row.id),String(row.id));
     // 未分类的本地导入（local: 前缀）不参与互斥；导入到角色文件夹的本地模组使用真实分类
     // 编号，与下载的模组同等对待。
     const local=mod=>String(mod.characterId).startsWith('local:');
     for(const mod of mods)if(!local(mod)&&mod.characterGroupId!==undefined&&!categories.has(String(mod.characterId)))categories.set(String(mod.characterId),mod.characterGroupId);
-    const unknown=mod=>!local(mod)&&mod.characterGroupId===undefined&&!categories.has(String(mod.characterId))&&(String(mod.rootCategoryId)==='17510'||mod.rootCategoryName==='Skins');
+    const unknown=mod=>!local(mod)&&mod.characterGroupId===undefined&&!categories.has(String(mod.characterId))&&(String(mod.rootCategoryId)===String(game.skinsCategoryId)||mod.rootCategoryName==='Skins');
     if(this.resolveTaxonomy&&mods.some(unknown)){
       try{
         const taxonomy=await this.resolveTaxonomy();
-        for(const [id,group] of characterGroups(taxonomy))categories.set(id,group);
+        for(const [id,group] of characterGroups(taxonomy,game.charactersCategoryId))categories.set(id,group);
         await fs.writeFile(path.join(this.root,'taxonomy.json'),JSON.stringify(taxonomy));
       }catch{ /* Unknown roles are rejected below; already classified mods still work offline. */ }
     }
@@ -417,7 +456,7 @@ class Library {
       let group=mod.characterGroupId;
       // Pre-taxonomy libraries were character-only; preserve their existing grouping.
       if(group===undefined&&!mod.rootCategoryId&&!mod.rootCategoryName)group=category;
-      if(group===undefined&&(String(mod.rootCategoryId)==='17510'||mod.rootCategoryName==='Skins'))return [mod.id,undefined];
+      if(group===undefined&&(String(mod.rootCategoryId)===String(game.skinsCategoryId)||mod.rootCategoryName==='Skins'))return [mod.id,undefined];
       return [mod.id,group==null?null:String(group)];
     }));
   }
@@ -457,7 +496,7 @@ class Library {
       for (const mod of next.mods) mod.active = selected.has(mod.id);
       const characters = new Set();
       const groups=await this._characterGroups(next.mods);
-      for (const mod of next.mods.filter((item) => item.active)) {
+      for (const mod of next.mods.filter((item) => item.active && item.isSkinMod!==true)) {
         const group=groups.get(mod.id);
         if(group===undefined)throw new Error('无法确认搭配方案中的角色分类，请联网打开模组工坊刷新分类后重试。');
         if(!group)continue;
@@ -484,10 +523,12 @@ class Library {
       // 1.1.3 起只有深色模式：theme 不再是设置项，旧调用（含缓存里的旧界面）直接忽略，不按未知键报错。
       if ('theme' in patch) { patch = { ...patch }; delete patch.theme; }
       const scoped = gameId !== undefined && gameId !== null && gameId !== '';
-      if (scoped && !KNOWN_GAMES.includes(String(gameId))) throw new Error('未知的游戏设置。');
+      if (scoped && !(this.gameId ? String(gameId)===this.gameId : KNOWN_GAMES.includes(String(gameId)))) throw new Error('未知的游戏设置。');
       const allowed = new Set(scoped ? GAME_SETTING_KEYS : Object.keys(DEFAULT_STATE.settings));
+      allowed.add('autoBackground');
       for (const key of Object.keys(patch)) if (!allowed.has(key)) throw new Error(`未知设置项：${key}`);
       for(const k of ['launchExe','backgroundVersion','modsPath','xxmiPath'])if(k in patch&&typeof patch[k]!=='string')throw Error('无效设置值');
+      if('autoBackground' in patch&&typeof patch.autoBackground!=='boolean')throw Error('自动更新背景设置无效');
       if('libraryView' in patch&&!['list','grid'].includes(patch.libraryView))throw Error('模组视图无效。');
       if('material' in patch&&!['mica','acrylic'].includes(patch.material))throw Error('窗口材质选项无效。');
       if('proxyMode' in patch&&!['system','manual'].includes(patch.proxyMode))throw Error('代理模式无效。');
@@ -526,7 +567,7 @@ class Library {
   setActiveGame(gameId) {
     return this._enqueue(async () => {
       const id = String(gameId || '');
-      if (!KNOWN_GAMES.includes(id)) throw new Error('未知的游戏。');
+      if (!(this.gameId ? id===this.gameId : KNOWN_GAMES.includes(id))) throw new Error('未知的游戏。');
       if (this.state.activeGame === id) return this.snapshot();
       const next = clone(this.state);
       next.activeGame = id;
@@ -613,7 +654,7 @@ class Library {
     if (!stat.isDirectory()) throw new Error('Mod 路径必须指向文件夹');
     if (!await hasIni(folder)) throw new Error('Mod 文件夹中必须包含 ini 文件');
     const shaderFixes = await shaderFixesFolder(folder);
-    if (shaderFixes) throw new Error(`该压缩包包含 ${shaderFixes} 文件夹，它需要放在 GIMI 根目录而不是模组目录，程序无法正确安装，请手动安装到 GIMI 文件夹。`);
+    if (shaderFixes) throw new Error(`该压缩包包含 ${shaderFixes} 文件夹，它需要放在加载器根目录而不是模组目录，程序无法正确安装，请手动安装到加载器文件夹。`);
     for (const field of ['name', 'characterId', 'characterName']) {
       if (typeof metadata?.[field] !== 'string' || !metadata[field].trim()) throw new Error(`缺少角色信息：${field}`);
     }
@@ -623,6 +664,7 @@ class Library {
   async _validateModsPath(modsPath) {
     if (modsPath === '') return;
     if (typeof modsPath !== 'string' || !path.isAbsolute(modsPath)) throw new Error('Mod 路径必须是绝对路径');
+    if(this.validateModsPath)await this.validateModsPath(modsPath);
     const resolved = path.resolve(modsPath);
     const rootRelative = path.relative(resolved, this.root);
     const isRootOrAncestor = rootRelative === '' || (!rootRelative.startsWith('..') && !path.isAbsolute(rootRelative));
@@ -632,7 +674,8 @@ class Library {
   }
 
   async _commit(next){
-    return require('./local-deployment.cjs').deploy(this,next,{useLinks:next.settings.useLinks!==false});
+    if(this.validateModsPath&&next.settings.modsPath)await this.validateModsPath(next.settings.modsPath);
+    return require('./local-deployment.cjs').deploy(this,next,{useLinks:(this.getGlobalSettings?.().useLinks??next.settings.useLinks)!==false});
   }
 
   async _writeState(state) { await this._atomicJson(this.stateFile, state); }

@@ -136,7 +136,7 @@ class AppUpdate{
    if((await fs.readFile(recovery,'utf8').catch(()=>'')).startsWith('@echo off\r\nrem HoYoMod update recovery'))await fs.rm(recovery,{force:true}).catch(()=>{});
   }
  }
- async check(){if(this.operation||['ready','recovery','handoff'].includes(this.state.status))return this.snapshot();this.emit({status:'checking',error:''});try{const update=selectRelease(this.version,await this.json(API));this.emit({status:update?'available':'current',update});}catch(e){this.emit({status:'error',error:e.message});throw e;}return this.snapshot();}
+ async check({automatic=false}={}){if(this.operation||['checking','ready','recovery','handoff'].includes(this.state.status))return this.snapshot();this.emit({status:'checking',automatic,error:''});try{const update=selectRelease(this.version,await this.json(API));this.emit({status:update?'available':'current',update});}catch(e){this.emit({status:'error',error:e.message});throw e;}return this.snapshot();}
  prepare(){if(['recovery','handoff'].includes(this.state.status))return Promise.reject(Error('请先完成更新恢复'));if(this.operation)return this.operation;this.operation=this._prepare().finally(()=>{this.operation=null});return this.operation;}
  async _prepare(){
   if(!this.state.update)throw Error('请先检查软件更新。');if(this.state.status==='ready')return this.snapshot();

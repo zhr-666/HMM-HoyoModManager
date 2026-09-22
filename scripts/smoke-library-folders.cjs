@@ -1,4 +1,4 @@
-// 本机库文件夹与本地导入（一键导入 / 角色空白文件夹）界面冒烟测试。
+// 本机库文件夹、本地导入（分类选择 / 一键导入 / 角色空白文件夹）界面冒烟测试。
 // 通过 Electron 的远程调试端口（CDP）驱动真实界面，因此不依赖 Playwright；
 // 需要可用的图形会话。使用系统临时目录，不触碰用户 data、GIMI 或模组文件。
 // 用法：node scripts/smoke-library-folders.cjs
@@ -47,7 +47,7 @@ function connect(url){
 }
 
 async function main(){
-  const data=dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-library-folders-'));
+  dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-library-folders-'));const data=path.join(dataDir,'data');await fs.mkdir(data);
   const hutaoFolder=path.join(data,'library','Skins-abc1234567','胡桃-def7654321');
   const zhongliFolder=path.join(data,'library','Skins-abc1234567','钟离-1122334455');
   await fs.mkdir(hutaoFolder,{recursive:true});
@@ -114,33 +114,85 @@ async function main(){
   assert.match(String(emptyText),/这个文件夹里还没有模组/,'空文件夹应有说明：'+emptyText);
   console.log('✓ 进入空文件夹显示自动存放说明');
 
-  // 3. 导入本地模组：只选压缩包，直接进安装库并启用（不再有「选择存放位置」与选 Mods 文件夹）
+  // 3. 导入本地模组的分类选择弹窗：GameBanana 分类逐层进入，任意一层都能存放
+  //    （系统文件对话框无法自动化，这里直接进入选分类这一步。）
+  await evaluate('(()=>{window.__picked=null;pickImportCategory("测试包").then(node=>window.__picked=node);return "started"})()');
+  await waitFor('!!document.querySelector("#location-confirm")','分类选择弹窗');
+  assert.equal(await evaluate('document.querySelector("#modal-title").textContent'),'选择分类');
+  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),true,'未选分类时不能导入');
+  await clickByText('#location-folders .folder-card','Skins');
+  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),false,'大分类可以直接存放');
+  assert.equal(await evaluate('document.querySelector("#location-confirm").textContent'),'导入到「Skins」');
+  assert.match(await evaluate('document.querySelector("#location-selection").textContent'),/已选择：Skins/);
+  await clickByText('#location-folders .folder-card','Characters');
+  assert.deepEqual(await cards('#location-folders .folder-card'),['胡桃|空文件夹','钟离|1 个模组','甘雨|可以存放模组']);
+  assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),false,'子分类层也应可导入');
+  await evaluate('(()=>{const input=document.querySelector("#location-search");input.value="钟";input.dispatchEvent(new Event("input"))})()');
+  await sleep(150);
+  assert.deepEqual(await cards('#location-folders .folder-card'),['钟离|1 个模组'],'搜索应过滤当前层级');
+  await evaluate('document.querySelector("#location-search").value="";document.querySelector("#location-search").dispatchEvent(new Event("input"))');
+  await sleep(120);
+  await clickByText('#location-folders .folder-card','甘雨');
+  assert.match(await evaluate('document.querySelector("#location-selection").textContent'),/已选择：Skins \/ Characters \/ 甘雨/);
+  assert.equal(await evaluate('document.querySelector("#location-confirm").textContent'),'导入到「甘雨」');
+  await evaluate('document.querySelector("#location-confirm").click()');
+  await waitFor('!document.querySelector("#modal").open','弹窗关闭');
+  assert.equal(await evaluate('window.__picked&&window.__picked.id'),'900003','确认后应把选中的分类交回导入流程');
+  console.log('✓ 分类选择弹窗可在大分类或子分类导入、可搜索，并交回导入流程');
+
+  // 4. 按所选分类导入：模组副本进该分类的安装库文件夹，「我的模组」归到同一分类，
+  //    不再新建「本地导入」总分类；启用位置仍是 HoYoModManaged/<模组 ID>。
   const zips=path.join(data,"zips");await fs.mkdir(zips,{recursive:true});
-  const gimi=path.join(data,"gimi");const modsPath=path.join(gimi,"Mods");await fs.mkdir(modsPath,{recursive:true});
+  const gimi=path.join(dataDir,"gimi");const modsPath=path.join(gimi,"Mods");await fs.mkdir(modsPath,{recursive:true});
   await fs.writeFile(path.join(gimi,"d3dx.ini"),"[Loader]");
   await evaluate("window.hoyo.call('settings',{modsPath:"+JSON.stringify(modsPath)+"})");
   const zipFile=path.join(zips,"本地测试.zip");
-  await fs.writeFile(path.join(zips,"mod.ini"),"[TextureOverride]");
+  // 包内故意引用一个本包没有声明、也没有安装的命名空间（CommandList\TexFx\...）：本地导入不做
+  // 前置检查，因此这条引用不能弹出任何提醒，也不能阻塞导入 —— 一旦提醒回来，下面的导入会卡住。
+  await fs.writeFile(path.join(zips,"mod.ini"),"[TextureOverride]\nnamespace = LocalTest\nrun = CommandList\\TexFx\\Transparency\n");
   const {execFile}=require("node:child_process");const {promisify}=require("node:util");
   const sevenZip=require("7zip-bin").path7za.replace("app.asar"+path.sep,"app.asar.unpacked"+path.sep);
   if(process.platform!=="win32")await fs.chmod(sevenZip,0o755);
   await promisify(execFile)(sevenZip,["a",zipFile,"mod.ini"],{cwd:zips});
+  const noCategory=await evaluate("window.hoyo.call('importApply',{file:"+JSON.stringify(zipFile)+"}).then(()=>'allowed',e=>e.message)");
+  assert.match(String(noCategory),/选择要导入的 GameBanana 分类/,'没有分类编号时核心层应拒绝导入：'+noCategory);
   const before=await evaluate("window.hoyo.call('state').then(s=>s.mods.length)");
-  const state=await evaluate("window.hoyo.call('importApply',{file:"+JSON.stringify(zipFile)+"}).then(s=>s.mods.map(m=>({id:m.id,name:m.name,active:m.active,folder:m.folder,deploymentRelative:m.deploymentRelative})))");
+  // 不 await：先看导入过程中有没有弹前置提醒（本地导入不应有），再收结果。
+  await evaluate("(()=>{window.__imported=null;window.__importError=null;window.hoyo.call('importApply',{file:"+JSON.stringify(zipFile)+",characterId:'900003'}).then(s=>window.__imported=s.mods.map(m=>({id:m.id,name:m.name,active:m.active,characterId:m.characterId,characterName:m.characterName,libraryPath:m.libraryPath,deploymentRelative:m.deploymentRelative})),e=>window.__importError=e.message);return 'started'})()");
+  await sleep(2000);
+  assert.equal(await evaluate('!!document.querySelector("#dependency-modal")?.open'),false,'本地导入不应弹出前置提醒');
+  assert.equal(await evaluate('window.__importError'),null,'本地导入不应因前置检查被中止：'+await evaluate('window.__importError'));
+  await waitFor('Array.isArray(window.__imported)','本地导入完成');
+  const state=await evaluate('window.__imported');
   assert.equal(state.length,before+1,"导入后应多出一个模组");
   const imported=state.at(-1);
+  assert.equal(imported.characterId,'900003','模组应登记为用户所选的分类');
+  assert.equal(imported.characterName,'甘雨');
   assert.equal(imported.deploymentRelative,undefined,"不再询问 GIMI 内的安装文件夹");
   assert.equal(imported.active,true,"导入后自动启用");
-  assert.equal(path.dirname(imported.folder),path.join(data,"library"),"模组副本放进安装库");
-  assert.equal(await fs.realpath(path.join(modsPath,"HoYoModManaged",imported.id)),await fs.realpath(imported.folder),"启用位置与其他模组同一条规则");
+  const folderPieces=imported.libraryPath.split('/');
+  assert.equal(folderPieces.length,3,'安装库内应是「总分类/角色/模组」：'+imported.libraryPath);
+  assert.match(folderPieces[0],/^Skins-/);assert.match(folderPieces[1],/^甘雨-/);
+  const importedFolder=path.join(data,"library",...folderPieces);
+  assert.equal(await fs.realpath(path.join(modsPath,"HoYoModManaged",imported.id)),await fs.realpath(importedFolder),"启用位置与其他模组同一条规则");
   await evaluate("loadState()");await sleep(300);
   await evaluate("showPage('library');libraryNavigation=[];renderLibrary()");
   await sleep(250);
-  // 未分类的本地导入在「我的模组」里归到「本地导入」文件夹：文件夹卡上的数量就是这条新模组。
-  await clickByText('#library-folders .folder-card','本地导入');
-  await sleep(250);
-  assert.deepEqual(await cards('#library-folders .folder-card'),['本地导入|1 个模组'],'本地导入文件夹应显示刚导入的模组');
-  console.log("✓ 导入本地模组只需选压缩包：自动进安装库、自动启用，界面里能看到");
+  // 导入前只有钟离一条模组：分类位置对了才会和它并列在 Skins 下，且不应出现「本地导入」总分类。
+  assert.deepEqual(await cards('#library-folders .folder-card'),['Skins|2 个模组'],'模组应按所选分类归入「我的模组」');
+  await clickByText('#library-folders .folder-card','Skins');
+  await clickByText('#library-folders .folder-card','Characters');
+  assert.deepEqual(await cards('#library-folders .folder-card'),['胡桃|空文件夹','钟离|1 个模组','甘雨|1 个模组']);
+  console.log("✓ 导入本地模组按所选分类落库：安装库路径、我的模组归类、自动启用都对");
+
+  // 4b. 本地导入的模组在启用路径上同样不做前置检查：关掉再打开不应弹提醒
+  const importedId=imported.id;
+  await evaluate("window.hoyo.call('disable',{id:"+JSON.stringify(importedId)+"})");
+  await evaluate("(()=>{window.__reenabled=null;window.hoyo.call('enable',{id:"+JSON.stringify(importedId)+"}).then(()=>window.__reenabled=true,e=>window.__reenabled=e.message);return 'started'})()");
+  await sleep(1500);
+  assert.equal(await evaluate('!!document.querySelector("#dependency-modal")?.open'),false,'启用本地导入的模组不应弹前置提醒');
+  assert.equal(await evaluate('window.__reenabled'),true,'本地导入的模组应能直接重新启用：'+await evaluate('window.__reenabled'));
+  console.log("✓ 本地导入的模组启用时不检查前置，工坊下载的模组不受影响");
 
   // 5. 有模组的文件夹没有删除入口
   await evaluate('showPage("library");libraryNavigation=["17510","18140"];renderLibrary();(()=>{const card=[...document.querySelectorAll("#library-folders .folder-card")].find(b=>b.textContent.includes("钟离"));card.dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,clientX:120,clientY:120}))})()');
@@ -162,17 +214,16 @@ async function main(){
   const remaining=await evaluate('window.hoyo.call("state").then(s=>s.folders.map(f=>f.id))');
   assert.deepEqual(remaining,['900002'],'其余文件夹应保留：'+JSON.stringify(remaining));
   assert.ok(await fs.stat(hutaoFolder).then(()=>false,()=>true),'空文件夹目录应被删除');
-  // 此时还停在「Skins / Characters」这一层：胡桃没了，只剩仍有模组的钟离。
-  assert.deepEqual(await cards('#library-folders .folder-card'),['钟离|1 个模组']);
+  // 此时还停在「Skins / Characters」这一层：胡桃没了，只剩仍有模组的钟离与刚导入的甘雨。
+  assert.deepEqual(await cards('#library-folders .folder-card'),['钟离|1 个模组','甘雨|1 个模组']);
   console.log('✓ 右键删除空文件夹（状态 + 磁盘 + 界面）');
 
-  // 7. 导入入口：两步流程里只剩选压缩包的系统对话框，「选择存放位置」弹窗已经移除
+  // 7. 导入入口：① 选压缩包（系统对话框，不在此自动化）→ ② 分类选择弹窗 → ③ 导入
   assert.equal(await evaluate('document.querySelector("#import-button").disabled'),false);
-  assert.equal(await evaluate('typeof chooseLibraryFolder'),'undefined','选择存放位置弹窗的函数应已删除');
-  assert.equal(await evaluate('document.querySelector("#location-folders")'),null,'界面里不再有存放位置选择器');
+  assert.equal(await evaluate('typeof pickImportCategory'),'function','分类选择弹窗应接在导入流程里');
 
   client.close();
-  await fs.rm(data,{recursive:true,force:true});dataDir=null;
+  await fs.rm(dataDir,{recursive:true,force:true});dataDir=null;
   console.log('本机库文件夹冒烟测试通过');
 }
 

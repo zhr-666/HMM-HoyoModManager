@@ -59,7 +59,7 @@ async function plan(lib,next,{useLinks=false}={}){
   if(!mod.active)continue;
   const managed=deployedPath(mod,modsPath);
   if(!managed){if(mod.folder&&UUID.test(String(mod.id)))throw Error('模组目录无效：'+mod.name);continue;}
-  const correct=useLinks?await sameEntry(managed,mod.folder):!await isLink(managed)&&await hasMarker(managed);
+  const correct=useLinks?await sameEntry(managed,mod.folder):!await isLink(managed)&&await hasMarker(managed)&&lib.state.mods.find(item=>item.id===mod.id)?.folder===mod.folder;
   if(!correct)changes.set(managed,{managed,mod,modFolder:path.resolve(mod.folder),remove:false,kind:'entry'});
  }
  // 取消启用、更换本机库副本或上次中断留下的暂存目录：只清理这些条目本身。
@@ -107,7 +107,7 @@ async function deploy(lib,next,{useLinks=true}={}){
   for(const entry of entries){
    if(entry.remove)continue;
    if(useLinks)await fs.symlink(path.resolve(entry.modFolder),entry.staging,entry.linkType);
-   else await fs.cp(entry.modFolder,entry.staging,{recursive:true,force:false,errorOnExist:true,dereference:false});
+   else {await fs.cp(entry.modFolder,entry.staging,{recursive:true,force:false,errorOnExist:true,dereference:false});await fs.writeFile(path.join(entry.staging,MARKER),'managed\n');}
   }
   await lib._atomicJson(lib.journalFile,journal);
   for(const entry of entries)if(entry.remove)await fs.rename(entry.managed,entry.staging);

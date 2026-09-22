@@ -29,6 +29,9 @@ async function inspect(folder,active=false,excluded=[]){
  }}await walk(folder);
  return {provides:[...provided],requirements:[...references].filter(([key])=>!provided.has(key)).map(([,name])=>({name,url:'',sourceId:null,inferred:true}))};
 }
+// 本地包的前置推断：只读扫包内 .ini 里引用但没有在本包声明 namespace 的名字。1.1.6 起应用不再
+// 用它做前置检查（前置检查只对带 GameBanana Requirements 元数据的下载模组做，见 src/main.cjs
+// 的 modDependencies），这个只读工具与其单测保留，便于以后按需复用。
 async function scanLocal(folder){return (await inspect(folder)).requirements;}
 async function providers(folder,active=false,excluded=[]){return (await inspect(folder,active,excluded)).provides;}
 async function inventory(mods,gimi,{active=false}={}){

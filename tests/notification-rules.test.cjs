@@ -125,7 +125,7 @@ test('下载任务卡：整批只报位置，不画整批的进度条与百分�
 test('主进程：下载只挂一张队列任务卡，同一张卡里放两条进度',()=>{
   const main=read('src/main.cjs');
   const progress=read('src/core/download-progress.cjs');
-  assert.match(main,/downloads:'download-queue'/,'下载任务要有唯一的队列任务卡');
+  assert.match(main,/get downloads\(\)\{return 'download-queue:'\+workspace\(\)\.game\.id;/,'下载任务要有唯一的队列任务卡');
   assert.equal(main.includes('TASK.download('),false,'不允许再按下载行各造一张任务卡');
   assert.match(main,/const \{label,target,cancelable,currentId,queue,current\}=pending/,'一张卡同时写入当前文件与队列两段进度');
   assert.match(main,/tasks\.start\(\{id:taskId,target,\.\.\.patch\}\)/,'下载任务卡只在队列有任务时创建');
@@ -134,13 +134,14 @@ test('主进程：下载只挂一张队列任务卡，同一张卡里放两条�
   assert.match(progress,/current: current \? \{ name: current\.sourceFileName/,'同一张卡上要同时给出当前文件的进度');
 });
 
-test('主进程：检查更新先弹 3 秒通知，进行中给「第 X 个，共 X 个」，结束后发常驻完成通知',()=>{
+test('检查更新开始时不弹通知，进行中显示任务卡，结束后发完成通知',()=>{
   const main=read('src/main.cjs');
-  assert.ok(main.includes("pushToast('开始检查更新'"),'点检查更新要先弹 3 秒即时通知');
+  assert.equal(main.includes("pushToast('开始检查更新'"),false,'模组检查更新开始时不应弹即时通知');
   assert.ok(main.includes('正在检查更新第 ${Math.min(checked+1,mods.length)} 个，共 ${mods.length} 个'),'任务卡要显示检查到第几个');
   assert.equal(/TASK\.checkUpdates[^;]*target/.test(main),false,'检查更新没有独立任务页面，任务卡不加 target');
   assert.match(read('src/core/update-summary.cjs'),/text: `检查更新完成：/,'结束通知以「检查更新完成」开头');
   assert.match(read('src/core/update-summary.cjs'),/target: 'modUpdates'/,'完成通知带对应结果页面');
+  assert.equal(read('src/ui/app.js').includes("showToast('开始检查更新')"),false,'软件检查更新开始时不应弹即时通知');
   assert.match(read('src/core/download-summary.cjs'),/text: '全部任务下载完成'/,'下载批次结束发「全部任务下载完成」');
   assert.match(read('src/core/download-summary.cjs'),/target: 'downloads'/,'完成通知带对应页面');
 });

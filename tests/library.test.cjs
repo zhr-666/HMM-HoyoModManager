@@ -677,6 +677,33 @@ test('local import without a target folder installs into the library and enables
  assert.equal(await fs.realpath(deployed),await fs.realpath(mod.folder),'启用后走与其他模组相同的启用库规则');
 });
 
+// 修回导入流程后走的就是这一条：用户在软件里选的 GameBanana 分类（resolveCategory 的形状）
+// 交给 importLocal，模组按该分类归入安装库与「我的模组」，不再新建「本地导入」总分类。
+test('a local import classified from the picker lands in the chosen category',async t=>{
+ const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
+ const mod=await library.importLocal(await modFolder('picked-hutao'),{name:'本地胡桃',...amberFolder});
+ assert.equal(mod.characterId,'19513');
+ assert.equal(mod.characterGroupId,'19513');
+ assert.equal(mod.rootCategoryId,'17510');assert.equal(mod.rootCategoryName,'Skins');
+ assert.equal(mod.deploymentRelative,undefined,'仍然不询问 GIMI 内的安装文件夹');
+ // libraryPath 是「分类文件夹 + 模组自己的目录」，选中的是角色/子分类时分类文件夹占两级。
+ const pieces=mod.libraryPath.split('/');
+ assert.equal(pieces.length,3,'选中的是角色/子分类时安装库内是两级分类：'+mod.libraryPath);
+ assert.match(pieces[0],/^Skins-/);assert.match(pieces[1],/^胡桃-/);assert.ok(pieces[2].startsWith(mod.id));
+ const deployed=path.join(modsPath,'HoYoModManaged',mod.id);
+ assert.equal(await fs.realpath(deployed),await fs.realpath(mod.folder),'启用位置与其他模组同一条规则');
+});
+
+test('a local import classified as a top-level category keeps one library level',async t=>{
+ const {library,modFolder}=await fixture(t);
+ const skins={characterId:'17510',characterName:'Skins',rootCategoryId:'17510',rootCategoryName:'Skins',characterGroupId:null};
+ const mod=await library.importLocal(await modFolder('picked-skins'),{name:'本地大分类',...skins});
+ assert.equal(mod.characterId,'17510');
+ const pieces=mod.libraryPath.split('/');
+ assert.equal(pieces.length,2,'大分类只有一级分类文件夹：'+mod.libraryPath);
+ assert.match(pieces[0],/^Skins-/);assert.ok(pieces[1].startsWith(mod.id));
+});
+
 test('unclassified local imports stay out of character exclusivity',async t=>{
  const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath});
  const first=await library.importLocal(await modFolder('plain-one'),{name:'普通一'});
@@ -791,4 +818,34 @@ test('ignored update versions are recorded on the mod and survive a restart',asy
  await library.updateMetadata(mod.id,{ignoredUpdates:[{id:'x',uploadedAt:1700000000,name:'1.1.zip',at:1}]});
  const reopened=new Library(library.root);await reopened.init();
  assert.equal(reopened.snapshot().mods[0].ignoredUpdates[0].uploadedAt,1700000000);
+});
+
+test('skin mods coexist with one ordinary mod through switches, presets, restart and updates',async t=>{
+  const {library,modsPath,modFolder}=await fixture(t);await library.settings({modsPath,useLinks:false});
+  const add=async name=>library.install(await modFolder(name),meta(name,'same'));
+  const a=await add('ordinary-a'),b=await add('ordinary-b'),s1=await add('skin-one'),s2=await add('skin-two');
+  await library.setSkinMod(s1.id,true);await library.setSkinMod(s2.id,true);
+  for(const m of [a,s1,s2,b])await library.enable(m.id);
+  const active=()=>library.snapshot().mods.filter(m=>m.active).map(m=>m.id);
+  assert.deepEqual(active(),[b.id,s1.id,s2.id]);
+  for(const m of [b,s1,s2])await fs.access(path.join(modsPath,'HoYoModManaged',m.id));
+  await assert.rejects(fs.access(path.join(modsPath,'HoYoModManaged',a.id)));
+  const preset=(await library.savePreset('skins')).presets[0];await library.disableAll();await library.applyPreset(preset.id);
+  assert.deepEqual(active(),[b.id,s1.id,s2.id]);
+  await library.install(await modFolder('skin-update'),{id:s1.id,...meta('updated','same')});
+  assert.equal(library.snapshot().mods.find(m=>m.id===s1.id).isSkinMod,true);
+  const reopened=new Library(library.root);await reopened.init();assert.equal(reopened.snapshot().mods.find(m=>m.id===s1.id).isSkinMod,true);
+  await library.setSkinMod(s1.id,false);assert.deepEqual(active(),[s1.id,s2.id]);
+  await assert.rejects(library.applyPreset(preset.id),/同一角色/);assert.deepEqual(active(),[s1.id,s2.id]);
+  await assert.rejects(library.setSkinMod(a.id,'yes'),/布尔/);
+});
+
+test('local import reports enable failure without losing the installed mod or requiring another install',async t=>{
+ const {library,modFolder}=await fixture(t),enable=library.enable;
+ library.enable=async()=>{throw Error('目标目录不可写')};
+ const imported=await library.importLocal(await modFolder('partial-import'),{name:'partial',characterId:'a',characterName:'A'});
+ library.enable=enable;
+ assert.equal(imported.active,false);assert.match(imported.enableError,/目标目录不可写/);
+ assert.equal(library.snapshot().mods.length,1);assert.equal(library.snapshot().mods[0].enableError,undefined);
+ await library.enable(imported.id);assert.equal(library.snapshot().mods.length,1);assert.equal(library.snapshot().mods[0].active,true);
 });

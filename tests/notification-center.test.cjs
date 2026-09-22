@@ -47,7 +47,7 @@ test('delivers each new message as a popup exactly once',async()=>{
   assert.equal(popups.length,2);
 });
 
-// 3 秒即时通知（toast）用于「已加入下载列表」「开始检查更新」这类按钮反馈：
+// 3 秒即时通知（toast）用于「已加入下载列表」这类按钮反馈：
 // 只弹一次、不进历史、不计未读、不落盘，窗口还没就绪就直接丢弃（而不是排队等下次启动补弹）。
 test('delivers a toast once and keeps it out of the history',async()=>{
   const {file}=await workspace();

@@ -55,4 +55,16 @@ function buildLibraryTree(taxonomy,mods,folders=[]){
   sort(roots);
   return roots;
 }
-if(typeof module!=='undefined')module.exports={buildLibraryTree};
+// 导入时选存放位置用的树：完整 GameBanana 分类都会出现（哪怕还没有模组），并带上已有的
+// 模组数量与「已建文件夹」标记；分类树里没有的已登记文件夹也一并补上（离线时也能选）。
+function buildLibraryPickerTree(taxonomy,mods,folders=[]){
+  const counted=buildLibraryTree(taxonomy,mods,folders),byId=new Map();
+  (function walk(nodes){for(const node of nodes||[]){byId.set(String(node.id),node);walk(node.children)}})(counted);
+  const branch=node=>({id:String(node.id),name:node.name,icon:node.icon||'',modIds:[],directModIds:[],folder:false,children:(node.children||[]).map(branch)});
+  const plain=node=>({id:String(node.id),name:node.name,icon:node.icon||'',modIds:[...(node.modIds||[])],directModIds:[...(node.directModIds||[])],folder:!!node.folder,children:(node.children||[]).map(plain)});
+  const tree=(taxonomy||[]).map(branch);
+  (function stamp(nodes){for(const node of nodes){const extra=byId.get(node.id);if(extra){node.modIds=[...extra.modIds];node.directModIds=[...extra.directModIds];node.folder=!!extra.folder}stamp(node.children)}})(tree);
+  (function attach(nodes,extra){for(const node of extra||[]){const existing=nodes.find(item=>item.id===String(node.id));if(existing)attach(existing.children,node.children);else nodes.push(plain(node))}})(tree,counted);
+  return tree;
+}
+if(typeof module!=='undefined')module.exports={buildLibraryTree,buildLibraryPickerTree};

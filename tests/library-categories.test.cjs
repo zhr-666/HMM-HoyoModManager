@@ -62,3 +62,21 @@ test('classified local imports leave the 本地导入 group and show under their
  assert.deepEqual(tree[0].children[0].children[0].directModIds,['a']);
  assert.deepEqual(tree[1].children[0].directModIds,['b']);
 });
+// 导入本地模组时的分类选择：GameBanana 分类树整棵都在（没有模组的也能选），已登记的文件夹
+// 即便分类树里没有也要补进来，这样离线也能把模组放进已建好的分类。
+test('the category picker lists every GameBanana category even without mods',()=>{
+ const {buildLibraryPickerTree}=require('../src/ui/library-categories.js');
+ const tree=buildLibraryPickerTree(taxonomy,[{id:'m',characterId:'12',characterName:'Amber'}],[{id:'13',name:'Lisa',rootCategoryId:'10',rootCategoryName:'Skins'}]);
+ assert.deepEqual(tree.map(n=>n.name),['Audio','Skins']);
+ const characters=tree[1].children[0];assert.equal(characters.name,'Characters');
+ assert.deepEqual(characters.children.map(n=>n.name),['Amber','Lisa']);
+ assert.deepEqual(characters.children[0].modIds,['m']);
+ assert.equal(characters.children[1].folder,true);assert.deepEqual(characters.children[1].modIds,[]);
+ assert.deepEqual(tree[0].children.map(n=>n.name),['Music']);
+});
+test('the picker keeps registered folders the taxonomy no longer lists',()=>{
+ const {buildLibraryPickerTree}=require('../src/ui/library-categories.js');
+ const tree=buildLibraryPickerTree([],[],[{id:'777',name:'自定义角色',rootCategoryId:'10',rootCategoryName:'Skins'}]);
+ assert.deepEqual(tree.map(n=>n.name),['Skins']);
+ assert.equal(tree[0].children[0].name,'自定义角色');assert.equal(tree[0].children[0].folder,true);
+});

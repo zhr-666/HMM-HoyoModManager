@@ -32,7 +32,7 @@ test('自动检查查到更新时仍然通知',()=>{
 
 test('全部检查失败且没有更新时按错误上报',()=>{
   const notice=summarizeUpdateCheck({updates:[],failures:[{id:'a'},{id:'b'}],checked:2},{automatic:false});
-  assert.equal(notice.text,'检查更新完成：全部模组已是最新（2 个检查失败）');
+  assert.equal(notice.text,'检查更新完成：未发现可用更新（2 个检查失败）');
   assert.equal(notice.tone,'error');
 });
 
@@ -72,4 +72,9 @@ test('模组库还没检查过时不重建出空结果',()=>{
   assert.equal(summarizeFromLibrary([]),null);
   assert.equal(summarizeFromLibrary(undefined),null);
   assert.equal(summarizeFromLibrary([{id:'a',name:'本地导入'}]),null);
+});
+
+test('automatic check failures notify even without available updates',()=>{
+  const notice=summarizeUpdateCheck({updates:[],failures:[{id:'a'}]},{automatic:true});
+  assert.ok(notice);assert.equal(notice.tone,'error');assert.doesNotMatch(notice.text,/全部模组已是最新/);
 });

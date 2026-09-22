@@ -119,8 +119,6 @@ dialog form{margin:0}
 .hotkey-entry{padding:16px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.hotkey-entry h3{margin:0 0 8px}.hotkey-entry p{margin:8px 0}.hotkey-entry pre{white-space:pre-wrap;background:var(--inset);padding:10px;border-radius:6px}.hotkey-entry kbd{display:inline-block;border:1px solid var(--control-line);border-radius:5px;padding:3px 8px;background:var(--inset);font-family:inherit}.hotkey-entry small{color:#727c8d}
 
 #page-library .section-head{flex-wrap:wrap;gap:12px}#page-library .section-head .row-actions{flex-wrap:wrap}.hash-file-list{overflow-wrap:anywhere}
-/* 顶栏按钮里的问号指引：悬浮或聚焦时用 #help-tooltip 弹出说明。 */
-.button-hint{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:7px;border:1px solid currentColor;border-radius:50%;font-size:10px;font-weight:700;line-height:1;opacity:.8}
 /* 替换 Hash 二级窗口：标签 + 面板。 */
 .dialog-tabs{display:flex;gap:6px;margin:0 0 16px;padding:3px;border:1px solid var(--line);border-radius:8px;background:var(--inset)}
 .dialog-tab{flex:1;border:0;border-radius:6px;padding:8px 10px;background:transparent;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
@@ -179,7 +177,7 @@ html[data-platform="win32"] .sidebar{top:40px}
 .file-picker{padding:0;margin:22px 0 16px;border:0;min-width:0}.file-picker legend{padding:0;margin-bottom:12px;font-size:14px;font-weight:700}.file-options,.update-files{display:grid;gap:10px}
 .file-option,.field label.file-option{width:100%;min-width:0;display:flex;align-items:center;gap:16px;min-height:82px;margin:0;padding:18px 20px;border:1px solid var(--control-line);border-radius:10px;background:var(--surface);cursor:pointer;text-align:left;font-weight:400;color:var(--text);transition:background .15s,border-color .15s}
 .file-option:hover{background:var(--hover);border-color:var(--blue)}.file-option:has(input:checked){border-color:var(--blue);background:var(--blue-soft);box-shadow:inset 3px 0 0 var(--blue)}.file-option:has(input:focus-visible){outline:2px solid var(--blue);outline-offset:2px}
-.file-option input[type="radio"],.field .file-option input[type="radio"]{flex:0 0 18px;width:18px;height:18px;margin:0;padding:0;accent-color:var(--blue)}.file-option>span{flex:1;min-width:0}.file-option strong{display:block;font-size:15px;line-height:1.5;font-weight:650;overflow-wrap:anywhere}.file-option small{display:block;font-size:12px;line-height:1.6;font-weight:400;color:var(--muted);margin-top:5px}.update-window-note{line-height:1.7;margin:0 0 18px}
+.file-option input[type="radio"],.field .file-option input[type="radio"]{flex:0 0 18px;width:18px;height:18px;margin:0;padding:0;accent-color:var(--blue)}.file-option>span{flex:1;min-width:0}.file-option strong{display:block;font-size:15px;line-height:1.5;font-weight:650;overflow-wrap:anywhere}.file-option small{display:block;font-size:12px;line-height:1.6;font-weight:400;color:var(--muted);margin-top:5px}
 #page-downloads .section-head{gap:20px}#page-downloads .section-head>.button{flex-shrink:0}
 
 .category-breadcrumb{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:4px 0 14px;color:var(--muted)}
@@ -249,16 +247,19 @@ html[data-platform="win32"] .sidebar{top:40px}
 @keyframes page-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
 html[data-platform="win32"] .sidebar{top:0;padding-top:64px}
 .app-backdrop{position:fixed;inset:0;pointer-events:none;z-index:0;background:#314b67;overflow:hidden}
-/* 启动器模式：背景图从侧栏右边线开始铺，图片最左端与那条线对齐；
-   左边界与侧栏宽度共用 --rail-width，两者永远重合。 */
-html[data-mode="launcher"] .app-backdrop{left:var(--rail-width)}
+/* 启动器模式：背景铺到侧栏后方，半透明玻璃才能透出当前游戏背景。 */
+html[data-mode="launcher"] .app-backdrop{left:0}
 .app-backdrop img{width:100%;height:100%;object-fit:cover;object-position:left center;transform:scale(1.05);filter:blur(28px) saturate(.8);transition:filter .32s ease}
+.app-backdrop video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:left center;filter:blur(28px) saturate(.8)}
+html[data-mode="launcher"][data-page="home"] .app-backdrop img{transform:none}
+html[data-mode="launcher"][data-page="home"] .app-backdrop video{filter:none}
+.app-backdrop video[hidden],.game-logo[hidden]{display:none}
+.game-logo{position:fixed;top:48px;left:calc(var(--rail-width) + 40px);width:180px;height:100px;object-fit:contain;object-position:left top;pointer-events:none;filter:drop-shadow(0 2px 6px #0005)}
 html[data-mode="launcher"][data-page="home"] .app-backdrop img{filter:none}
 .app-backdrop:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,color-mix(in srgb,var(--bg) 64%,transparent),color-mix(in srgb,var(--bg) 78%,transparent));transition:background .32s ease}
 html[data-mode="launcher"][data-page="home"] .app-backdrop:after{background:linear-gradient(180deg,#10233848,transparent 45%,#10233885)}
 .app-shell{position:relative;z-index:1}.sidebar{z-index:15}
 html[data-page="home"] .topbar{color:#fff;border-color:#ffffff35}
-html[data-page="home"] .topbar .help-note{color:#fff}
 html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex-direction:column;flex:1;min-height:0;justify-content:flex-end;animation-name:home-enter}
 /* 通知中心：右下角一个悬浮按钮，上面依次是完成 / 错误提示卡与 3 秒即时通知，
    面板里是「进行中的任务」与持久化的消息历史。
@@ -285,9 +286,7 @@ html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex
 .notification-button:hover{border-color:var(--blue);color:var(--blue)}
 .notification-button[aria-expanded="true"]{border-color:var(--blue);color:var(--blue);background:var(--blue-soft)}
 .notification-button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-.notification-button.has-unread{animation:notification-pulse 2.4s ease-in-out infinite}
-.notification-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--danger);color:#fff;font-size:10.5px;font-weight:700;display:grid;place-items:center;border:1px solid var(--surface)}
-@keyframes notification-pulse{0%,100%{box-shadow:0 5px 18px #0002}50%{box-shadow:0 0 0 6px #1769e026}}
+.notification-badge{position:absolute;top:0;right:0;width:9px;height:9px;border-radius:50%;background:var(--danger);border:1px solid var(--surface)}
 .notification-panel{width:min(384px,calc(100vw - 56px));max-height:min(64vh,470px);display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--surface) 97%,transparent);backdrop-filter:blur(18px);box-shadow:0 14px 40px #0003;overflow:hidden;transform-origin:100% 100%;animation:notification-zoom .24s cubic-bezier(.2,.85,.3,1.04) both}
 @keyframes notification-zoom{from{opacity:0;transform:scale(.22) translateY(18px)}to{opacity:1;transform:scale(1) translateY(0)}}
 .notification-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
@@ -314,10 +313,6 @@ html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex
 .hero-actions{position:fixed!important;right:32px;bottom:28px;z-index:10;display:flex;gap:10px;align-items:center;padding:0!important}
 .program-settings{height:48px;width:48px;font-size:23px;padding:0}.program-settings .icon{width:20px;height:20px}.home-launch{height:48px;min-width:174px;box-shadow:0 5px 20px #10203035}
 .home-card{padding:22px}.home-summary .home-counts{margin:12px 0}.home-summary .storage-value{font-size:32px}.home-active-mods{max-height:80px;overflow:auto}
-.help-note{display:inline-flex!important;align-items:center;justify-content:center;width:18px;height:18px;min-width:18px;padding:0!important;margin:4px 0!important;border:1px solid currentColor;border-radius:50%;font-size:0!important;color:var(--muted);cursor:help;vertical-align:middle;overflow:hidden}
-.help-note:before{content:"?";font-size:12px;font-weight:700;line-height:1}
-.help-note:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
-.help-tooltip{position:fixed;z-index:100;width:max-content;max-width:360px;background:var(--surface);color:var(--text);border:1px solid var(--control-line);border-radius:7px;box-shadow:0 5px 22px #0003;padding:10px 13px;font-size:12px;line-height:1.6;pointer-events:none;overflow-wrap:anywhere}
 .context-menu{position:fixed;z-index:90;width:160px;padding:5px;border:1px solid var(--control-line);border-radius:8px;background:var(--surface);box-shadow:0 6px 25px #0003;animation:page-enter .12s ease-out}
 .context-menu button{width:100%;border:0;border-radius:4px;text-align:left;background:transparent;color:var(--text);padding:9px;font:inherit;cursor:pointer}.context-menu button:hover,.context-menu button:focus{background:var(--blue-soft);outline:0}
 .context-menu button:disabled{opacity:.45;cursor:not-allowed}.context-menu button:disabled:hover{background:transparent}
@@ -337,7 +332,7 @@ html[data-platform="win32"] .window-titlebar{left:var(--rail-width)}
 .search .icon,.mini-search .icon{width:16px;height:16px}
 .library-view-switch .icon{width:14px;height:14px}
 .folder-icon .icon{width:24px;height:24px;color:var(--blue)}
-.mod-card .card-actions{display:flex;align-items:center;gap:8px;flex-wrap:nowrap}.mod-card .card-actions .detail{white-space:nowrap;flex-shrink:0;padding:7px 10px}.mod-card .card-actions .source{min-width:0;font-size:11px;white-space:nowrap}
+.mod-card .card-actions{display:flex;align-items:center;gap:8px;flex-wrap:nowrap}.mod-card .card-actions .source{min-width:0;font-size:11px;white-space:nowrap}
 .mod-skeleton{padding-bottom:16px;border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden;pointer-events:none}
 .skeleton-preview{aspect-ratio:16/10;display:grid;place-items:center;position:relative;overflow:hidden;background:var(--inset)}
 .skeleton-preview:before,.skeleton-line:before{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent, color-mix(in srgb,var(--muted) 16%,transparent),transparent);filter:blur(6px);animation:skeleton-sweep 1.5s ease-in-out infinite}
@@ -348,11 +343,8 @@ html[data-platform="win32"] .window-titlebar{left:var(--rail-width)}
 .hotkey-overview{padding:0 0 18px;border-bottom:1px solid var(--line);margin-bottom:18px}.hotkey-overview h3{margin:0 0 12px;font-size:14px}.hotkey-overview .key-list{display:flex;gap:8px;flex-wrap:wrap}
 @media(prefers-reduced-motion:reduce){.skeleton-spinner,.skeleton-preview:before,.skeleton-line:before{animation:none}}
 html[data-page="workshop"] .topbar>div:first-child{display:block}
-html[data-page="workshop"] #page-subtitle{margin-top:7px}
-#page-subtitle[hidden],.help-note[hidden],.help-note:empty{display:none!important}
 dialog{background:var(--surface);color:var(--text)}
 .dialog-head h2{display:inline;vertical-align:middle}
-dialog .help-note{display:inline-flex;margin:0 0 0 7px!important;vertical-align:middle;flex-shrink:0}
 .dialog-head>div{min-width:0;line-height:1.6}
 .dialog-head .icon-button{flex-shrink:0}
 .dependency-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid var(--line)}
@@ -384,7 +376,7 @@ html[data-mode="workspace"] .rail-separator{display:none}
 html[data-mode="workspace"] .rail-back{margin-bottom:8px}
 
 /* 启动器模式：深色玻璃侧栏，贴近官方启动器观感 */
-html[data-mode="launcher"] .sidebar{background:linear-gradient(180deg,#0d1a29d9,#0a1420f0);border-right:1px solid #ffffff17;backdrop-filter:blur(18px)}
+html[data-mode="launcher"] .sidebar{background:linear-gradient(180deg,#0815227a,#08121f9e);border-right:1px solid #ffffff24;backdrop-filter:blur(24px) saturate(1.18);-webkit-backdrop-filter:blur(24px) saturate(1.18)}
 html[data-mode="launcher"] .sidebar .nav-item{color:#c8d6e5}
 html[data-mode="launcher"] .sidebar .nav-item .icon{color:#9db0c6}
 html[data-mode="launcher"] .sidebar .nav-item:hover{background:#ffffff1c}
@@ -505,7 +497,11 @@ html[data-mode="launcher"] .launcher-actions .home-launch.button{min-width:174px
 /* 详情页：顶部固定图片区，图片未到时也占好位置（需求 15/16） */
 .detail-gallery{display:grid;grid-template-rows:minmax(0,1fr) 68px;gap:10px;height:320px;margin:0 0 18px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
 .detail-gallery-main{position:relative;display:grid;place-items:center;overflow:hidden;border-radius:8px;background:color-mix(in srgb,var(--surface) 70%,transparent)}
-.detail-gallery-main img{width:100%;height:100%;object-fit:contain}
+/* 大图整张放进图片区：不裁切、不被压住。
+   min-width/min-height:0 不能省：图片是网格子项，自动最小尺寸会按图片的宽高比把它撑到
+   比图片区还高（竖图尤其明显），object-fit:contain 也就没机会缩，图的下半部分就被切掉了。
+   鼠标停在大图上滚动切上一张/下一张（滚轮绑定见 app.js 的 detailGallery）。 */
+.detail-gallery-main img{display:block;width:100%;height:100%;min-width:0;min-height:0;object-fit:contain}
 .detail-gallery-main .preview-placeholder{color:var(--muted);font-size:12px}
 .detail-gallery-thumbs{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
 .detail-gallery-thumbs button{flex:0 0 auto;width:100px;height:64px;padding:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface);cursor:pointer}
@@ -560,3 +556,46 @@ html[data-icon-flying="true"] .rail-back,
 html[data-icon-flying="true"] .game-tile[data-game].active{background:transparent;box-shadow:none}
 html[data-icon-flying="true"] .game-tile[data-game].active:before{display:none}
 @media(prefers-reduced-motion:reduce){.notification-panel,.notification-panel.closing{animation-duration:.08s!important}}
+
+/* ===== 模组工坊细节：滚动分层、详情轮播、紧凑卡片 ===== */
+
+/* ① 滚动分层：二级（对话框）与三级（对话框内部的滚动区：分类列表、缩略图条、
+   消息列表、热键卡等）各滚各的，滚到自己的边界就停住，不把滚动传给上一层。
+   对话框打开期间锁住页面本身：内容不足一屏时，滚轮原本会直接滚到下面的页面上。 */
+html:has(dialog[open]),html:has(dialog[open]) body{overflow:hidden}
+.dialog-body,.category-list,.detail-gallery-thumbs,.notification-list,.home-active-mods,#software-notes pre{overscroll-behavior:contain}
+
+/* 详情页大图与「设置为热键提示」菜单不用在这里加规则：大图的尺寸跟在
+   .detail-gallery-main img 原位（见上方「详情页」一节）；菜单显示时被 app.js 挂进
+   当前对话框，.context-menu 的定位已经够它画在窗口内容之上。 */
+
+/* ② 工坊卡片：整块可点开详情（不再有「查看详情」按钮），方框上下收紧、排布更密。 */
+.mod-card{cursor:pointer}
+.mod-card:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.card-grid{gap:13px}
+.mod-card .preview{aspect-ratio:16/9}
+/* 占位卡片跟真卡片同高，加载完成时不会跳一下 */
+.mod-skeleton .skeleton-preview{aspect-ratio:16/9}
+.mod-card-body{padding:10px 12px 11px}
+.mod-card .eyebrow{margin-bottom:3px}
+.mod-card h3{font-size:14px}
+.mod-card .meta{margin:4px 0 7px;font-size:11.5px;line-height:1.5}
+
+.notification-section>summary{cursor:pointer;display:list-item;list-style:disclosure-closed inside}
+.notification-section[open]>summary{list-style-type:disclosure-open}
+
+/* 本机模组预览轮播与资料编辑 */
+.library-thumb{position:relative}
+.preview-arrow{position:absolute;top:50%;transform:translateY(-50%);width:26px;height:32px;border:0;border-radius:7px;background:#171a24c9;color:white;font-size:24px;line-height:1;cursor:pointer;opacity:0;transition:opacity .15s}
+.preview-arrow.previous{left:5px}.preview-arrow.next{right:5px}
+.library-thumb:hover .preview-arrow,.library-thumb:focus-within .preview-arrow{opacity:1}
+.preview-position{position:absolute;bottom:5px;right:6px;padding:1px 5px;border-radius:5px;background:#171a24b8;color:white;font-size:10px;pointer-events:none}
+.skin-mod-badge{display:inline-block;margin-left:7px;padding:2px 6px;border:1px solid var(--line);border-radius:5px;font-size:10px;font-weight:400;color:var(--muted);vertical-align:middle}
+.profile-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:12px;padding:8px 0}
+.profile-preview,.profile-add-tile{position:relative;min-width:0;aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:var(--surface)}
+.profile-preview img{width:100%;height:100%;object-fit:contain}
+.profile-remove{position:absolute;top:5px;right:5px;width:26px;height:26px;border:0;border-radius:50%;background:#191b25dd;color:white;cursor:pointer;font-size:20px}
+.profile-add-tile{border:1px dashed var(--muted);display:grid;place-items:center}
+.profile-add{width:100%;height:100%;background:none;border:0;color:var(--muted);cursor:pointer;display:grid;align-content:center;justify-items:center;gap:5px}
+.profile-add>span{font-size:32px}.profile-add-options{position:absolute;inset:0;background:var(--surface);display:grid;align-content:center;gap:7px;padding:10px}
+.profile-error{color:var(--danger);font-size:13px}.notification-section{border-bottom:1px solid var(--line)}

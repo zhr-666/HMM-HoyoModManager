@@ -5,13 +5,13 @@
 //
 // 两条规则：
 // ① 手动点的检查一定有回音 —— 无论有没有更新都告诉用户检查完了；
-// ② 自动/周期检查保持安静 —— 只有确实查到更新时才打扰用户，否则每 6 小时报一次平安太吵。
+// ② 自动/周期检查保持安静 —— 查到更新或检查失败时才打扰用户，否则每 6 小时报一次平安太吵。
 function summarizeUpdateCheck(result = {}, { automatic = false } = {}) {
   const updates = result.updates || [];
   const failures = result.failures || [];
-  const notable = !automatic || updates.length > 0;
+  const notable = !automatic || updates.length > 0 || failures.length > 0;
   if (!notable) return null;
-  const headline = updates.length ? `${updates.length} 个模组有更新` : '全部模组已是最新';
+  const headline = updates.length ? `${updates.length} 个模组有更新` : failures.length ? '未发现可用更新' : '全部模组已是最新';
   const issue = failures.length ? `（${failures.length} 个检查失败）` : '';
   return {
     text: `检查更新完成：${headline}${issue}`,

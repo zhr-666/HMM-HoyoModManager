@@ -17,6 +17,17 @@ test('failed installation preserves download and metadata and retry does not dow
   assert.equal(done.cached,false,'安装成功后安装包被删除，不再占用空间');
   await assert.rejects(fs.access(path.join(service.folder('55-88'),'package.zip')));
 });
+test('successful GameBanana installation caches its preview locally',async t=>{
+  const {InstallService}=require('../src/core/install-service.cjs');
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-install-preview-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const lib=new Library(root),downloads=[];await lib.init();
+  const service=new InstallService(root,{lib,api:{detail:async()=>({id:55,name:'Previewed',preview:'https://images.gamebanana.com/img/ss/mods/preview.jpg',files:[{id:88,name:'mod.zip',url:'https://gamebanana.com/dl/88',size:3}]})},download:async(url,destination)=>{downloads.push(url);await fs.writeFile(destination,url.includes('preview.jpg')?'image':'zip');},extract:async(_a,d)=>{await fs.mkdir(d);await fs.writeFile(path.join(d,'mod.ini'),'[mod]');}});
+  await service.install({sourceId:55,fileId:88,characterId:'1',characterName:'Amber'});
+  const mod=lib.snapshot().mods[0];
+  assert.match(mod.previewLocal,/^hoyo:\/\/app\/mod-preview\//);
+  assert.equal(downloads.filter(url=>url.includes('preview.jpg')).length,1);
+  assert.equal(await fs.readFile(require('../src/core/preview-cache.cjs').resolvePreview(root,mod.previewLocal),'utf8'),'image');
+});
 test('package cleanup removes leftover installers without touching download records',async t=>{
   const {InstallService}=require('../src/core/install-service.cjs');
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-purge-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));

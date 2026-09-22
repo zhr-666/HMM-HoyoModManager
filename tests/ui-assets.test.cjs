@@ -37,3 +37,9 @@ test('启动时清掉 Chromium 缓存目录，但不碰同一目录下的其他�
  const left=(await fs.readdir(session)).sort();
  assert.deepEqual(left,['Local Storage','Preferences'],'应只清缓存目录，保留会话数据');
 });
+
+test('注册游戏的图标与默认背景均有白名单和实体文件',async()=>{
+ for(const game of require('../src/core/games.cjs').GAMES)for(const name of [game.icon,game.background]){
+  assert.ok(UI_ASSETS.includes(name),name);assert.ok((await fs.stat(path.join(__dirname,'..','src','ui',name))).size>0);
+ }
+});

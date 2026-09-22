@@ -179,7 +179,8 @@ async function main(){
   const failed='后台任务失败：网络不可用';
   await evaluate(`window.hoyo.call("addNotification",{text:${quoted(failed)},tone:"error"})`);
   await waitFor('document.querySelector("#notification-badge").hidden===false','主进程消息推高角标');
-  assert.ok(Number(await evaluate('document.querySelector("#notification-badge").textContent'))>=1,'角标应显示未读数');
+  assert.equal(await evaluate('document.querySelector("#notification-badge").textContent'),'','未读仅显示红点，不显示数字');
+  assert.equal(await evaluate('getComputedStyle(document.querySelector("#notification-button")).animationName'),'none','未读不闪烁');
   await evaluate('document.querySelector("#notification-button").click()');
   await waitItem(failed);
   assert.equal(await itemError(failed),true,'错误消息应有错误样式');
@@ -236,4 +237,4 @@ async function main(){
 }
 
 main().catch(error=>{console.error('通知中心冒烟测试失败：'+error.message);process.exitCode=1})
-  .finally(()=>{if(child)child.kill('SIGTERM');if(dataDir)fs.rm(dataDir,{recursive:true,force:true}).catch(()=>{});setTimeout(()=>process.exit(process.exitCode||0),500)});
+  .finally(()=>{if(child)child.kill('SIGTERM');if(dataDir)fs.rm(dataDir,{recursive:true,force:true,maxRetries:5,retryDelay:200}).catch(()=>{});setTimeout(()=>process.exit(process.exitCode||0),500)});

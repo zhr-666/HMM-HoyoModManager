@@ -2,8 +2,7 @@ const network = require('./network.cjs');
 const {characterGroups}=require('./character-groups.cjs');
 
 const API = 'https://gamebanana.com/apiv11';
-const GAME_ID = 8552;
-const SKINS_CATEGORY_ID = 17510;
+const {getGame}=require('./games.cjs');
 const SORTS = {
   downloads: 'Generic_MostDownloaded',
   uploaded: 'Generic_Newest',
@@ -78,7 +77,8 @@ function baseRecord(row) {
 }
 
 class GameBanana {
-  constructor(json = network.json) {
+  constructor(json = network.json, gameId = 'genshin') {
+    this.game = getGame(gameId);
     this.json = json;
     this.countCache = new Map();
     this.categoryRoots = new Map();
@@ -119,7 +119,7 @@ class GameBanana {
         if (Number(row._nCategoryCount) > 0) queue.push({node,root:root || node});
       }
     };
-    append(await fetchRows({_idGameRow:String(GAME_ID)}), roots);
+    append(await fetchRows({_idGameRow:String(this.game.gameBananaId)}), roots);
     while (queue.length) {
       const batch = queue.splice(0,4);
       await Promise.all(batch.map(async ({node,root}) => append(await fetchRows({_idCategoryRow:String(node.id)}),node.children,root)));
@@ -149,15 +149,12 @@ class GameBanana {
   }
 
   async categories() {
-    const params = new URLSearchParams({
-      _idCategoryRow: String(SKINS_CATEGORY_ID),
-      _sSort: 'a_to_z',
-      _bShowEmpty: 'true'
-    });
-    const groups = await this.json(`${API}/Mod/Categories?${params}`);
-    const characters = groups.find(group => group._sName === 'Characters');
-    if (!characters?._idRow) throw new Error('GameBanana 未返回原神角色分类。');
-    const rows = await this.json(`${API}/ModCategory/${characters._idRow}/SubCategories`);
+    if(this.game.skinsCategoryId!==this.game.charactersCategoryId){
+      const params=new URLSearchParams({_idCategoryRow:String(this.game.skinsCategoryId),_sSort:'a_to_z',_bShowEmpty:'true'});
+      const groups=await this.json(`${API}/Mod/Categories?${params}`);
+      if(!groups.some(group=>Number(group._idRow)===this.game.charactersCategoryId))throw new Error(`GameBanana 未返回${this.game.name}角色分类。`);
+    }
+    const rows = await this.json(`${API}/ModCategory/${this.game.charactersCategoryId}/SubCategories`);
     return rows.map(row => ({
       id: Number(row._idRow) || rowId(row._sUrl || row._sProfileUrl),
       name: row._sName || '',
@@ -171,7 +168,7 @@ class GameBanana {
     const params = new URLSearchParams({
       _nPage: String(page),
       _nPerpage: '20',
-      '_aFilters[Generic_Game]': String(GAME_ID),
+      '_aFilters[Generic_Game]': String(this.game.gameBananaId),
       _sSort: SORTS[sort] || SORTS.uploaded
     });
     if (category) params.set('_aFilters[Generic_Category]', String(category));
@@ -179,7 +176,7 @@ class GameBanana {
     if (sfw && !nsfw) params.set('_aFilters[Generic_ContentRatings]', '-');
     const data = await this.json(`${API}/Mod/Index?${params}`);
     let records = (data._aRecords || [])
-      .filter(row => row._sModelName === 'Mod' && Number(row._aGame?._idRow) === GAME_ID)
+      .filter(row => row._sModelName === 'Mod' && Number(row._aGame?._idRow) === this.game.gameBananaId)
       .map(baseRecord);
     const scanned = !sfw && nsfw;
     if (scanned) records = records.filter(row => row.nsfw);
@@ -196,7 +193,7 @@ class GameBanana {
     id = Number.parseInt(id, 10);
     if (!Number.isInteger(id) || id < 1) throw new Error('GameBanana Mod ID 无效。');
     const row = await this.json(`${API}/Mod/${id}/ProfilePage`);
-    if (Number(row._aGame?._idRow) !== GAME_ID) throw new Error('该 Mod 不属于原神。');
+    if (Number(row._aGame?._idRow) !== this.game.gameBananaId) throw new Error(`该 Mod 不属于${this.game.name}。`);
     const record = baseRecord(row);
     let taxonomy;
     if (!record.rootCategoryId && record.characterId) {
@@ -204,13 +201,13 @@ class GameBanana {
       const root = this.categoryRoots.get(record.characterId);
       if (root) { record.rootCategoryId = root.id; record.rootCategoryName = root.name; }
     }
-    if(record.rootCategoryId&&record.rootCategoryId!==SKINS_CATEGORY_ID)record.characterGroupId=null;
+    if(record.rootCategoryId&&record.rootCategoryId!==this.game.skinsCategoryId)record.characterGroupId=null;
     else if(record.characterId){
       try{
-        const groups=characterGroups(taxonomy||await this.taxonomy());
+        const groups=characterGroups(taxonomy||await this.taxonomy(),this.game.charactersCategoryId);
         if(groups.has(String(record.characterId)))record.characterGroupId=groups.get(String(record.characterId));
       }catch{ /* Cached library classification remains available offline. */ }
-      if(record.characterGroupId===undefined&&Number(row._aSuperCategory?._idRow)===18140)record.characterGroupId=String(record.characterId);
+      if(record.characterGroupId===undefined&&Number(row._aSuperCategory?._idRow)===this.game.charactersCategoryId)record.characterGroupId=String(record.characterId);
     }
     return {
       ...record,
