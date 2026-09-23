@@ -84,9 +84,9 @@ try {
 
 ## 自动检查
 
-`.github/workflows/check.yml` 在 push、pull_request 或手动触发时，在 Windows 和 macOS 上安装锁定依赖并执行 `pnpm check`。只有工作流提交并推送到 GitHub 后才会触发远程运行；本地添加配置不代表 CI 已经通过。
+`.github/workflows/check.yml` 在 push、pull_request 或手动触发时，在 Windows 和 macOS 上安装锁定依赖并执行 `pnpm check`。Windows 任务还构建 x64 ZIP、校验包内容与更新准备，并在 Windows 桌面运行四游戏导航冒烟测试。只有工作流提交并推送到 GitHub 后才会触发远程运行；本地添加配置不代表 CI 已经通过。
 
-CI 不构建、不上传、不发布，不含桌面 UI 与 Windows 人工验收。仓库分支保护需要在 GitHub 设置中另外启用，当前文件不会自动设置保护规则。
+CI 不上传、不发布，不能代替 Windows 上使用真实游戏和 WWMI 的人工验收。仓库分支保护需要在 GitHub 设置中另外启用，当前文件不会自动设置保护规则。
 
 ## 发布清单
 
