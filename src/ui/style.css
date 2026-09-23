@@ -264,6 +264,8 @@ html[data-mode="launcher"][data-page="home"] .app-backdrop video{filter:none}
 html[data-mode="launcher"][data-page="home"] .app-backdrop img{filter:none}
 .app-backdrop:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,color-mix(in srgb,var(--bg) 64%,transparent),color-mix(in srgb,var(--bg) 78%,transparent));transition:background .32s ease}
 html[data-mode="launcher"][data-page="home"] .app-backdrop:after{background:linear-gradient(180deg,#10233848,transparent 45%,#10233885)}
+html[data-empty-home="true"][data-page="home"] .app-backdrop{background:#404348}
+html[data-empty-home="true"][data-page="home"] .app-backdrop:after,html[data-empty-home="true"][data-page="home"] .app-backdrop img,html[data-empty-home="true"][data-page="home"] .app-backdrop video,html[data-empty-home="true"][data-page="home"] .launcher-stage,html[data-empty-home="true"][data-page="home"] #game-logo,html[data-empty-home="true"][data-page="home"] #notification-center{display:none}
 .app-shell{position:relative;z-index:1}.sidebar{z-index:15}
 html[data-page="home"] .topbar{color:#fff;border-color:#ffffff35}
 html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex-direction:column;flex:1;min-height:0;justify-content:flex-end;animation-name:home-enter}

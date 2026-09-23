@@ -87,13 +87,24 @@ async function main(){
   const {evaluate,waitFor}=fresh;await waitFor('initialStateLoaded&&GAMES.length===4','首次启动四游戏清单');
   await sleep(1200);
   assert.equal(await evaluate(`document.querySelectorAll('#game-list .game-tile').length`),0);
+  assert.equal(await evaluate(`document.documentElement.dataset.emptyHome`),'true');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#page-home .launcher-stage')).display`),'none');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#app-background')).display`),'none');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.app-backdrop')).backgroundColor`),'rgb(64, 67, 72)');
+  if(process.env.HOYO_SCREENSHOT_DIR){await fs.mkdir(process.env.HOYO_SCREENSHOT_DIR,{recursive:true});const shot=await fresh.client.send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(process.env.HOYO_SCREENSHOT_DIR,'empty-home.png'),Buffer.from(shot.data,'base64'));}
   await assert.rejects(fs.access(path.join(data,'games')),{code:'ENOENT'});
+  await evaluate(`showPage('games')`);
   await evaluate(`document.querySelector('#page-games .game-card[data-game="wuwa"]').click()`);
-  await waitFor(`addedGameIds.includes('wuwa')&&busyCount===0`,'添加鸣潮');
+  await waitFor(`addedGameIds.includes('wuwa')&&activePage==='home'&&busyCount===0`,'添加鸣潮并进入主页');
+  assert.equal(await evaluate(`document.documentElement.dataset.emptyHome`),'false');
   await fs.access(path.join(data,'games','wuwa','state.json'));
   await assert.rejects(fs.access(path.join(data,'games','genshin')),{code:'ENOENT'});
+  await evaluate(`showPage('games')`);
   await evaluate(`document.querySelector('#page-games .game-card[data-game="genshin"]').click()`);
-  await waitFor(`addedGameIds.length===2&&busyCount===0`,'添加原神');
+  await waitFor(`addedGameIds.length===2&&activePage==='home'&&busyCount===0`,'添加原神并进入主页');
+  await evaluate(`showPage('games');(()=>{const tile=document.querySelector('#page-games .game-card[data-game="genshin"]');tile.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1}));tile.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:2}));tile.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}))})()`);
+  await waitFor(`activePage==='workshop'`,'双击仍进入工作空间');
+  await evaluate(`showPage('home')`);
   assert.deepEqual(await evaluate(`addedGameIds`),['wuwa','genshin']);
   assert.equal(await evaluate(`document.querySelector('#game-list [data-game="genshin"]').getBoundingClientRect().top>document.querySelector('#game-list [data-game="wuwa"]').getBoundingClientRect().top`),true,'新游戏应在最下方');
   await evaluate(`showPage('home');document.querySelector('#home-open-library').click()`);

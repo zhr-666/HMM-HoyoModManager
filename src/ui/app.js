@@ -286,8 +286,9 @@ function renderGameValues(root=document){
   for(const input of $$('[data-program-tabs]',root))input.checked=state.settings.programTabs===true;
   for(const el of $$('[data-secondary-program]',root))el.textContent=state.settings.secondaryExe||'尚未选择';
   const game=gameById(activeGame);
-  for(const input of $$('[data-auto-background]',root)){input.checked=state.settings.autoBackground===true;input.disabled=!game.officialBackgroundId;input.closest('.setting-row').hidden=!game.officialBackgroundId;}
-  for(const button of $$('#fetch-background, #game-fetch-background',root)){button.disabled=!game.officialBackgroundId;button.title=game.officialBackgroundId?'':'当前游戏暂无官方启动器背景接口';}
+  const supportsOfficialBackground=!!(game.officialBackgroundId||game.officialBackgroundProvider);
+  for(const input of $$('[data-auto-background]',root)){input.checked=state.settings.autoBackground===true;input.disabled=!supportsOfficialBackground;input.closest('.setting-row').hidden=!supportsOfficialBackground;}
+  for(const button of $$('#fetch-background, #game-fetch-background',root)){button.disabled=!supportsOfficialBackground;button.title=supportsOfficialBackground?'':'当前游戏暂无官方启动器背景接口';}
   const importer=game.importer;
   for(const el of $$('[data-loader-label]',root))el.textContent=importer+' 文件夹';
   $('#choose-mods').textContent='选择 '+importer+' 文件夹';
@@ -299,7 +300,7 @@ function renderGameValues(root=document){
 }
 // snapshot().settings 是「全局 + 当前游戏」的生效设置：加载器 Mods 路径、外部程序、启动器背景
 // 都来自当前游戏（需求 27），页面显示与读写都按这一份走。
-function renderState(){state.settings??={};state.mods??=[];state.presets??=[];state.gameSettings??={};$('#data-root').textContent=state.runtime?.dataRoot?`数据目录：${state.runtime.dataRoot}`:'数据目录不可用';$('#auto-check-app-updates').checked=state.settings.autoCheckAppUpdates!==false;$('#software-version').textContent=state.runtime?.version?'v'+state.runtime.version:'';$('#auto-enable').checked=!!state.settings.autoEnable;$('#auto-check-updates').checked=!!state.settings.autoCheckUpdates;$('#blur-nsfw').checked=state.settings.blurNsfw!==false;$('#use-links').checked=state.settings.useLinks!==false;renderGameValues();renderAppearance();refreshInstallAvailability();renderLibrary();renderPresets();renderHome();renderGamesPage();for(const selector of ['#home-open-library','#home-open-presets','#home-game-settings','#launch-button'])$(selector).disabled=!addedGameIds.length;$('#game-logo').hidden=!addedGameIds.length;}
+function renderState(){state.settings??={};state.mods??=[];state.presets??=[];state.gameSettings??={};document.documentElement.dataset.emptyHome=String(!addedGameIds.length);$('#data-root').textContent=state.runtime?.dataRoot?`数据目录：${state.runtime.dataRoot}`:'数据目录不可用';$('#auto-check-app-updates').checked=state.settings.autoCheckAppUpdates!==false;$('#software-version').textContent=state.runtime?.version?'v'+state.runtime.version:'';$('#auto-enable').checked=!!state.settings.autoEnable;$('#auto-check-updates').checked=!!state.settings.autoCheckUpdates;$('#blur-nsfw').checked=state.settings.blurNsfw!==false;$('#use-links').checked=state.settings.useLinks!==false;renderGameValues();renderAppearance();refreshInstallAvailability();renderLibrary();renderPresets();renderHome();renderGamesPage();for(const selector of ['#home-open-library','#home-open-presets','#home-game-settings','#launch-button'])$(selector).disabled=!addedGameIds.length;$('#game-logo').hidden=!addedGameIds.length;}
 function imageMarkup(url,alt,nsfw=false){const safe=safeImage(url),blur=nsfw&&state.settings.blurNsfw!==false;return safe?`<img src="${esc(safe)}" alt="${esc(alt)}" loading="lazy" class="${blur?'nsfw-image':''}">${blur?'<span class="nsfw-cover">NSFW · 点击查看</span>':''}`:'<div class="preview-placeholder">暂无预览</div>'}
 function revealNsfw(root){$('.nsfw-image',root)?.classList.remove('nsfw-image');$('.nsfw-cover',root)?.remove()}
 function openSourceItem(item){if(!item?.sourceId&&!item?.id)return;call('openSource',{id:Number(item.sourceId||item.id)}).catch(()=>{})}
@@ -428,7 +429,7 @@ function openGameSettings(){
   q('#game-choose-program').onclick=()=>call('chooseProgram',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
   q('#game-choose-background').onclick=()=>call('chooseBackground',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
   q('#game-reset-background').onclick=()=>call('resetBackground',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
-  q('#game-fetch-background').onclick=async()=>{try{await call('fetchOfficialBackground',{gameId:activeGame},{reload:true});notify('已更新为米哈游官方最新背景。')}catch(error){notifyError(error)}};
+  q('#game-fetch-background').onclick=async()=>{try{await call('fetchOfficialBackground',{gameId:activeGame},{reload:true});notify('已更新为官方最新背景。')}catch(error){notifyError(error)}};
 }
 // 切换当前游戏：先让主进程记住，再用返回的快照重渲染（背景、加载器路径等都跟着变）。
 const gameViews=new Map();let gameSwitch=null;
@@ -467,7 +468,7 @@ function renderGameRails(){
   const image=game=>`<img src="${game.icon}" alt="" draggable="false">`;
   list.innerHTML=addedGameIds.toReversed().map(id=>gameById(id)).map(game=>`<button type="button" class="game-tile${game.id===activeGame?' active':''}" data-game="${game.id}" data-testid="game-tile" title="${esc(GAME_HINT)}；右键移除游戏" aria-label="${esc(game.name)}：${esc(GAME_HINT)}">${image(game)}</button>`).join('');
   back.innerHTML=image(gameById(activeGame));
-  const grid=$('#page-games .game-grid');if(grid){grid.innerHTML=GAMES.map(game=>`<button type="button" class="game-card${addedGameIds.includes(game.id)?' added':''}" data-game="${game.id}" data-testid="game-card" title="单击添加到首页；${esc(GAME_HINT)}">${image(game)}<strong>${esc(game.name)}</strong></button>`).join('');for(const tile of $$('[data-game]',grid)){tile.onclick=()=>selectGame(tile.dataset.game);tile.ondblclick=()=>enterWorkspace(tile.dataset.game,tile);tile.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();enterWorkspace(tile.dataset.game,tile)}}}}
+  const grid=$('#page-games .game-grid');if(grid){grid.innerHTML=GAMES.map(game=>`<button type="button" class="game-card${addedGameIds.includes(game.id)?' added':''}" data-game="${game.id}" data-testid="game-card" title="单击进入游戏首页；${esc(GAME_HINT)}">${image(game)}<strong>${esc(game.name)}</strong></button>`).join('');for(const tile of $$('[data-game]',grid)){let clickTimer;tile.onclick=event=>{if(event.detail>1)return;clearTimeout(clickTimer);clickTimer=setTimeout(async()=>{if(await selectGame(tile.dataset.game))showPage('home')},220)};tile.ondblclick=()=>{clearTimeout(clickTimer);enterWorkspace(tile.dataset.game,tile)};tile.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();enterWorkspace(tile.dataset.game,tile)}}}}
 
   for(const tile of $$('.game-tile[data-game]',list)){
     tile.onclick=async()=>{if(await selectGame(tile.dataset.game))showPage('home')};
@@ -887,7 +888,7 @@ $('#home-open-library').onclick=()=>enterWorkspace(activeGame,$(`.rail-launcher 
 $('#home-game-settings').onclick=()=>openGameSettings();
 // 返回首页：走与进入时对应的反向飞行动画（需求 3）。
 $('#rail-back').onclick=()=>leaveWorkspace();
-$('#fetch-background').onclick=async()=>{try{await call('fetchOfficialBackground',{gameId:activeGame},{reload:true});notify('已更新为米哈游官方最新背景。')}catch(error){notifyError(error)}};
+$('#fetch-background').onclick=async()=>{try{await call('fetchOfficialBackground',{gameId:activeGame},{reload:true});notify('已更新为官方最新背景。')}catch(error){notifyError(error)}};
 addBackgroundSwitch(document);
 renderGameRails();
 syncGameTiles();

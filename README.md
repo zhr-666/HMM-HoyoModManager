@@ -19,7 +19,7 @@
 ## 使用
 
 1. 从 [Releases](https://github.com/zhr-666/HMM-HoyoModManager/releases/latest) 下载 Windows x64 ZIP，完整解压后运行 `HoYoMod.exe`。
-2. 在「全部游戏」单击需要管理的游戏，将其加入首页左侧；在游戏设置中选择对应的 GIMI / ZZMI / SRMI / WWMI 文件夹。
+2. 在「全部游戏」单击需要管理的游戏，将其加入首页左侧并进入该游戏首页；在游戏设置中选择对应的 GIMI / ZZMI / SRMI / WWMI 文件夹。
 3. 下载或导入模组，**安装**到本机安装库，再**启用**到对应加载器的 Mods 目录，让模组在游戏内生效。
 
 每款游戏的数据集中保存在 `data/games/<游戏 ID>/`。全局设置与应用会话保存在 `data`；备份或移动程序时请保留整个目录。本项目不自动迁移旧版分散的数据目录。

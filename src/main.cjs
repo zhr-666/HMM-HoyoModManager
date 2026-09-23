@@ -152,9 +152,13 @@ async function changed(work){await work();return snapshot();}
 function gameScope(payload){return String(payload?.gameId||lib.snapshot().activeGame);}
 async function updateOfficialBackground(){
   const game=workspace().game;
-  if(!game.officialBackgroundId)throw Error('当前游戏暂无可获取的官方启动器背景。');
-  const info=await network.json(OFFICIAL_BACKGROUND_API);
-  const entry=info?.data?.game_info_list?.find(item=>item?.game?.biz===game.officialBackgroundId);
+  if(!game.officialBackgroundId&&!game.officialBackgroundProvider)throw Error('当前游戏暂无可获取的官方启动器背景。');
+  let entry;
+  if(game.officialBackgroundProvider==='kuro')entry=await require('./core/kuro-background.cjs').kuroBackgroundEntry(network.json);
+  else{
+    const info=await network.json(OFFICIAL_BACKGROUND_API);
+    entry=info?.data?.game_info_list?.find(item=>item?.game?.biz===game.officialBackgroundId);
+  }
   await backgrounds.update(game.id,entry,network.download);
   send('state',snapshot());return snapshot();
 }
