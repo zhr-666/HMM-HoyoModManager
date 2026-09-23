@@ -439,7 +439,7 @@ test('enabling a mod links the library copy instead of copying it, and disabling
  const deployed=path.join(target,mod.id),stat=await fs.lstat(deployed);
  assert.ok(stat.isSymbolicLink(),'启用后应当在 HoYoModManaged 下创建链接目录');
  assert.equal(await fs.readlink(deployed).then(link=>path.resolve(path.dirname(deployed),link)),path.resolve(mod.folder));
- assert.equal(deployment.linkType(deployed,path.join(library.libraryRoot,'x')),'dir');
+ assert.equal(deployment.linkType(deployed,path.join(library.libraryRoot,'x')),process.platform==='win32'?'junction':'dir');
  assert.equal(await fs.readFile(path.join(deployed,'linked.ini'),'utf8'),'[TextureOverride]');
  await fs.writeFile(path.join(mod.folder,'extra.ini'),'[Extra]');
  assert.equal(await fs.readFile(path.join(deployed,'extra.ini'),'utf8'),'[Extra]');
