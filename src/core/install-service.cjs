@@ -53,7 +53,7 @@ class InstallService{
       if(aborted())throw cancelledError();
       if(old?.active&&!await this.confirmEnable(old,detail,{action:'retryDownload',payload:p.queueId?{id:p.queueId}:{key}}))throw Error('已取消更新，原模组保持不变。');
       const mod=await this.lib.install(unpacked,{...job,downloadReceipt:job.receipt,downloadQueueId:p.queueId,...(old?{id:old.id,expectedFolder:old.folder}:{}),updatedAt:detail.updatedAt,preview:detail.preview,author:detail.author});
-      // 预览图随安装结果落到 data/previews；缓存失败不影响模组安装，旧的远程地址仍可作为兜底。
+      // 预览图随安装结果落到 data/games/<游戏>/previews；缓存失败不影响模组安装，旧的远程地址仍可作为兜底。
       if(detail.preview&&!Array.isArray(old?.previews)){try{const previewLocal=await cachePreview(this.previewRoot,mod.id,detail.preview,this.download);if(previewLocal)await this.lib.updateMetadata(mod.id,{previewLocal});}catch{/* 图片不可用时不阻断模组安装。 */}}
       job.installedId=mod.id;job.status='installed';
       let message='模组已安装。';

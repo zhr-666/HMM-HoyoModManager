@@ -14,7 +14,7 @@ const disk=require('original-fs').promises,fs=require('node:fs/promises');
   const existing=path.join(appDir,'resources','app.asar');await disk.copyFile(path.join(project,'dist/win-unpacked/resources/app.asar'),existing);
   const physicalDigest=async file=>require('node:crypto').createHash('sha256').update(await disk.readFile(file)).digest('hex');const oldDigest=await physicalDigest(existing);assert.equal((await fs.stat(existing)).isDirectory(),true,'Electron exposes a real ASAR as a virtual directory');assert.equal((await disk.stat(existing)).isFile(),true);
   const name=path.basename(zip),v=name.match(/^HoYoMod-(\d+\.\d+\.\d+)-Windows-x64.zip$/)[1],digest=await sha256(zip),size=(await disk.stat(zip)).size;
-  const service=new AppUpdate({appDir,version:'0.9.0',protectedPaths:()=>[data,gimi],json:async()=>({tag_name:'v'+v,assets:[{name,size,digest,browser_download_url:`https://github.com/zhr-666/HoYoMod/releases/download/v${v}/${name}`}]}),download:async(_url,out)=>disk.copyFile(zip,out),extract});
+  const service=new AppUpdate({appDir,version:'0.9.0',protectedPaths:()=>[data,gimi],json:async()=>({tag_name:'v'+v,assets:[{name,size,digest,browser_download_url:`https://github.com/zhr-666/HMM-HoyoModManager/releases/download/v${v}/${name}`}]}),download:async(_url,out)=>disk.copyFile(zip,out),extract});
   await service.check();assert.equal((await service.prepare()).status,'ready');
   const plan=JSON.parse(await disk.readFile(path.join(service.job,'plan.json'),'utf8'));
   await replacementPlan(appDir,plan.staging,[data,gimi]);

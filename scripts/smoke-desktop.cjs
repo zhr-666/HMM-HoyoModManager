@@ -4,15 +4,15 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const os=require('node:os');
 const assert=require('node:assert/strict');
-const {Library}=require('../src/core/library.cjs');
+const Workspaces=require('../src/core/workspaces.cjs');
 (async()=>{
   const data=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-desktop-'));
   const input=path.join(data,'sample');await fs.mkdir(input);await fs.writeFile(path.join(input,'sample.ini'),'[Constants]\n$hat = 0\n[KeyHat]\nkey = H\nback = SHIFT H\ntype = cycle\n$hat = 0, 1\n[TextureOverrideBody]\nhash = aabbccdd\n');
-  const lib=new Library(data);await lib.init();
+  const store=await new Workspaces(data).init(),lib=store.get('genshin').lib;
   const a=await lib.install(input,{name:'本地样例 A',characterId:'18959',characterName:'Mona'});
   const b=await lib.install(input,{name:'本地样例 B',characterId:'18959',characterName:'Mona'});
-  const modsPath=path.join(data,'GIMI','Mods');await fs.mkdir(modsPath,{recursive:true});await fs.writeFile(path.join(path.dirname(modsPath),'d3dx.ini'),'[Include]');
-  await fs.writeFile(path.join(data,'taxonomy.json'),JSON.stringify([{id:17510,name:'Skins',children:[{id:18140,name:'Characters',children:[{id:18959,name:'Mona',children:[]}]}]}]));
+  const modsPath=path.join(data,'..',path.basename(data)+'-GIMI','Mods');await fs.mkdir(modsPath,{recursive:true});await fs.writeFile(path.join(path.dirname(modsPath),'d3dx.ini'),'[Include]');
+  await fs.writeFile(path.join(lib.root,'taxonomy.json'),JSON.stringify([{id:17510,name:'Skins',children:[{id:18140,name:'Characters',children:[{id:18959,name:'Mona',children:[]}]}]}]));
   const packaged=process.env.HOYOMOD_PACKAGED;
   const app=await _electron.launch({executablePath:packaged||require('electron'),args:packaged?[]:[path.resolve(__dirname,'..')],env:{...process.env,HOYOMOD_DATA:data},timeout:30000});
   try {
@@ -68,5 +68,5 @@ const {Library}=require('../src/core/library.cjs');
     await page.screenshot({path:path.join(out,'settings.png'),fullPage:true});
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({passed:true,checks:['real Electron IPC','same-character replacement','presets','settings','settings UI'],screenshot:path.join(out,'settings.png')}));
-  }finally{await app.close();await fs.rm(data,{recursive:true,force:true});}
+  }finally{await app.close();await fs.rm(path.join(data,'..',path.basename(data)+'-GIMI'),{recursive:true,force:true});await fs.rm(data,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

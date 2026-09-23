@@ -298,7 +298,7 @@ function bindLibraryPreview(element,mod){
  $('.previous',thumb)?.addEventListener('click',event=>{event.stopPropagation();change(-1)});
  $('.next',thumb)?.addEventListener('click',event=>{event.stopPropagation();change(1)});
 }
-// 草稿图片留在内存，只有点保存/开始安装才经主进程复制进 data/previews。
+// 草稿图片留在内存，只有点保存/开始安装才经主进程复制进 data/games/<游戏>/previews。
 function editModProfile(mod,{importing=false,previewsOnly=false,onSave}={}){
  let images=modPreviews(mod),working=false,settled=false;
  const body=`${previewsOnly?'':`<div class="field"><label for="profile-author">作者（选填）</label><input id="profile-author" maxlength="200" value="${esc(mod.author||'')}" placeholder="填写作者名称"></div><div class="field"><label for="profile-source">来源网址（选填）</label><input id="profile-source" maxlength="2048" value="${esc(mod.sourceUrl||'')}" placeholder="https://"></div>`}<p class="meta">预览图（选填） · 可从文件或剪贴板添加，保存前可随时取消。</p><div class="profile-gallery"></div><p class="profile-error" role="alert" hidden></p>`;
@@ -1010,7 +1010,7 @@ function showFolderContext(event,node){
 }
 function showModContext(event,mod){
  event.preventDefault();event.stopPropagation();const menu=$('#context-menu');$$('.mod-context-action',menu).forEach(b=>b.remove());$('#context-refresh').hidden=true;
- // 术语与页面顶部按钮一致：安装库 = data/library，启用库 = 当前游戏加载器的 Mods 目录。
+ // 术语与页面顶部按钮一致：安装库 = data/games/<游戏>/library，启用库 = 当前游戏加载器的 Mods 目录。
  const ignored=(mod.ignoredUpdates||[]).length;
  const items=[['重命名',()=>renameMod(mod)],['编辑来源和作者',()=>editInstalledProfile(mod)],['添加 / 修改预览图',()=>editInstalledProfile(mod,true)],[mod.isSkinMod?'取消皮肤模组标记':'设为皮肤模组',()=>mutate('setSkinMod',{id:mod.id,value:!mod.isSkinMod})],['移除',()=>confirmRemove(mod)],...(mod.sourceId?[['来源',()=>openSourceItem(mod)]]:mod.sourceUrl?[['打开来源网址',()=>call('openModSource',{id:mod.id}).catch(()=>{})]]:[]),['安装库',()=>openModFolder(mod,'library')],['启用库',()=>openModFolder(mod,'mods'),mod.active?'':'此模组未启用，当前游戏启用库中还没有它的文件。'],...(ignored?[[`已忽略版本：${ignored} 个`,()=>openIgnoredVersions(mod)]]:[])];
  for(const [text,fn,unavailable]of items){const b=document.createElement('button');b.type='button';b.className='mod-context-action';b.setAttribute('role','menuitem');b.textContent=text;b.disabled=busyCount>0||!!unavailable;if(unavailable)b.title=unavailable;b.onclick=()=>{hideContextMenu();fn();};menu.append(b);}

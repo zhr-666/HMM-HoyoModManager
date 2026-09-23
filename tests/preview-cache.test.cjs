@@ -43,3 +43,22 @@ test('caches category icons locally and reuses them on later taxonomy loads',asy
   assert.equal(second[0].children[0].icon,first[0].children[0].icon);
   assert.equal(await fs.stat(resolvePreview(root,second[0].icon)).then(s=>s.isFile()),true);
 });
+
+test('identical category IDs stay in their game and scoped URIs survive game changes',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-game-previews-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const {gameRoot}=require('../src/core/game-data.cjs');
+ const uris=[];
+ for(const id of ['genshin','zzz','hsr']){
+  const nodes=[{id:1,icon:'https://images.gamebanana.com/icon.png'}];
+  await cacheCategoryIcons(gameRoot(root,id),nodes,async(_url,file)=>fs.writeFile(file,id));
+  const uri=nodes[0].icon;uris.push(uri);
+  assert.equal(await fs.readFile(resolvePreview(root,uri),'utf8'),id);
+  assert.equal(resolvePreview(gameRoot(root,id),uri),resolvePreview(root,uri));
+  assert.equal(resolvePreview(gameRoot(root,id==='zzz'?'hsr':'zzz'),uri),null);
+ }
+ for(const uri of uris){
+  assert.equal(resolvePreview(root,uri.replace(/game=\w+/, 'game=..%2F..')),null);
+  assert.equal(resolvePreview(root,uri.replace(/game=\w+/, 'game=')),null);
+  assert.equal(resolvePreview(root,uri.replace('/mod-preview/','/mod-preview/..%2F')),null);
+ }
+});

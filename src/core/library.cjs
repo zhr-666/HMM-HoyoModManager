@@ -1,3 +1,4 @@
+const {DEFAULT_SETTINGS,GAME_SETTING_KEYS,validateSettingsPatch}=require('./settings.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -6,7 +7,7 @@ const hashReplace=require('./hash-replace.cjs');
 const {characterGroups}=require('./character-groups.cjs');
 
 const DEFAULT_STATE = Object.freeze({
-  settings: { autoCheckAppUpdates:true, launchExe:'', secondaryExe:'', programTabs:false, backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' },
+  settings: DEFAULT_SETTINGS,
   mods: [],
   folders: [],
   presets: [],
@@ -17,7 +18,6 @@ const DEFAULT_STATE = Object.freeze({
 });
 // 随游戏变化的本机路径/背景：按游戏各存一份，互不影响（需求 27）。
 // 其余设置是全局的：软件更新、自动检查、外观、代理等。
-const GAME_SETTING_KEYS = ['modsPath','launchExe','secondaryExe','programTabs','backgroundVersion','xxmiPath','autoBackground'];
 const validGameSetting=(key,value)=>typeof value===(['autoBackground','programTabs'].includes(key)?'boolean':'string');
 // 当前只有《原神》接入；games 里出现未知编号时按损坏记录丢弃。
 const KNOWN_GAMES = ['genshin'];
@@ -180,7 +180,7 @@ class Library {
         delete settings.theme;
         const games = this.gameId ? { [this.gameId]: Object.fromEntries(GAME_SETTING_KEYS.map(key=>{
           const own=saved.games?.[this.gameId]?.[key];
-          const legacy=this.gameId===DEFAULT_GAME||saved.activeGame===this.gameId?saved.settings?.[key]:'';
+          const legacy=saved.activeGame===this.gameId?saved.settings?.[key]:'';
           return [key,validGameSetting(key,own)?own:validGameSetting(key,legacy)?legacy:key==='autoBackground'?false:''];
         })) } : normalizeGames(saved.games);
         const activeGame = this.gameId || (KNOWN_GAMES.includes(saved.activeGame) ? saved.activeGame : DEFAULT_GAME);
@@ -519,21 +519,9 @@ class Library {
   // 可以像以前一样直接写 settings({modsPath})，界面上这两类设置始终分开显示。
   settings(patch,{gameId}={}) {
     return this._enqueue(async () => {
-      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('设置内容不能为空');
-      // 1.1.3 起只有深色模式：theme 不再是设置项，旧调用（含缓存里的旧界面）直接忽略，不按未知键报错。
-      if ('theme' in patch) { patch = { ...patch }; delete patch.theme; }
       const scoped = gameId !== undefined && gameId !== null && gameId !== '';
       if (scoped && !(this.gameId ? String(gameId)===this.gameId : KNOWN_GAMES.includes(String(gameId)))) throw new Error('未知的游戏设置。');
-      const allowed = new Set(scoped ? GAME_SETTING_KEYS : Object.keys(DEFAULT_STATE.settings));
-      allowed.add('autoBackground');
-      for (const key of Object.keys(patch)) if (!allowed.has(key)) throw new Error(`未知设置项：${key}`);
-      for(const k of ['launchExe','secondaryExe','backgroundVersion','modsPath','xxmiPath'])if(k in patch&&typeof patch[k]!=='string')throw Error('无效设置值');
-      if('programTabs' in patch&&typeof patch.programTabs!=='boolean')throw Error('窗口标签页设置无效');
-      if('autoBackground' in patch&&typeof patch.autoBackground!=='boolean')throw Error('自动更新背景设置无效');
-      if('libraryView' in patch&&!['list','grid'].includes(patch.libraryView))throw Error('模组视图无效。');
-      if('material' in patch&&!['mica','acrylic'].includes(patch.material))throw Error('窗口材质选项无效。');
-      if('proxyMode' in patch&&!['system','manual'].includes(patch.proxyMode))throw Error('代理模式无效。');
-      if('proxyUrl' in patch&&(typeof patch.proxyUrl!=='string'||patch.proxyUrl.length>300))throw Error('代理地址无效。');
+      patch=validateSettingsPatch(patch,{gameOnly:scoped});
       const next = clone(this.state);
       // 带 gameId 的调用只写该游戏；不带时，随游戏变化的键（GIMI 路径、外部程序、背景）
       // 落进当前游戏的条目，其余写全局。GAME_SETTING_KEYS 在两边都放行：设置文件兼容旧版，
@@ -551,7 +539,6 @@ class Library {
       require('./preferences.cjs').proxyConfig(effective);
       if ('modsPath' in patch) await this._validateModsPath(patch.modsPath);
       if ('xxmiPath' in patch && patch.xxmiPath && !path.isAbsolute(patch.xxmiPath)) throw new Error('XXMI 路径必须是绝对路径');
-      for (const key of ['autoEnable', 'autoUpdate','autoCheckUpdates','autoCheckAppUpdates','blurNsfw','useLinks']) if (key in patch && typeof patch[key] !== 'boolean') throw new Error(`${key} 必须是布尔值`);
       if ('modsPath' in patch && patch.modsPath !== this.effectiveSettings().modsPath && this.state.mods.some((mod) => mod.active)) {
         throw new Error('更改 Mod 路径前请先禁用全部 Mod');
       }

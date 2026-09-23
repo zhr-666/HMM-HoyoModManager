@@ -48,13 +48,15 @@ function connect(url){
 
 async function main(){
   dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-library-folders-'));const data=path.join(dataDir,'data');await fs.mkdir(data);
-  const hutaoFolder=path.join(data,'library','Skins-abc1234567','胡桃-def7654321');
-  const zhongliFolder=path.join(data,'library','Skins-abc1234567','钟离-1122334455');
+  const hutaoFolder=path.join(data,'games','genshin','library','Skins-abc1234567','胡桃-def7654321');
+  const zhongliFolder=path.join(data,'games','genshin','library','Skins-abc1234567','钟离-1122334455');
   await fs.mkdir(hutaoFolder,{recursive:true});
   await fs.mkdir(zhongliFolder,{recursive:true});
   await fs.mkdir(path.join(zhongliFolder,MOD_ID),{recursive:true});
   await fs.writeFile(path.join(zhongliFolder,MOD_ID,'mod.ini'),'[TextureOverride]');
-  await fs.writeFile(path.join(data,'state.json'),JSON.stringify({
+  const store=await new (require('../src/core/workspaces.cjs'))(data).init();
+  await store.setSettings('genshin',{proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false});
+  await fs.writeFile(path.join(data,'games','genshin','state.json'),JSON.stringify({
     settings:{modsPath:'',proxyMode:'manual',proxyUrl:'http://127.0.0.1:9'},
     mods:[{id:MOD_ID,name:'钟离模组',characterId:'900002',characterName:'钟离',active:false,folder:path.join(zhongliFolder,MOD_ID),libraryPath:`Skins-abc1234567/钟离-1122334455/${MOD_ID}`,hotkeys:{bindings:[],warnings:[],filesScanned:0}}],
     folders:[
@@ -63,7 +65,7 @@ async function main(){
     ],
     presets:[],
   }));
-  await fs.writeFile(path.join(data,'taxonomy.json'),JSON.stringify([
+  await fs.writeFile(path.join(data,'games','genshin','taxonomy.json'),JSON.stringify([
     {id:17510,name:'Skins',icon:'',children:[{id:18140,name:'Characters',icon:'',children:[
       {id:900001,name:'胡桃',icon:'',children:[]},
       {id:900002,name:'钟离',icon:'',children:[]},
@@ -173,7 +175,7 @@ async function main(){
   const folderPieces=imported.libraryPath.split('/');
   assert.equal(folderPieces.length,3,'安装库内应是「总分类/角色/模组」：'+imported.libraryPath);
   assert.match(folderPieces[0],/^Skins-/);assert.match(folderPieces[1],/^甘雨-/);
-  const importedFolder=path.join(data,"library",...folderPieces);
+  const importedFolder=path.join(data,"games","genshin","library",...folderPieces);
   assert.equal(await fs.realpath(path.join(modsPath,"HoYoModManaged",imported.id)),await fs.realpath(importedFolder),"启用位置与其他模组同一条规则");
   await evaluate("loadState()");await sleep(300);
   await evaluate("showPage('library');libraryNavigation=[];renderLibrary()");

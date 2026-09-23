@@ -22,7 +22,7 @@ test('three games isolate identical role IDs, profiles, hotkeys and deployment; 
     assert.equal(lib.snapshot().mods.filter(m=>m.active).length,1);
     assert.equal(lib.snapshot().presets.length,1);
     assert.equal(lib.snapshot().activeGame,id);
-    assert.equal(lib.previewRoot,root);
+    assert.equal(lib.previewRoot,path.join(root,'games',id));
   }
   const states=JSON.stringify([...store.contexts.values()].map(ctx=>ctx.lib.snapshot()));
   await store.select('zzz');await store.select('hsr');
@@ -33,21 +33,17 @@ test('three games isolate identical role IDs, profiles, hotkeys and deployment; 
   await assert.rejects(store.get('zzz').lib.setActiveGame('genshin'),/未知/);
 });
 
-test('legacy genshin state and installed directory are preserved, game paths start empty',async t=>{
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-legacy-workspaces-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
-  const root=path.join(dir,'data'),legacy=await new Library(root).init();
-  // init returns a snapshot; keep a separate original instance for legacy installation.
-  assert.equal(legacy.activeGame,'genshin');
-  const lib=new Library(root);await lib.init();await lib.settings({modsPath:path.join(dir,'GIMI','Mods'),launchExe:path.join(dir,'game.exe')});
-  const mod=await lib.install(await source(dir),{name:'old',characterId:'1',characterName:'旧角色'});
-  const store=await new Workspaces(root).init();
-  assert.equal(store.get('genshin').lib.snapshot().mods[0].folder,mod.folder);
-  assert.equal(store.get('genshin').lib.snapshot().settings.modsPath,path.join(dir,'GIMI','Mods'));
-  for(const id of ['zzz','hsr']){
-    assert.equal(store.get(id).lib.snapshot().settings.modsPath,'');
-    assert.equal(store.get(id).lib.snapshot().settings.launchExe,'');
-    assert.equal(store.get(id).lib.libraryRoot,path.join(root,'library',id));
+test('all game data uses the same game root, with no legacy reads or deletion',async t=>{
+  const {root,store}=await setup(t);
+  await fs.writeFile(path.join(root,'state.json'),'{legacy untouched');
+  for(const ctx of store.contexts.values()){
+    assert.equal(ctx.root,path.join(root,'games',ctx.game.id));
+    assert.equal(ctx.lib.libraryRoot,path.join(ctx.root,'library'));
+    assert.equal(ctx.lib.previewRoot,ctx.root);
+    assert.equal(ctx.lib.stateFile,path.join(ctx.root,'state.json'));
   }
+  await new Workspaces(root).init();
+  assert.equal(await fs.readFile(path.join(root,'state.json'),'utf8'),'{legacy untouched');
 });
 
 test('global preferences are immediately effective in every instance and deployment',async t=>{
@@ -124,7 +120,7 @@ test('fixed workspaces do not inherit another game settings mirror',async t=>{
   assert.deepEqual(Object.keys(restarted.get('zzz').lib.state.games),['zzz']);
 });
 
-test('each game uses its configured character taxonomy and writes profile images in shared previews',async t=>{
+test('each game uses its configured character taxonomy and writes profile images in game previews',async t=>{
   const {dir,root,store}=await setup(t),src=await source(dir);
   const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
   for(const ctx of store.contexts.values()){
@@ -140,7 +136,10 @@ test('each game uses its configured character taxonomy and writes profile images
     assert.equal(lib.snapshot().mods.find(mod=>mod.id===b.id).active,true);
     await lib.saveProfile(a.id,{author:game.id,sourceUrl:'',previews:[png]});
     const preview=lib.snapshot().mods.find(mod=>mod.id===a.id).previews[0];
-    await fs.access(require('../src/core/preview-cache.cjs').resolvePreview(root,preview));
+    const file=require('../src/core/preview-cache.cjs').resolvePreview(root,preview);
+    assert.equal(path.dirname(file),path.join(ctx.root,'previews'));
+    assert.equal(new URL(preview).searchParams.get('game'),game.id);
+    await fs.access(file);
   }
 });
 
@@ -175,4 +174,18 @@ test('bundled importer exception rejects missing ini, malformed package roots an
   const packageAlias=path.join(root,'components','xxmi-111111111111');
   await fs.symlink(path.join(root,'library'),packageAlias,process.platform==='win32'?'junction':'dir');
   await assert.rejects(store.setSettings('genshin',{modsPath:path.join(packageAlias,'GIMI','Mods')}),/数据目录/);
+});
+
+test('global settings persist outside all games and failed saves preserve values',async t=>{
+ const {root,store}=await setup(t);
+ const before=await fs.readFile(store.get('genshin').lib.stateFile,'utf8');
+ await store.setSettings('zzz',{blurNsfw:false});
+ assert.equal(await fs.readFile(store.get('genshin').lib.stateFile,'utf8'),before);
+ assert.equal(JSON.parse(await fs.readFile(store.file,'utf8')).settings.blurNsfw,false);
+ const next=await new Workspaces(root).init();
+ for(const ctx of next.contexts.values())assert.equal(ctx.lib.snapshot().settings.blurNsfw,false);
+ const rename=fs.rename;fs.rename=async(from,to)=>{if(to===store.file)throw Error('disk failure');return rename(from,to)};
+ try{await assert.rejects(store.setSettings('hsr',{blurNsfw:true}),/disk failure/);assert.equal(store.getGlobalSettings().blurNsfw,false)}finally{fs.rename=rename}
+ await assert.rejects(store.setSettings('zzz',{blurNsfw:'false'}),/布尔/);
+ await assert.rejects(store.setSettings('zzz',{proxyMode:'manual',proxyUrl:'invalid'}),/代理/);
 });

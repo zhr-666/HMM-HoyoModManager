@@ -1,14 +1,14 @@
 const {_electron}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const {execFile}=require('node:child_process'),{promisify}=require('node:util');
-const {Library}=require('../src/core/library.cjs');
+const Workspaces=require('../src/core/workspaces.cjs');
 async function waitTask(page,id,timeout=30000){const started=Date.now();while(Date.now()-started<timeout){const row=await page.evaluate(async id=>(await window.hoyo.call('downloads')).find(r=>r.id===id),id);if(['installed','failed'].includes(row?.status))return row;await new Promise(r=>setTimeout(r,100));}throw Error('Queue test timed out');}
 (async()=>{
  const data=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-queue-ui-'));let app;
  try{
   const input=path.join(data,'input');await fs.mkdir(input);await fs.writeFile(path.join(input,'mod.ini'),'[TextureOverride]\nhash = 12345678\n');
-  const lib=new Library(data);await lib.init();const mod=await lib.install(input,{name:'Existing mod',characterId:'other',characterName:'Other'});
-  const modsPath=path.join(data,'GIMI','Mods');await fs.mkdir(modsPath,{recursive:true});await fs.writeFile(path.join(data,'GIMI','d3dx.ini'),'[Include]');await lib.settings({modsPath});
+  const store=await new Workspaces(data).init(),lib=store.get('genshin').lib;const mod=await lib.install(input,{name:'Existing mod',characterId:'other',characterName:'Other'});
+  const modsPath=path.join(data,'..',path.basename(data)+'-GIMI','Mods');await fs.mkdir(modsPath,{recursive:true});await fs.writeFile(path.join(data,'..',path.basename(data)+'-GIMI','d3dx.ini'),'[Include]');await lib.settings({modsPath});
   const archive=path.join(data,'test.zip'),bin=require('../src/core/archive.cjs').archiver();await fs.chmod(bin,0o755);await promisify(execFile)(bin,['a','-tzip',archive,'mod.ini'],{cwd:input});
   app=await _electron.launch({executablePath:require('electron'),args:[path.resolve(__dirname,'..')],env:{...process.env,HOYOMOD_DATA:data}});let page=await app.firstWindow();await page.waitForFunction(()=>!!window.hoyo);
   const gotoPage=async name=>{const t=page.locator(`[data-page="${name}"]:visible`).first();if(await t.count())return t.click();await page.evaluate(n=>showPage(n),name)};
@@ -51,5 +51,5 @@ async function waitTask(page,id,timeout=30000){const started=Date.now();while(Da
    assert.equal((await page.evaluate(()=>window.hoyo.call('state'))).mods.length,2);
    console.log('Queued ZIP install, background actions, active-task protection, clear/remove history and restart persistence passed.');
   }
- }finally{if(app)await app.close();await fs.rm(data,{recursive:true,force:true});}
+ }finally{if(app)await app.close();await fs.rm(path.join(data,'..',path.basename(data)+'-GIMI'),{recursive:true,force:true});await fs.rm(data,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

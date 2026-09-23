@@ -17,5 +17,5 @@ test('分类图标也使用本地缓存资源',()=>{
   const main=read('src/main.cjs');
   assert.match(app,/icon=safeImage\(node\.icon\)/,'安装库分类图标应通过本地资源白名单读取');
   assert.match(app,/icon=safeImage\(c\.icon\)/,'工坊分类图标应通过本地资源白名单读取');
-  assert.match(main,/cacheCategoryIcons\(root,rows,network\.download\)/,'主进程应在保存分类缓存前下载并复用本地图标');
+  assert.match(main,/cacheCategoryIcons\(workspace\(\)\.root,rows,network\.download\)/,'主进程应在保存分类缓存前下载并复用本地图标');
 });

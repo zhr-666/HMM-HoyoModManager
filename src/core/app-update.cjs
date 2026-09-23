@@ -3,7 +3,7 @@ const {startHelper,helperAttempts}=require('./update-helper.cjs');
 // Update entries are physical files. Electron's patched fs presents app.asar as
 // a virtual directory; keep normal fs only for reading our bundled helper.
 const disk=process.versions.electron?require('original-fs').promises:fs;
-const REPO='zhr-666/HoYoMod',API=`https://api.github.com/repos/${REPO}/releases/latest`;
+const REPO='zhr-666/HMM-HoyoModManager',API=`https://api.github.com/repos/${REPO}/releases/latest`;
 const ROOT_FILES=new Set(['HoYoMod.exe','LICENSE.electron.txt','LICENSES.chromium.html','LICENSE-HoYoMod.txt','THIRD-PARTY-NOTICES.md','使用说明.md','Windows验收说明.md','vk_swiftshader_icd.json']);
 const rootAllowed=name=>ROOT_FILES.has(name)||['resources','locales'].includes(name)||/^[a-z0-9_-]+\.(dll|pak|bin|dat)$/i.test(name);
 function version(value){const m=String(value).match(/^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);if(!m)throw Error('无效的软件版本号');return m.slice(1).map(Number);}

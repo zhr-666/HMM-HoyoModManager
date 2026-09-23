@@ -2,9 +2,10 @@ const fs=require('node:fs/promises');
 const sync=require('node:fs');
 const path=require('node:path');
 const {randomUUID}=require('node:crypto');
+const {gameRoot}=require('./game-data.cjs');
 class Backgrounds{
   constructor(root){this.root=root;this.queues=new Map();}
-  folder(game){if(!['genshin','zzz','hsr'].includes(game))throw Error('未知游戏');return path.join(this.root,'backgrounds',game);}
+  folder(game){return path.join(gameRoot(this.root,game),'backgrounds');}
   read(game){try{const m=JSON.parse(sync.readFileSync(path.join(this.folder(game),'current.json'),'utf8'));if(!/^[0-9a-f-]{36}$/.test(m.version)||!['image','video'].includes(m.kind))return null;return m;}catch{return null;}}
   file(game,video=false){const m=this.read(game);return m?path.join(this.folder(game),m.version,video?'video.webm':'poster'):null;}
   run(game,fn){const next=(this.queues.get(game)||Promise.resolve()).then(fn);this.queues.set(game,next.catch(()=>{}));return next;}
@@ -27,7 +28,6 @@ class Backgrounds{
   async cleanup(game,keep){
     const folder=this.folder(game);
     for(const name of await fs.readdir(folder).catch(()=>[]))if(/^[0-9a-f-]{36}$/.test(name)&&name!==keep)await fs.rm(path.join(folder,name),{recursive:true,force:true}).catch(()=>{});
-    for(const name of [`home-background-${game}.jpg`,`home-background-${game}.webp`,...(game==='genshin'?['home-background.jpg','home-background.webp']:[])])await fs.rm(path.join(this.root,name),{force:true}).catch(()=>{});
   }
   reset(game){return this.run(game,async()=>{await fs.rm(path.join(this.folder(game),'current.json'),{force:true});await this.cleanup(game);});}
 }

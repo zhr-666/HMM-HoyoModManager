@@ -82,9 +82,9 @@ async function stop(){
 
 async function main(){
  dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-profile-ui-'));const data=path.join(dataDir,'data');await fs.mkdir(data);
- const Library=require('../src/core/library.cjs'),lib=new Library(data);await lib.init();await lib.settings({autoCheckAppUpdates:false,autoCheckUpdates:false,proxyMode:'manual',proxyUrl:'http://127.0.0.1:9'});
+ const store=await new (require('../src/core/workspaces.cjs'))(data).init(),lib=store.get('genshin').lib;await store.setSettings('genshin',{autoCheckAppUpdates:false,autoCheckUpdates:false,proxyMode:'manual',proxyUrl:'http://127.0.0.1:9'});
  const input=path.join(data,'input');await fs.mkdir(input);await fs.writeFile(path.join(input,'mod.ini'),'[TextureOverride]');const mod=await lib.install(input,{name:'测试模组',characterId:'local:test',characterName:'本地导入'});
- await fs.writeFile(path.join(data,'taxonomy.json'),JSON.stringify([{id:17510,name:'Skins',children:[{id:18140,name:'Characters',children:[{id:90001,name:'测试角色',children:[]}]}]}]));
+ await fs.writeFile(path.join(lib.root,'taxonomy.json'),JSON.stringify([{id:17510,name:'Skins',children:[{id:18140,name:'Characters',children:[{id:90001,name:'测试角色',children:[]}]}]}]));
  const zipFile=path.join(data,'local.zip');await require('node:util').promisify(require('node:child_process').execFile)(require('7zip-bin').path7za,['a',zipFile,'mod.ini'],{cwd:input});
  await fs.mkdir(path.join(dataDir,'gimi','Mods'),{recursive:true});await fs.writeFile(path.join(dataDir,'gimi','d3dx.ini'),'[Loader]');
  const {client,evaluate,waitFor}=await launch(data);
@@ -108,7 +108,7 @@ async function main(){
   await evaluate(`document.querySelector('#profile-author').value='测试作者';document.querySelector('#profile-source').value='https://example.org/mod';document.querySelector('.profile-save').click();`);
   await waitFor(`!document.querySelector('#modal').open`,'保存并关闭');
   assert.ok(await evaluate('state.runtime?.version'),'保存后应保留运行时版本和路径');
-  let disk=JSON.parse(await fs.readFile(path.join(data,'state.json'),'utf8')).mods[0];assert.equal(disk.author,'测试作者');assert.equal(disk.previews.length,2);
+  let disk=JSON.parse(await fs.readFile(path.join(lib.root,'state.json'),'utf8')).mods[0];assert.equal(disk.author,'测试作者');assert.equal(disk.previews.length,2);
   const previewFile=require('../src/core/preview-cache.cjs').resolvePreview(data,disk.previews[0]);assert.ok((await fs.stat(previewFile)).size>0);
   // Isolate this card from folder navigation while exercising its real renderer and handlers.
   await evaluate(`window.testCard=document.createElement('article');testCard.innerHTML='<div class="library-thumb">'+libraryPreviewMarkup(state.mods[0])+'</div>';document.querySelector('#library-grid').append(testCard);bindLibraryPreview(testCard,state.mods[0]);`);
@@ -118,10 +118,10 @@ async function main(){
   assert.equal(await evaluate(`getComputedStyle(testCard.querySelector('.preview-arrow')).opacity`),'0');
   console.log('✓ 文件/剪贴板入口、资料保存、本地图像与多图循环切换');
   await evaluate(`editInstalledProfile(state.mods[0],true);document.querySelector('.profile-remove').click();document.querySelector('#modal .dialog-back').click();`);
-  assert.equal(JSON.parse(await fs.readFile(path.join(data,'state.json'),'utf8')).mods[0].previews.length,2);
+  assert.equal(JSON.parse(await fs.readFile(path.join(lib.root,'state.json'),'utf8')).mods[0].previews.length,2);
   await evaluate(`editInstalledProfile(state.mods[0],true);document.querySelector('.profile-remove').click();document.querySelector('.profile-remove').click();document.querySelector('.profile-save').click();`);
   await waitFor(`!document.querySelector('#modal').open`,'删除全部后保存');
-  assert.deepEqual(JSON.parse(await fs.readFile(path.join(data,'state.json'),'utf8')).mods[0].previews,[]);
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(lib.root,'state.json'),'utf8')).mods[0].previews,[]);
   await assert.rejects(fs.access(previewFile));
   await evaluate(`window.importDraft=null;void editModProfile({name:'导入测试'},{importing:true}).then(v=>window.importDraft=v);`);
   assert.equal(await evaluate(`document.querySelector('.profile-save').textContent`),'开始安装');
@@ -135,7 +135,7 @@ async function main(){
   await waitFor(`document.querySelectorAll('.profile-preview').length===1`,'导入图');
   await evaluate(`document.querySelector('.profile-save').click()`);
   await waitFor(`state.mods.length===2&&!document.querySelector('#modal').open`,'含资料导入完成');
-  const installed=JSON.parse(await fs.readFile(path.join(data,'state.json'),'utf8')).mods.at(-1);
+  const installed=JSON.parse(await fs.readFile(path.join(lib.root,'state.json'),'utf8')).mods.at(-1);
   assert.equal(installed.author,'导入作者');assert.equal(installed.sourceUrl,'https://example.org/local');assert.equal(installed.previews.length,1);assert.equal(installed.characterId,'90001');assert.equal(installed.active,true);
   await evaluate(`call=originalProfileCall;pickImportCategory=originalPicker;`);
   console.log('✓ 本地导入实际写入作者、来源和图片，并按所选分类启用');

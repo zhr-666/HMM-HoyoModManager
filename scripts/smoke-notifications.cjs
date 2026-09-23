@@ -84,11 +84,13 @@ async function main(){
   const data=dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-notifications-'));
   const saved=async()=>JSON.parse(await fs.readFile(path.join(data,'notifications.json'),'utf8'));
   // 固定设置与分类缓存：离线启动、不自动检查更新，尽量避免与断言无关的消息。
-  await fs.writeFile(path.join(data,'state.json'),JSON.stringify({
+  const store=await new (require('../src/core/workspaces.cjs'))(data).init();
+  await store.setSettings('genshin',{proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false});
+  await fs.writeFile(path.join(data,'games','genshin','state.json'),JSON.stringify({
     settings:{modsPath:'',proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false},
     mods:[],folders:[],presets:[],
   }));
-  await fs.writeFile(path.join(data,'taxonomy.json'),JSON.stringify([{id:17510,name:'Skins',icon:'',children:[]}]));
+  await fs.writeFile(path.join(data,'games','genshin','taxonomy.json'),JSON.stringify([{id:17510,name:'Skins',icon:'',children:[]}]));
   let session=await launch(data);
   let {client,evaluate,waitFor}=session;
   const quoted=text=>JSON.stringify(text);

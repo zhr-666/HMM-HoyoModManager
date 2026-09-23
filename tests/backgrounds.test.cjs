@@ -14,3 +14,5 @@ test('background replacement retains old files on failure, caches video offline 
  await store.update('zzz',{backgrounds:[{background:{url:'static'}}]},download);assert.equal(store.read('zzz').kind,'image');assert.equal((await fs.readdir(store.folder('zzz'))).length,2);
  await store.reset('zzz');assert.equal(store.read('zzz'),null);
 });
+
+test('background folders use the registered game root',()=>{const store=new Backgrounds('/data');for(const game of require('../src/core/games.cjs').GAMES)assert.equal(store.folder(game.id),path.join('/data','games',game.id,'backgrounds'));assert.throws(()=>store.folder('../escape'));});

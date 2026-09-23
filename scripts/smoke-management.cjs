@@ -1,6 +1,6 @@
 const {_electron}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
-const {Library}=require('../src/core/library.cjs');
+const Workspaces=require('../src/core/workspaces.cjs');
 (async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-management-')),project=path.resolve(__dirname,'..');let app;
  try{
@@ -8,8 +8,8 @@ const {Library}=require('../src/core/library.cjs');
   await fs.writeFile(path.join(gimi,'d3dx.ini'),'[Include]\ninclude_recursive=Mods');await fs.writeFile(path.join(input,'sample.ini'),'[Constants]\n');
   await fs.writeFile(path.join(input,'required.py'),'raise Exception("MUST NEVER EXECUTE")');await fs.writeFile(path.join(target,'keep.txt'),'keep');
   const archive=path.join(root,'local.zip');await require('node:util').promisify(require('node:child_process').execFile)(require('../src/core/archive.cjs').archiver(),['a',archive,'.'],{cwd:input});
-  const lib=new Library(path.join(root,'data'));await lib.init();const dependent=await lib.install(input,{name:'Needs TexFx',characterId:'1',characterName:'Test',sourceId:595315});
-  app=await _electron.launch({executablePath:require('electron'),args:[project],env:{...process.env,HOYOMOD_DATA:lib.root}});console.log('launched');const page=await app.firstWindow();console.log('window');const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.waitForFunction(()=>!!window.hoyo);console.log('ipc-ready');
+  const store=await new Workspaces(path.join(root,'data')).init(),lib=store.get('genshin').lib;const dependent=await lib.install(input,{name:'Needs TexFx',characterId:'1',characterName:'Test',sourceId:595315});
+  app=await _electron.launch({executablePath:require('electron'),args:[project],env:{...process.env,HOYOMOD_DATA:store.root}});console.log('launched');const page=await app.firstWindow();console.log('window');const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.waitForFunction(()=>!!window.hoyo);console.log('ipc-ready');
   const gotoPage=async name=>{const t=page.locator(`[data-page="${name}"]:visible`).first();if(await t.count())return t.click();await page.evaluate(n=>showPage(n),name)};
   console.log('install-dialog-mocks');await app.evaluate(({dialog,shell},{project})=>{
    globalThis.testDialogs=[];globalThis.testPicks=[];globalThis.testResponse=0;globalThis.testExternal=[];globalThis.testOpened=[];shell.openPath=async target=>{testOpened.push(target);return '';};globalThis.testRequirements=[{name:'3DMigoto',url:'https://github.com/bo3b/3Dmigoto'},{name:'TexFx',sourceId:485763,url:'https://gamebanana.com/mods/485763'},{name:'GitHub Addon',url:'https://github.com/example/addon'}];shell.openExternal=async url=>{testExternal.push(url)};
@@ -44,7 +44,7 @@ const {Library}=require('../src/core/library.cjs');
   await page.evaluate(()=>window.hoyo.call('resetBackground'));await page.waitForFunction(()=>document.querySelector('#home-background').getAttribute('src')==='home-background.jpg');
   await gotoPage('settings');assert.equal(await page.locator('#choose-xxmi').count(),0);assert.equal(await page.locator('#refresh-button').count(),0);
   await page.locator('#page-subtitle').hover();await page.locator('#help-tooltip').waitFor({state:'visible'});assert.match(await page.locator('#help-tooltip').textContent(),/GIMI/);
-  await gotoPage('library');assert.equal(await page.locator('#open-mods-button').isVisible(),true);await page.locator('#open-library-button').click();await page.locator('#open-mods-button').click();assert.deepEqual(await app.evaluate(()=>testOpened.slice(-2)),[path.join(root,'data','library'),mods]);
+  await gotoPage('library');assert.equal(await page.locator('#open-mods-button').isVisible(),true);await page.locator('#open-library-button').click();await page.locator('#open-mods-button').click();assert.deepEqual(await app.evaluate(()=>testOpened.slice(-2)),[path.join(lib.root,'library'),mods]);
   await page.locator('#page-title').click({button:'right'});await page.locator('#context-refresh').click();assert.equal(await page.locator('#context-menu').isVisible(),false);
   await page.locator('[data-testid="installed-mod"]').first().click({button:'right'});
   assert.deepEqual(await page.locator('.mod-context-action').allTextContents(),['重命名','移除','来源','打开本机库','打开 Mods 文件夹']);

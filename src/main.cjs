@@ -97,10 +97,10 @@ async function cacheExistingPreviews(){
   for(const mod of lib.snapshot().mods){
     if(Array.isArray(mod.previews))continue;
     if(typeof mod.preview!=='string'||!/^https:\/\//i.test(mod.preview))continue;
-    const current=mod.previewLocal&&resolvePreview(root,mod.previewLocal);
+    const current=mod.previewLocal&&resolvePreview(workspace().root,mod.previewLocal);
     if(current&&await fs.stat(current).then(s=>s.isFile()&&s.size>0,()=>false))continue;
     try{
-      const local=await cachePreview(root,mod.id,mod.preview,network.download);
+      const local=await cachePreview(workspace().root,mod.id,mod.preview,network.download);
       if(local){await lib.updateMetadata(mod.id,{previewLocal:local});changed=true;}
     }catch{/* 网络或图片源暂时不可用时，下次启动继续尝试。 */}
   }
@@ -148,8 +148,6 @@ async function withProgress(work,{taskId=TASK.hashReplace,label='正在处理'}=
 async function changed(work){await work();return snapshot();}
 // 设置按游戏分开存取：界面把当前游戏一起传上来，缺省就是当前选中的游戏。
 function gameScope(payload){return String(payload?.gameId||lib.snapshot().activeGame);}
-// 每个游戏各有一份背景图；jpg 是用户自选的，webp 是官方最新背景。
-function backgroundFiles(game){return [path.join(root,`home-background-${game}.jpg`),path.join(root,`home-background-${game}.webp`)];}
 async function updateOfficialBackground(){
   const info=await network.json(OFFICIAL_BACKGROUND_API),game=workspace().game;
   const entry=info?.data?.game_info_list?.find(item=>item?.game?.biz===game.officialBackgroundId);
@@ -196,7 +194,7 @@ async function enqueueMod(p,old){
 
 async function taxonomyRows(){
   const cache=path.join(workspace().root,'taxonomy.json');
-  try{const rows=await api.taxonomy();await cacheCategoryIcons(root,rows,network.download);await fs.writeFile(cache,JSON.stringify(rows));return rows;}
+  try{const rows=await api.taxonomy();await cacheCategoryIcons(workspace().root,rows,network.download);await fs.writeFile(cache,JSON.stringify(rows));return rows;}
   catch(e){try{return JSON.parse(await fs.readFile(cache,'utf8'));}catch{throw e;}}
 }
 function categoryPath(nodes,id,parents=[]){
@@ -332,7 +330,7 @@ const actions={
   hotkeys:p=>exclusive(()=>lib.rescanHotkeys(p.id)),
   categories:async()=>{
     const cache=path.join(workspace().root,'categories.json');
-    try{const rows=await api.categories();await cacheCategoryIcons(root,rows,network.download);await fs.writeFile(cache,JSON.stringify(rows));return rows;}
+    try{const rows=await api.categories();await cacheCategoryIcons(workspace().root,rows,network.download);await fs.writeFile(cache,JSON.stringify(rows));return rows;}
     catch(e){try{return JSON.parse(await fs.readFile(cache,'utf8'));}catch{throw e;}}
   },
   taxonomy:()=>taxonomyRows(),
@@ -374,10 +372,10 @@ const actions={
     if(!path.isAbsolute(file)||!['.zip','.7z','.rar'].includes(path.extname(file).toLowerCase()))throw new Error('请选择 ZIP、7Z 或 RAR 压缩包。');
     if(!(await fs.stat(file).catch(()=>null))?.isFile())throw new Error('找不到所选压缩包，请重新选择。');
     const classification=await resolveCategory(p.characterId);
-    const temp=await fs.mkdtemp(path.join(root,'import-'));
+    const temp=await fs.mkdtemp(path.join(workspace().root,'import-'));
     let prepared;
     try{
-      if(p.profile)prepared=await require('./core/mod-profile.cjs').prepareProfile(root,normalizeProfileImages(p.profile));
+      if(p.profile)prepared=await require('./core/mod-profile.cjs').prepareProfile(workspace().root,normalizeProfileImages(p.profile));
       await extract(file,path.join(temp,'unpacked'));
       const imported=await lib.importLocal(path.join(temp,'unpacked'),{name:path.basename(file,path.extname(file)),...classification,profileMetadata:prepared?.patch});
       return {...snapshot(),importWarning:imported.enableError?describeError(imported.enableError).message:null};
@@ -570,7 +568,7 @@ if(lock)app.whenReady().then(async()=>{
   context.downloadBatchIds=[];
   context.api=new GameBanana(network.json,context.game.id);
   context.downloadReporter=new DownloadBatchReporter(summary=>pushNotification(summary.text,{title:'下载',tone:summary.tone,target:summary.target}));
-  context.installer=new InstallService(context.root,{lib:context.lib,api:context.api,previewRoot:root,download:network.download,extract,progress:v=>downloadQueue?.progress(v),validate:()=>requireMods(lib.snapshot().settings),refresh:async()=>{},confirmEnable:(mod,detail,retry)=>operationContext.run({...retry,action:retry?.action||'enable',payload:{...(retry?.payload||{id:mod.id}),gameId:workspace().game.id}},async()=>dependencyReminder(detail,true,await enableState(mod)))});
+  context.installer=new InstallService(context.root,{lib:context.lib,api:context.api,previewRoot:context.root,download:network.download,extract,progress:v=>downloadQueue?.progress(v),validate:()=>requireMods(lib.snapshot().settings),refresh:async()=>{},confirmEnable:(mod,detail,retry)=>operationContext.run({...retry,action:retry?.action||'enable',payload:{...(retry?.payload||{id:mod.id}),gameId:workspace().game.id}},async()=>dependencyReminder(detail,true,await enableState(mod)))});
   context.downloadQueue=new DownloadQueue(context.root,{validate:async p=>{if(p.kind==='component')throw Error('已停止管理 XXMI 组件，请直接选择启用目录。');await requireMods(lib.snapshot().settings);},onChange:()=>{const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key),...downloadQueue.hiddenKeysSnapshot()]);send('downloads',[...rows,...workspace().legacyDownloads.filter(r=>!keys.has(r.key))]);reportDownloadBatch(rows);syncDownloadTasks(rows);},run:async(row,progress,{signal}={})=>{
     const p=row.payload;
     // 进度由 syncDownloadTasks 汇总到唯一那张队列任务卡上；这里只负责真正干活。
@@ -596,20 +594,15 @@ if(lock)app.whenReady().then(async()=>{
   protocol.handle('hoyo',async request=>{
     const url=new URL(request.url);
     const name=url.pathname==='/'?'index.html':decodeURIComponent(url.pathname.slice(1));
-    const previewPath=url.hostname==='app'&&resolvePreview(root,request.url);
-    if(previewPath)return await fs.stat(previewPath).then(s=>s.isFile()?net.fetch(pathToFileURL(previewPath).href):new Response('Not found',{status:404}),()=>new Response('Not found',{status:404}));
+    const previewPath=url.hostname==='app'&&url.searchParams.has('game')&&resolvePreview(root,request.url);
+    if(previewPath)return noStoreResponse(await fs.stat(previewPath).then(s=>s.isFile()?net.fetch(pathToFileURL(previewPath).href):new Response('Not found',{status:404}),()=>new Response('Not found',{status:404})));
     if(url.hostname==='app'&&name==='custom-background'){
-      // 背景图按游戏取；旧版本只写过 home-background.*，没有按游戏命名的文件时沿用旧文件，
-      // 保证升级后原来的自定义背景仍在（需求 27）。
-      const requested=url.searchParams.get('game');
-      const game=GAMES.some(game=>game.id===requested)?requested:workspaces.activeGameId;
-      // 顺序：该游戏的官方背景（webp）→ 该游戏自选图片（jpg）→ 旧版单份背景文件。
+      const game=url.searchParams.get('game');
+      if(!GAMES.some(entry=>entry.id===game))return new Response('Not found',{status:404});
       const video=url.searchParams.get('media')==='video';
       const current=backgrounds.file(game,video);
-      const candidates=[current,...(video?[]:[...backgroundFiles(game).reverse(),...(game==='genshin'?[path.join(root,'home-background.webp'),path.join(root,'home-background.jpg')]:[])])].filter(Boolean);
-      for(const candidate of candidates){
-        if(await fs.stat(candidate).then(s=>s.isFile(),()=>false))return noStoreResponse(await net.fetch(pathToFileURL(candidate).href));
-      }
+      if(current&&video)return require('./core/media-response.cjs').mediaResponse(current,request);
+      if(current&&await fs.stat(current).then(s=>s.isFile(),()=>false))return noStoreResponse(await net.fetch(pathToFileURL(current).href));
       return new Response('Not found',{status:404});
     }
     if(url.hostname!=='app'||!UI_ASSETS.includes(name))return new Response('Not found',{status:404});

@@ -2,7 +2,7 @@
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const {randomUUID}=require('node:crypto');
-const {resolvePreview}=require('./preview-cache.cjs');
+const {resolvePreview,uriFor}=require('./preview-cache.cjs');
 const MAX_IMAGE_BYTES=20*1024*1024;
 const MAX_IMAGES=64;
 function previewsOf(mod={}){return Array.isArray(mod.previews)?mod.previews:[mod.previewLocal||mod.preview].filter(Boolean);}
@@ -40,11 +40,11 @@ async function prepareProfile(root,profile,existing={}){
         // The download cache replaces old covers; a user-kept image needs its own copy.
         const name=`custom-${randomUUID()}${path.extname(source)}`,file=path.join(root,'previews',name);
         created.push(file);await fs.copyFile(source,file,require('node:fs').constants.COPYFILE_EXCL);
-        previews.push('hoyo://app/mod-preview/'+name);continue;
+        previews.push(uriFor(name,root));continue;
       }
       const name=`custom-${randomUUID()}.png`,file=path.join(root,'previews',name);
       await fs.mkdir(path.dirname(file),{recursive:true});created.push(file);await fs.writeFile(file,value,{flag:'wx'});
-      previews.push('hoyo://app/mod-preview/'+name);
+      previews.push(uriFor(name,root));
     }
     const cleanup=async()=>{
       for(const uri of previous){

@@ -2,6 +2,7 @@
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const {randomUUID}=require('node:crypto');
+const {gameRoot,gameAtRoot}=require('./game-data.cjs');
 
 const PREVIEW_DIR='previews';
 const PREVIEW_URI='hoyo://app/mod-preview/';
@@ -17,7 +18,7 @@ function extension(url){
     return EXTENSIONS.has(ext)?(ext==='jpeg'?'jpg':ext):'jpg';
   }catch{return'jpg'}
 }
-function uriFor(file){return PREVIEW_URI+encodeURIComponent(file)}
+function uriFor(file,root){const game=root&&gameAtRoot(root);return PREVIEW_URI+encodeURIComponent(file)+(game?'?game='+game:'')}
 function filenameFromUri(uri){
   try{
     const parsed=new URL(uri);
@@ -28,7 +29,11 @@ function filenameFromUri(uri){
   }catch{return null}
 }
 function resolvePreview(root,uri){
-  const file=filenameFromUri(uri);return file?path.join(root,PREVIEW_DIR,file):null;
+  const file=filenameFromUri(uri);if(!file)return null;
+  const params=new URL(uri).searchParams,game=params.get('game'),own=gameAtRoot(root);
+  if(params.has('game')&&!game)return null;
+  if(own&&game!==own)return null;
+  try{return path.join(game&&!own?gameRoot(root,game):root,PREVIEW_DIR,file)}catch{return null}
 }
 
 async function cachePreview(root,id,url,download){
@@ -43,7 +48,7 @@ async function cachePreview(root,id,url,download){
     await fs.rm(destination,{force:true});
     await fs.rename(temporary,destination);
     for(const name of await fs.readdir(dir))if(name.startsWith(`${token}-`)&&name!==file)await fs.rm(path.join(dir,name),{force:true});
-    return uriFor(file);
+    return uriFor(file,root);
   }finally{await fs.rm(temporary,{force:true}).catch(()=>{});await fs.rm(temporary+'.part',{force:true}).catch(()=>{})}
 }
 
@@ -53,7 +58,7 @@ async function cacheCategoryIcon(root,id,url,download){
   const dir=path.join(root,PREVIEW_DIR);
   await fs.mkdir(dir,{recursive:true});
   const existing=(await fs.readdir(dir)).find(name=>name.startsWith(`${token}-`)&&filenameFromUri(uriFor(name)));
-  if(existing&&await fs.stat(path.join(dir,existing)).then(s=>s.isFile()&&s.size>0,()=>false))return uriFor(existing);
+  if(existing&&await fs.stat(path.join(dir,existing)).then(s=>s.isFile()&&s.size>0,()=>false))return uriFor(existing,root);
   const file=`${token}-${randomUUID()}.${extension(url)}`,destination=path.join(dir,file),temporary=destination+'.part';
   try{
     await download(url,temporary,()=>{});
@@ -61,7 +66,7 @@ async function cacheCategoryIcon(root,id,url,download){
     if(!stat?.isFile()||stat.size<=0)throw Error('分类图标为空。');
     await fs.rename(temporary,destination);
     for(const name of await fs.readdir(dir))if(name.startsWith(`${token}-`)&&name!==file)await fs.rm(path.join(dir,name),{force:true});
-    return uriFor(file);
+    return uriFor(file,root);
   }finally{await fs.rm(temporary,{force:true}).catch(()=>{});await fs.rm(temporary+'.part',{force:true}).catch(()=>{})}
 }
 
@@ -76,4 +81,4 @@ async function cacheCategoryIcons(root,nodes,download){
   return nodes;
 }
 
-module.exports={PREVIEW_DIR,PREVIEW_URI,cachePreview,cacheCategoryIcons,resolvePreview,filenameFromUri};
+module.exports={uriFor,PREVIEW_DIR,PREVIEW_URI,cachePreview,cacheCategoryIcons,resolvePreview,filenameFromUri};

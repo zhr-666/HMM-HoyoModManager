@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
-const release=(version='0.9.0')=>({tag_name:'v'+version,draft:false,prerelease:false,body:'Changes',html_url:'https://github.com/zhr-666/HoYoMod/releases/tag/v'+version,assets:[{name:`HoYoMod-${version}-Windows-x64.zip`,size:123,digest:'sha256:'+'a'.repeat(64),browser_download_url:`https://github.com/zhr-666/HoYoMod/releases/download/v${version}/HoYoMod-${version}-Windows-x64.zip`}]});
+const release=(version='0.9.0')=>({tag_name:'v'+version,draft:false,prerelease:false,body:'Changes',html_url:'https://github.com/zhr-666/HMM-HoyoModManager/releases/tag/v'+version,assets:[{name:`HoYoMod-${version}-Windows-x64.zip`,size:123,digest:'sha256:'+'a'.repeat(64),browser_download_url:`https://github.com/zhr-666/HMM-HoyoModManager/releases/download/v${version}/HoYoMod-${version}-Windows-x64.zip`}]});
 test('updater accepts only newer stable releases from this repository with SHA256',()=>{
  const {selectRelease}=require('../src/core/app-update.cjs');assert.equal(selectRelease('0.8.0',release()).version,'0.9.0');assert.equal(selectRelease('0.9.0',release()),null);assert.equal(selectRelease('1.0.0',release()),null);assert.equal(selectRelease('0.8.0',{...release(),prerelease:true}),null);
  for(const mutate of [r=>r.assets[0].digest='',r=>r.assets[0].browser_download_url=r.assets[0].browser_download_url.replace('zhr-666','another'),r=>r.assets[0].size=0]){const r=release();mutate(r);assert.throws(()=>selectRelease('0.8.0',r));}
@@ -203,4 +203,14 @@ test('a journal pointing at a deleted update directory is dropped instead of blo
  await assert.rejects(fs.access(path.join(appDir,'.hoyo-updates','current.json')));
  await assert.rejects(fs.access(path.join(appDir,'HoYoMod-Recover.cmd')));
  assert.equal((await service.check()).status,'available');
+});
+
+test('release source is the new HMM repository and rejects old repository packages',()=>{
+ const {selectRelease}=require('../src/core/app-update.cjs');
+ const row=release('1.0.1');row.body='';
+ const selected=selectRelease('1.0.0',row);
+ assert.equal(selected.releaseUrl,'https://github.com/zhr-666/HMM-HoyoModManager/releases/tag/v1.0.1');
+ assert.equal(selected.notes,'');
+ row.assets[0].browser_download_url=row.assets[0].browser_download_url.replace('HMM-HoyoModManager','HoYoMod');
+ assert.throws(()=>selectRelease('1.0.0',row),/更新包/);
 });

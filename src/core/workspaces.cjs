@@ -4,7 +4,9 @@ const {AsyncLocalStorage}=require('node:async_hooks');
 const {randomUUID}=require('node:crypto');
 const Library=require('./library.cjs');
 const {GAMES}=require('./games.cjs');
-const GAME_KEYS=new Set(['modsPath','launchExe','secondaryExe','programTabs','backgroundVersion','xxmiPath','autoBackground']);
+const {DEFAULT_SETTINGS,GAME_SETTING_KEYS,validateSettingsPatch}=require('./settings.cjs');
+const GAME_KEYS=new Set(GAME_SETTING_KEYS);
+const {gameRoot}=require('./game-data.cjs');
 
 // Resolve existing ancestors too: a newly chosen directory may not exist yet.
 async function canonical(value){
@@ -30,14 +32,15 @@ class Workspaces {
     this.root=path.resolve(root);this.contexts=new Map();this.activeGameId='genshin';
     this.storage=new AsyncLocalStorage();this.queue=Promise.resolve();
     this.file=path.join(this.root,'workspaces.json');this.corrupt=false;
+    this.globalSettings=Object.fromEntries(Object.entries(DEFAULT_SETTINGS).filter(([key])=>!GAME_KEYS.has(key)));
   }
   async init(){
     for(const game of GAMES){
-      const root=game.id==='genshin'?this.root:path.join(this.root,'games',game.id);
+      const root=gameRoot(this.root,game.id);
       const ctx={game,root,lib:null,api:null,installer:null,downloadQueue:null,downloadReporter:null,busy:false,hashPreview:null,lastUpdateSummary:null,legacyDownloads:[],checkAbort:new AbortController()};
       ctx.lib=new Library(root,{
-        gameId:game.id,libraryRoot:game.id==='genshin'?path.join(this.root,'library'):path.join(this.root,'library',game.id),
-        previewRoot:this.root,dataRoot:this.root,getGlobalSettings:()=>this.getGlobalSettings(),
+        gameId:game.id,libraryRoot:path.join(root,'library'),
+        previewRoot:root,dataRoot:this.root,getGlobalSettings:()=>this.getGlobalSettings(),
         resolveTaxonomy:()=>ctx.api.taxonomy(),validateModsPath:value=>this.validateModsPath(game.id,value),
       });
       this.contexts.set(game.id,ctx);
@@ -46,6 +49,11 @@ class Workspaces {
     try{
       const saved=JSON.parse(await fs.readFile(this.file,'utf8'));
       if(this.contexts.has(saved?.activeGameId))this.activeGameId=saved.activeGameId;
+      if(saved.settings){
+        const patch=validateSettingsPatch(saved.settings);
+        this.globalSettings={...this.globalSettings,...Object.fromEntries(Object.entries(patch).filter(([key])=>!GAME_KEYS.has(key)))};
+        require('./preferences.cjs').proxyConfig(this.globalSettings);
+      }
     }catch(error){if(error instanceof SyntaxError)this.corrupt=true;else if(error.code!=='ENOENT')throw error;}
     return this;
   }
@@ -60,25 +68,30 @@ class Workspaces {
   select(id){
     this.get(id);
     return this._enqueue(async()=>{
-      if(this.corrupt)throw new Error('游戏工作区记录损坏，请保留 workspaces.json 后修复；程序不会覆盖该文件。');
-      const temp=this.file+'.tmp-'+randomUUID();
-      try{await fs.writeFile(temp,JSON.stringify({activeGameId:id},null,2)+'\n');await fs.rename(temp,this.file);}
-      catch(error){await fs.rm(temp,{force:true});throw error;}
+      await this.saveMetadata(id,this.globalSettings);
       this.activeGameId=id;return this.get(id);
     });
   }
-  getGlobalSettings(){
-    return Object.fromEntries(Object.entries(this.contexts.get('genshin')?.lib.state.settings||{}).filter(([key])=>!GAME_KEYS.has(key)));
+  async saveMetadata(activeGameId,settings){
+    if(this.corrupt)throw new Error('游戏工作区记录损坏，请保留 workspaces.json 后修复；程序不会覆盖该文件。');
+    const temp=this.file+'.tmp-'+randomUUID();
+    try{await fs.writeFile(temp,JSON.stringify({activeGameId,settings},null,2)+'\n');await fs.rename(temp,this.file);}
+    catch(error){await fs.rm(temp,{force:true});throw error;}
   }
+  getGlobalSettings(){return {...this.globalSettings};}
   setSettings(gameId,patch){
     const ctx=this.get(gameId);
     return this._enqueue(async()=>{
-      if(!patch||typeof patch!=='object'||Array.isArray(patch))throw new Error('设置内容不能为空');
+      patch=validateSettingsPatch(patch);
+      require('./preferences.cjs').proxyConfig({...this.globalSettings,...patch});
       const global={},local={};
       for(const [key,value] of Object.entries(patch))(GAME_KEYS.has(key)?local:global)[key]=value;
       // Validate and save game paths first, so a rejected path cannot change global preferences.
       if(Object.keys(local).length)await ctx.lib.settings(local,{gameId});
-      if(Object.keys(global).length)await this.get('genshin').lib.settings(global);
+      if(Object.keys(global).length){
+        const next={...this.globalSettings,...global};
+        await this.saveMetadata(this.activeGameId,next);this.globalSettings=next;
+      }
       return ctx.lib.snapshot();
     });
   }

@@ -48,11 +48,13 @@ function connect(url){
 async function main(){
   const data=dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-notification-layer-'));
   // 离线、不自动检查更新：尽量不产生与断言无关的通知。
-  await fs.writeFile(path.join(data,'state.json'),JSON.stringify({
+  const store=await new (require('../src/core/workspaces.cjs'))(data).init();
+  await store.setSettings('genshin',{proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false});
+  await fs.writeFile(path.join(data,'games','genshin','state.json'),JSON.stringify({
     settings:{modsPath:'',proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false},
     mods:[],folders:[],presets:[],
   }));
-  await fs.writeFile(path.join(data,'taxonomy.json'),JSON.stringify([{id:17510,name:'Skins',icon:'',children:[]}]));
+  await fs.writeFile(path.join(data,'games','genshin','taxonomy.json'),JSON.stringify([{id:17510,name:'Skins',icon:'',children:[]}]));
   const env={...process.env,HOYOMOD_DATA:data};
   delete env.ELECTRON_RUN_AS_NODE;
   child=spawn(require('electron'),[`--remote-debugging-port=${port}`,'--no-sandbox','--disable-gpu','.'],{cwd:root,env,stdio:['ignore','pipe','pipe']});
