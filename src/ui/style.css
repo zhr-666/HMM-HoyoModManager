@@ -383,7 +383,7 @@ html[data-mode="workspace"] .rail-separator{display:none}
 html[data-mode="workspace"] .rail-back{margin-bottom:8px}
 
 /* 启动器模式：深色玻璃侧栏，贴近官方启动器观感 */
-html[data-mode="launcher"] .sidebar{background:linear-gradient(180deg,#0815227a,#08121f9e);border-right:1px solid #ffffff24;backdrop-filter:blur(24px) saturate(1.18);-webkit-backdrop-filter:blur(24px) saturate(1.18)}
+html[data-mode="launcher"] .sidebar,html[data-mode="launcher"][data-material] .sidebar{background:linear-gradient(180deg,#0815227a,#08121f9e);border-right:1px solid #ffffff24;backdrop-filter:blur(24px) saturate(1.18);-webkit-backdrop-filter:blur(24px) saturate(1.18)}
 html[data-mode="launcher"] .sidebar .nav-item{color:#c8d6e5}
 html[data-mode="launcher"] .sidebar .nav-item .icon{color:#9db0c6}
 html[data-mode="launcher"] .sidebar .nav-item:hover{background:#ffffff1c}
