@@ -97,3 +97,16 @@ SHA256：`bbad3801d194edb6e00dfb8e330a39832be568174a581f19a7a3bb2756585910`
 ## 尚需 Windows 实机验收
 
 在 Windows 首次运行、GIMI 初始化、原神启动、游戏外观及 F10 刷新仍需实机确认。开发主机上的测试不能替代这些项目。验收步骤见 `docs/acceptance.md`。
+
+## 2026-09-23 · 新仓库 HMM v1.0.0 产物验证
+
+- 用户授权：全部当前功能以 v1.0.0 上传至 `zhr-666/HMM-HoyoModManager`；GitHub Release 正文留空，由用户自行填写。
+- 产品源码提交：`6f78e54`。Windows 实机状态：待验收，未宣称 Windows 人工验收通过。
+- `pnpm check`：382 项，380 通过、2 个 Windows 专属测试跳过、0 失败。
+- `pnpm pack:win`：Windows x64 ZIP 构建成功。
+- `ELECTRON_RUN_AS_NODE=1 pnpm exec electron scripts/verify-windows-package.cjs`：通过；含本次新模块、程序标签页组件、版本与源码一致性、精简 README 和新更新仓库。
+- `ELECTRON_RUN_AS_NODE=1 HOYOMOD_TEST_PACKAGED=1 pnpm exec electron scripts/smoke-update-package.cjs`：实际 ZIP 与包内更新器验证通过，保留测试 data/GIMI，校验失败路径正常。
+- 上一阶段实际 Electron 验证：三游戏切换、预览编辑、本地导入通过；崩铁/绝区零各六轮视频循环无错误或暂停。完整 Playwright 冒烟环境缺失，Windows 启动/更新替换/程序嵌入/视觉表现仍待实机验收。
+- 文件：`HoYoMod-1.0.0-Windows-x64.zip`，166605568 字节。
+- SHA256：`1bdab4122ea3960221021b02e7bf405a3aa1f58ee2b2dba695da02b7494790c9`。
+- 新版本不自动迁移旧分散目录；原有本机旧版本产物和旧仓库标签保留，未覆盖。
