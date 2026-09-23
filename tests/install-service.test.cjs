@@ -112,3 +112,22 @@ test('active update cancellation at dependency gate preserves prior files',async
  const {lib,service}=await stableFixture(t);await service.install({sourceId:2,fileId:3,characterId:'1',characterName:'Amber'});const old=lib.snapshot().mods[0];await lib.enable(old.id);let retry;service.confirmEnable=async(_mod,_detail,context)=>{retry=context;return false;};
  await assert.rejects(service.install({sourceId:2,fileId:3,queueId:'update-task'},lib.snapshot().mods[0]),/取消更新/);assert.equal(lib.snapshot().mods[0].folder,old.folder);assert.equal(lib.snapshot().mods[0].active,true);assert.deepEqual(retry,{action:'retryDownload',payload:{id:'update-task'}});
 });
+
+test('download completion installs ShaderFixes separately, while cancellation before installation writes nothing',async t=>{
+  const {InstallService}=require('../src/core/install-service.cjs');
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-download-shaders-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const lib=new Library(path.join(root,'data'));await lib.init();await lib.settings({modsPath:path.join(root,'GIMI','Mods')});
+  const controller=new AbortController();let cancel=true;
+  const service=new InstallService(lib.root,{lib,api:{detail:async()=>({id:55,name:'Shader mod',files:[{id:88,name:'mod.zip',size:3}]})},download:async(_url,file)=>fs.writeFile(file,'zip'),extract:async(_archive,dir)=>{
+    await fs.mkdir(path.join(dir,'ShaderFixes'),{recursive:true});await fs.writeFile(path.join(dir,'mod.ini'),'[mod]');await fs.writeFile(path.join(dir,'ShaderFixes','fix.txt'),'shader');
+    if(cancel)controller.abort();
+  }});
+  const request={sourceId:55,fileId:88,characterId:'1',characterName:'Amber'};
+  await assert.rejects(service.install(request,undefined,{signal:controller.signal}),/取消/);
+  await assert.rejects(fs.access(path.join(root,'GIMI','ShaderFixes')));assert.deepEqual(await lib.shaderFixesHistory(),[]);
+  cancel=false;await service.retry('55-88');
+  assert.equal(await fs.readFile(path.join(root,'GIMI','ShaderFixes','fix.txt'),'utf8'),'shader');
+  await assert.rejects(fs.access(path.join(lib.snapshot().mods[0].folder,'ShaderFixes')));
+  const records=await lib.shaderFixesHistory();assert.equal(records[0].sourceFileName,'mod.zip');assert.equal(records[0].files[0].status,'written');
+  assert.equal((await service.history())[0].status,'installed');
+});

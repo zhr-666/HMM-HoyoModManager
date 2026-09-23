@@ -16,14 +16,31 @@ async function main(){
   const handle=await waitFor(()=>fs.readFile(path.join(dir,'parent-hwnd'),'utf8').catch(()=>null),'parent HWND');
   host=new ProgramWindowHost({getNativeWindowHandle(){const b=Buffer.alloc(8);b.writeBigUInt64LE(BigInt(handle));return b;}});
   const initial=await host.request('scan');assert.equal(initial.admin,true,'Use an elevated terminal');
+  const windowState=async name=>{try{const parts=(await fs.readFile(path.join(dir,name+'-window-state'),'utf8')).split('|');if(parts.length!==6)return null;return {parent:parts[0],style:BigInt(parts[1]),extended:BigInt(parts[2]),x:Number(parts[3]),y:Number(parts[4]),visible:parts[5]==='1'};}catch{return null;}};
   manager=new ProgramTabs({host,validate:async file=>assert.equal((await fs.stat(file)).isFile(),true)});
   await manager.launch('genshin',{launchExe:path.join(dir,'First.exe'),secondaryExe:path.join(dir,'Second.exe')});
   await waitFor(async()=>{await manager.tick();return manager.snapshot().tabs.length===2;},'primary and secondary embedded');
   const tabs=manager.snapshot().tabs;
-  for(const tab of tabs){await manager.select(tab.id);await host.request('resize',{top:40});}
+  for(const tab of tabs){
+   await manager.select(tab.id);await host.request('resize',{top:40});
+   const name=tab.level===1?'First':'Second';
+   const state=await waitFor(async()=>{const w=await windowState(name);return w?.parent===handle&&w.visible?w:null;},'embedded native state');
+   assert.equal(state.style&0x40000000n,0x40000000n,'embedded HWND is a child');
+   assert.equal(state.extended&0x00040000n,0n,'APPWINDOW must be removed');
+   assert.equal(state.extended&0x00000080n,0x00000080n,'TOOLWINDOW suppresses independent Shell switching entry');
+   await assert.rejects(fs.access(path.join(dir,name+'-visible-style-change')),/ENOENT/,'hide must complete before changing taskbar styles');
+  }
+  await manager.select(tabs.find(t=>t.level===1).id);
+  const before=await waitFor(async()=>{const w=await windowState('First');return w?.visible?w:null;},'primary visible');
+  const parentBefore=await windowState('Parent');
+  await fs.writeFile(path.join(dir,'move-parent'),'');
+  await waitFor(async()=>{const p=await windowState('Parent'),w=await windowState('First');return p&&w&&(p.x!==parentBefore.x||p.y!==parentBefore.y)&&w.x-before.x===p.x-parentBefore.x&&w.y-before.y===p.y-parentBefore.y;},'primary moves with HMM host');
   await manager.select('');assert.equal(manager.snapshot().selected,'');
+  await waitFor(async()=>{const a=await windowState('First'),b=await windowState('Second');return a&&b&&!a.visible&&!b.visible;},'HMM tab hides both children');
   // Both fixtures refuse WM_CLOSE while this marker exists. No force may be used.
   await fs.writeFile(path.join(dir,'refuse'),'');assert.equal(await manager.closeAll(),false);
+  const restored=await waitFor(async()=>{const w=await windowState('Second');return w?.parent==='0'&&w.visible?w:null;},'refused close restores independent window');
+  assert.equal(restored.style&0x40000000n,0n);assert.equal(restored.extended&0x80n,0n);
   let scan=await host.request('scan');assert.equal(scan.processes.filter(p=>[path.join(dir,'First.exe'),path.join(dir,'Second.exe')].includes(p.file)).length,2);
   await fs.rm(path.join(dir,'refuse'));assert.equal(await manager.closeAll(),true);
   scan=await host.request('scan');assert.equal(scan.processes.some(p=>[path.join(dir,'First.exe'),path.join(dir,'Second.exe')].includes(p.file)),false);

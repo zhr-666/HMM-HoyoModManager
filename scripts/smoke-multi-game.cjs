@@ -95,28 +95,64 @@ async function main(){
   await fs.writeFile(path.join(ctx.root,'taxonomy.json'),JSON.stringify(tree));
   const mod=await ctx.lib.install(input,{name:ctx.game.name+'测试',characterId:'99001',characterName:'测试角色'});await ctx.lib.enable(mod.id);installed[ctx.game.id]=mod.id;
  }
- if(process.env.HOYO_TEST_VIDEO){const {Backgrounds}=require('../src/core/backgrounds.cjs');await new Backgrounds(data).update('hsr',{backgrounds:[{background:{url:'poster'},video:{url:'video'}}]},(url,dest)=>fs.copyFile(url==='video'?process.env.HOYO_TEST_VIDEO:path.join(root,'src/ui/hsr-background.webp'),dest));}
+ if(process.env.HOYO_TEST_VIDEO){const {Backgrounds}=require('../src/core/backgrounds.cjs');await new Backgrounds(data).update('hsr',{backgrounds:[{background:{url:'poster'},video:{url:'video'}}]},(url,dest)=>fs.copyFile(url==='video'?process.env.HOYO_TEST_VIDEO:path.join(root,'src/ui/hsr-background.jpg'),dest));}
  let session=await launch(data);
  try{
   const {evaluate,waitFor}=session;await waitFor('initialStateLoaded&&GAMES.length===3','三游戏清单');
   assert.equal(await evaluate(`document.querySelectorAll('#game-list [data-game]').length`),3);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('#page-games .game-card')].map(card=>({game:card.dataset.game,children:[...card.children].map(child=>child.tagName),name:card.querySelector('strong')?.textContent}))`),[
+   {game:'genshin',children:['IMG','STRONG'],name:'原神'},
+   {game:'zzz',children:['IMG','STRONG'],name:'绝区零'},
+   {game:'hsr',children:['IMG','STRONG'],name:'崩坏：星穹铁道'},
+  ],'全部游戏只显示图标和名称');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#page-games .game-grid')).display`),'grid');
+  assert.equal(await evaluate(`!!document.querySelector('#page-games #game-settings-panel')`),false,'游戏设置不显示在全部游戏中');
+  assert.equal(await evaluate(`!!document.querySelector('#page-settings #game-settings-panel')`),true,'游戏设置保留在设置页');
+  if(process.env.HOYO_SCREENSHOT_DIR){await evaluate(`showPage('games')`);const shot=await session.client.send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(process.env.HOYO_SCREENSHOT_DIR,'all-games.png'),Buffer.from(shot.data,'base64'));await evaluate(`showPage('home')`);}
   const glass=await evaluate(`(()=>{const sidebar=getComputedStyle(document.querySelector('.sidebar')),backdrop=document.querySelector('.app-backdrop').getBoundingClientRect();return {backdropLeft:backdrop.left,filter:sidebar.backdropFilter||sidebar.webkitBackdropFilter,background:sidebar.backgroundImage};})()`);
   assert.equal(glass.backdropLeft,0);assert.match(glass.filter,/blur/);assert.match(glass.background,/linear-gradient/);
+  await evaluate(`selectGame('zzz')`);
+  const logoReloads=await evaluate(`(()=>{const logo=document.querySelector('#game-logo'),descriptor=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');let writes=0;Object.defineProperty(logo,'src',{configurable:true,get(){return descriptor.get.call(this)},set(value){writes++;descriptor.set.call(this,value)}});renderHome();renderHome();delete logo.src;return writes})()`);
+  assert.equal(logoReloads,0,'unchanged state must not reload the game logo');
   for(const gameId of ['zzz','hsr','genshin']){
    assert.equal(await evaluate(`selectGame('${gameId}')`),true);
    await waitFor(`activeGame==='${gameId}'&&state.activeGame==='${gameId}'`,'游戏切换');
    assert.deepEqual(await evaluate('state.mods.map(m=>m.id)'),[installed[gameId]]);
    assert.equal(await evaluate('state.mods[0].active'),true);
-   assert.equal(await evaluate(`document.querySelector('#game-logo').hidden`),gameId==='genshin');
-   if(gameId!=='genshin')await waitFor(`document.querySelector('#game-logo').complete&&document.querySelector('#game-logo').naturalWidth>0`,'游戏 Logo');
+   assert.equal(await evaluate(`document.querySelector('#game-logo').hidden`),false,'每款游戏的独立 Logo 始终可见');
+   assert.equal(await evaluate(`document.querySelector('#app-background').dataset.game`),gameId,'背景与选中游戏一致');
+   assert.equal(await evaluate(`document.querySelector('#game-logo').dataset.game`),gameId,'Logo 与选中游戏一致');
+   await waitFor(`document.querySelector('#game-logo').complete&&document.querySelector('#game-logo').naturalWidth>0`,'游戏 Logo');
    assert.equal(await evaluate(`getComputedStyle(document.querySelector('#app-background')).transform`),'none');
-   if(gameId==='hsr'&&process.env.HOYO_TEST_VIDEO)await waitFor(`document.querySelector('#background-video').currentTime>0&&!document.querySelector('#background-video').hidden`,'实际本地视频播放');
+   if(gameId==='zzz')await evaluate(`window.firstZzzBackground=document.querySelector('#app-background')`);
+   if(gameId==='hsr'&&process.env.HOYO_TEST_VIDEO){await waitFor(`document.querySelector('#background-video').currentTime>0&&!document.querySelector('#background-video').hidden`,'实际本地视频播放');await evaluate(`window.firstHsrVideo=document.querySelector('#background-video')`);}
    if(gameId==='genshin')assert.equal(await evaluate(`document.querySelector('#background-video').hasAttribute('src')`),false);
    if(process.env.HOYO_SCREENSHOT_DIR){const shot=await session.client.send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(process.env.HOYO_SCREENSHOT_DIR,gameId+'.png'),Buffer.from(shot.data,'base64'));}
    assert.equal(await evaluate(`document.querySelector('#choose-mods').textContent`),'选择 '+(await evaluate('gameById(activeGame).importer'))+' 文件夹');
    const assets=await evaluate(`Promise.all([gameById(activeGame).icon,gameById(activeGame).background].map(async name=>{const r=await fetch(name);return {status:r.status,cache:r.headers.get('cache-control'),size:(await r.arrayBuffer()).byteLength}}))`);
    for(const asset of assets){assert.equal(asset.status,200);assert.equal(asset.cache,'no-store');assert.ok(asset.size>1000);}
   }
+  await evaluate(`Promise.all([selectGame('zzz'),selectGame('hsr')])`);
+  assert.equal(await evaluate(`document.querySelector('#app-background').dataset.game`),'hsr','快速切换最终只显示目标游戏背景');
+  assert.equal(await evaluate(`document.querySelector('#game-logo').dataset.game`),'hsr');
+  assert.equal(await evaluate(`document.querySelector('#app-background').complete`),true);
+  if(process.env.HOYO_TEST_VIDEO){
+   await waitFor(`document.querySelector('#background-video')===window.firstHsrVideo&&!window.firstHsrVideo.paused`,'视频背景切回复用');
+  }
+  await evaluate(`selectGame('zzz')`);
+  assert.equal(await evaluate(`document.querySelector('#app-background')===window.firstZzzBackground`),true,'静态背景切回复用同一已解码图片');
+  await evaluate(`selectGame('hsr')`);
+  // The independent Genshin logo stays visible for custom and official backgrounds too.
+  await new (require('../src/core/backgrounds.cjs').Backgrounds)(data).custom('genshin',await fs.readFile(path.join(root,'src/ui/zzz-background.jpg')));
+  await evaluate(`selectGame('genshin')`);
+  await evaluate(`loadState()`);
+  await waitFor(`!document.querySelector('#game-logo').hidden&&document.querySelector('#game-logo').dataset.game==='genshin'`,'自定义原神背景的文字 Logo');
+  assert.equal(await evaluate(`document.querySelector('#app-background').dataset.game`),'genshin');
+  if(process.env.HOYO_SCREENSHOT_DIR){const shot=await session.client.send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(process.env.HOYO_SCREENSHOT_DIR,'genshin-custom.png'),Buffer.from(shot.data,'base64'));}
+  await new (require('../src/core/backgrounds.cjs').Backgrounds)(data).update('genshin',{backgrounds:[{background:{url:'official-poster'}}]},(_url,dest)=>fs.copyFile(path.join(root,'src/ui/genshin-background.jpg'),dest));
+  await evaluate(`loadState()`);
+  await waitFor(`!document.querySelector('#game-logo').hidden&&document.querySelector('#app-background').src.includes('custom-background')`,'官方原神背景也显示独立 Logo');
+  await evaluate(`selectGame('hsr')`);
   await evaluate(`api.call('settings',{gameId:'zzz',launchExe:'C:\\\\Games\\\\zzz.exe'})`);
   const all=await evaluate(`Promise.all(GAMES.map(g=>api.call('state',{gameId:g.id})))`);
   assert.equal(all.find(s=>s.activeGame==='zzz').settings.launchExe,'C:\\Games\\zzz.exe');

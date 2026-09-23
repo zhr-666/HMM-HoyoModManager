@@ -1,5 +1,6 @@
 const network = require('./network.cjs');
 const {characterGroups}=require('./character-groups.cjs');
+const {translateCategory,localizeTaxonomy}=require('./character-names.cjs');
 
 const API = 'https://gamebanana.com/apiv11';
 const {getGame}=require('./games.cjs');
@@ -53,18 +54,19 @@ async function bounded(promise, milliseconds) {
   })]); } finally { clearTimeout(timer); }
 }
 
-function baseRecord(row) {
+function baseRecord(row,gameId) {
   const character = row._aCategory || row._aSubCategory || {};
   const root = row._aRootCategory || {};
   const image = row._aPreviewMedia?._aImages?.[0];
   const labels = ratingLabels(row);
+  const characterId=Number(character._idRow) || rowId(character._sProfileUrl);
   return {
     id: Number(row._idRow),
     name: row._sName || '',
     author: row._aSubmitter?._sName || '',
     preview: mediaUrl(image, true),
-    characterId: Number(character._idRow) || rowId(character._sProfileUrl),
-    characterName: character._sName || '',
+    characterId,
+    characterName: translateCategory(gameId,characterId,character._sName || ''),
     uploadedAt: Number(row._tsDateAdded) || 0,
     updatedAt: Math.max(Number(row._tsDateUpdated)||0,Number(row._tsDateModified)||0,Number(row._tsDateAdded)||0),
     rootCategoryId: Number(root._idRow) || rowId(root._sProfileUrl),
@@ -125,7 +127,7 @@ class GameBanana {
       await Promise.all(batch.map(async ({node,root}) => append(await fetchRows({_idCategoryRow:String(node.id)}),node.children,root)));
     }
     this.categoryRoots = ancestry;
-    return roots;
+    return localizeTaxonomy(this.game.id,roots);
   }
 
   async hydrateCounts(records) {
@@ -157,7 +159,7 @@ class GameBanana {
     const rows = await this.json(`${API}/ModCategory/${this.game.charactersCategoryId}/SubCategories`);
     return rows.map(row => ({
       id: Number(row._idRow) || rowId(row._sUrl || row._sProfileUrl),
-      name: row._sName || '',
+      name: translateCategory(this.game.id,Number(row._idRow) || rowId(row._sUrl || row._sProfileUrl),row._sName || ''),
       icon: row._sIconUrl || ''
     })).filter(row => Number.isInteger(row.id) && row.id > 0);
   }
@@ -177,7 +179,7 @@ class GameBanana {
     const data = await this.json(`${API}/Mod/Index?${params}`);
     let records = (data._aRecords || [])
       .filter(row => row._sModelName === 'Mod' && Number(row._aGame?._idRow) === this.game.gameBananaId)
-      .map(baseRecord);
+      .map(row=>baseRecord(row,this.game.id));
     const scanned = !sfw && nsfw;
     if (scanned) records = records.filter(row => row.nsfw);
     else if (sfw && !nsfw) records = records.filter(row => !row.nsfw);
@@ -194,7 +196,7 @@ class GameBanana {
     if (!Number.isInteger(id) || id < 1) throw new Error('GameBanana Mod ID 无效。');
     const row = await this.json(`${API}/Mod/${id}/ProfilePage`);
     if (Number(row._aGame?._idRow) !== this.game.gameBananaId) throw new Error(`该 Mod 不属于${this.game.name}。`);
-    const record = baseRecord(row);
+    const record = baseRecord(row,this.game.id);
     let taxonomy;
     if (!record.rootCategoryId && record.characterId) {
       try { taxonomy=await this.taxonomy(); } catch { /* Detail still works if category service is unavailable. */ }

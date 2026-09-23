@@ -6,7 +6,7 @@ const api=bridge?{...bridge,call:(action,payload={})=>bridge.call(action,{gameId
 let state={settings:{},gameSettings:{},mods:[],presets:[],runtime:{}}, categories=[], taxonomy=[], libraryNavigation=[], category='', page=1, query='', total=0, busyCount=0, browseRevision=0;
 let activePage='home', downloads=[];
 // 已接入的游戏按添加顺序排列，越早添加越靠上；拉取到新游戏时追加到数组末尾即可。
-let GAMES=[{id:'genshin',name:'原神',icon:'genshin-icon.png',importer:'GIMI',charactersCategoryId:18140,background:'home-background.jpg'}];
+let GAMES=[{id:'genshin',name:'原神',icon:'genshin-icon.png',logo:'genshin-logo.png',importer:'GIMI',charactersCategoryId:18140,background:'genshin-background.jpg'}];
 const gameById=id=>GAMES.find(game=>game.id===id)||GAMES[0];
 // 所有游戏统一用同一句悬浮提示（需求 12）。
 const GAME_HINT='双击进入模组工作空间';
@@ -45,13 +45,13 @@ function syncNotificationLayer(){
   }catch{}
 }
 const notificationTime=value=>{const d=new Date(Number(value)||Date.now());return new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(d)};
-function renderNotifications(){
+function renderNotifications(scrollToLatest=false){
   const button=$('#notification-button'),badge=$('#notification-badge');
   badge.textContent='';badge.setAttribute('aria-label',`${notificationUnread} 条未读消息`);
   badge.hidden=notificationUnread<=0;button.classList.toggle('has-unread',notificationUnread>0);
-  const list=$('#notification-list');list.replaceChildren();
+  const list=$('#notification-list'),previousScroll=list.scrollTop;list.replaceChildren();
   $('#notification-empty').hidden=notificationEntries.length>0;
-  for(const entry of notificationEntries){
+  for(const entry of notificationEntries.toReversed()){
     const item=document.createElement('article');item.className='notification-item'+(entry.tone==='error'?' error':'');item.dataset.unread=String(!entry.read);item.dataset.notificationId=entry.id;if(entry.target)item.dataset.target=entry.target;
     // 可点击的条目给出指针与悬浮背景，让用户知道点得开（需求 7）。
     item.dataset.clickable=String(Boolean(entry.target));
@@ -60,6 +60,7 @@ function renderNotifications(){
     if(entry.target)item.onclick=event=>{if(event.target.closest('.notification-item-remove')||event.target.closest('.notification-item-details'))return;closeNotificationPanel(()=>openNotificationTarget(entry.target))};
     list.append(item);
   }
+  list.scrollTop=scrollToLatest?list.scrollHeight:previousScroll;
 }
 // 通知条目点进去要落到对应界面：模组更新打开结果窗口，软件更新回到设置里的更新卡片。
 async function openNotificationTarget(target){
@@ -72,9 +73,10 @@ async function openNotificationTarget(target){
   showPage('settings');$('#software-update-card').scrollIntoView({block:'start'});
 }
 function applyNotifications(snapshot){
+  const previousIds=new Set(notificationEntries.map(entry=>entry.id));
   if(Array.isArray(snapshot?.entries)){notificationEntries=snapshot.entries;}
   else if(Array.isArray(snapshot?.added)&&snapshot.added.length){const added=new Map(snapshot.added.map(entry=>[entry.id,entry]));notificationEntries=[...added.values(),...notificationEntries.filter(entry=>!added.has(entry.id))];}
-  notificationUnread=Number(snapshot?.unread)||0;renderNotifications();
+  notificationUnread=Number(snapshot?.unread)||0;renderNotifications(notificationEntries.some(entry=>!previousIds.has(entry.id)));
   // 未读数变化说明有新消息（主进程只推计数）：面板开着时补一次完整快照，
   // 列表不用等下次重新打开才更新。
   if(!Array.isArray(snapshot?.entries)&&!$('#notification-panel').hidden)refreshNotifications();
@@ -109,6 +111,7 @@ function toggleNotificationPanel(open){
   if(!next)return closeNotificationPanel();
   clearTimeout(panelClosing);panelClosing=null;
   panel.classList.remove('closing');panel.hidden=false;
+  const list=$('#notification-list');list.scrollTop=list.scrollHeight;
   // 每次展开都重放一次展开动画：面板在顶层重排后动画会重头播，这里显式重排做保底。
   panel.style.animation='none';void panel.offsetWidth;panel.style.animation='';
   button.setAttribute('aria-expanded','true');
@@ -183,19 +186,60 @@ function showToast(message,tone='info'){
   },3000);
 }
 let homeStatsRevision=0,homeStatsTimer;
-let failedBackgroundVideo='';
+function backgroundScene(gameId=activeGame,snapshot=state){
+  const game=gameById(gameId),media=snapshot.backgroundMedia;
+  const base=`hoyo://app/custom-background?game=${encodeURIComponent(gameId)}&v=${encodeURIComponent(media?.version||snapshot.settings?.backgroundVersion||'')}`;
+  const image=media||snapshot.settings?.backgroundVersion?base:game.background||'genshin-background.jpg';
+  const video=media?.kind==='video'?base+'&media=video':'';
+  const logo=game.logo||'genshin-logo.png';
+  return {game:gameId,image,video,logo,key:JSON.stringify([gameId,image,video,logo]),fallback:game.background||'genshin-background.jpg'};
+}
+function decodedImage(source,fallback){
+  const load=src=>{const image=new Image();image.decoding='async';image.src=src;return image.decode().then(()=>image)};
+  return load(source).catch(error=>source!==fallback?load(fallback):Promise.reject(error));
+}
+function readyVideo(source){
+  if(!source)return {video:null,ready:Promise.resolve()};
+  const video=document.createElement('video');video.muted=true;video.loop=true;video.playsInline=true;video.preload='auto';video.src=source;
+  const ready=new Promise((resolve,reject)=>{
+    if(video.readyState>=2){resolve();return;}
+    const done=()=>{clearTimeout(timer);video.removeEventListener('loadeddata',loaded);video.removeEventListener('error',failed)};
+    const loaded=()=>{done();resolve()},failed=()=>{done();reject(Error('视频背景不可用'))};
+    const timer=setTimeout(failed,5000);
+    video.addEventListener('loadeddata',loaded,{once:true});video.addEventListener('error',failed,{once:true});video.load();
+  });
+  return {video,ready};
+}
+let displayedBackground=null,displayedVideo=null;
+const backgroundController=createBackgroundController({
+  async load(scene){
+    const [image,logo]=await Promise.all([decodedImage(scene.image,scene.fallback),decodedImage(scene.logo,scene.logo)]);
+    const {video,ready}=readyVideo(scene.video);
+    image.id='app-background';image.alt='';logo.id='game-logo';logo.className='game-logo';logo.alt=gameById(scene.game).name;
+    image.dataset.game=scene.game;logo.dataset.game=scene.game;
+    if(scene.game==='genshin')logo.classList.add('genshin-logo');
+    if(video){video.id='background-video';video.dataset.game=scene.game;video.hidden=true;}
+    const entry={image,logo,video,videoReady:video?ready.then(()=>{entry.videoLoaded=true;}):null,videoLoaded:false};
+    return entry;
+  },
+  commit(entry){
+    displayedVideo?.pause();
+    $('#app-background').replaceWith(entry.image);
+    $('#game-logo').replaceWith(entry.logo);
+    const oldVideo=$('#background-video');
+    if(entry.video&&entry.videoLoaded){oldVideo.replaceWith(entry.video);entry.video.hidden=false;displayedVideo=entry.video;entry.video.play().catch(()=>{});}
+    else{const placeholder=document.createElement('video');placeholder.id='background-video';placeholder.hidden=true;oldVideo.replaceWith(placeholder);displayedVideo=null;}
+    displayedBackground=entry;
+  },
+  update(entry){
+    if(displayedBackground!==entry||!entry.video||!entry.videoLoaded)return;
+    const old=$('#background-video');if(old!==entry.video){old.replaceWith(entry.video);entry.video.hidden=false;displayedVideo=entry.video;entry.video.play().catch(()=>{});}
+  },
+  dispose(entry){entry.video?.pause();if(entry.video){entry.video.removeAttribute('src');entry.video.load();}}
+});
 function renderBackground(){
-  const game=gameById(activeGame),media=state.backgroundMedia;
-  const base=`hoyo://app/custom-background?game=${encodeURIComponent(activeGame)}&v=${encodeURIComponent(media?.version||state.settings.backgroundVersion||'')}`;
-  const image=$('#app-background'),video=$('#background-video');
-  const src=media||state.settings.backgroundVersion?base:game.background||'home-background.jpg';
-  if(image.getAttribute('src')!==src)image.src=src;
-  const videoSrc=base+'&media=video';
-  if(media?.kind==='video'&&failedBackgroundVideo!==videoSrc){
-    if(video.getAttribute('src')!==videoSrc){video.pause();video.hidden=true;video.src=videoSrc;video.muted=true;video.onplaying=()=>{if(video.getAttribute('src')===videoSrc)video.hidden=false};video.onerror=()=>{if(video.getAttribute('src')===videoSrc){failedBackgroundVideo=videoSrc;video.hidden=true}};video.play().catch(()=>{});}
-  }else if(video.hasAttribute('src')){video.pause();video.hidden=true;video.removeAttribute('src');video.load();}
-  const logo=$('#game-logo');logo.hidden=activeGame==='genshin';
-  if(!logo.hidden){logo.src=activeGame==='zzz'?'zzz-logo.svg':'hsr-logo.png';logo.alt=game.name;}
+  if(gameSwitch)return;
+  backgroundController.show(backgroundScene()).catch(error=>notifyError(error));
 }
 function renderHome(){
   const active=state.mods.filter(mod=>mod.active),ids=new Set(active.map(mod=>mod.id));
@@ -235,7 +279,7 @@ async function enqueue(action,payload){try{const result=await call(action,payloa
 let initialStateLoaded=false;
 async function loadState(){const requested=activeGame,next=await (initialStateLoaded?api:bridge).call('state');if(initialStateLoaded&&requested!==activeGame)return;if(!initialStateLoaded){activeGame=next.activeGame||'genshin';initialStateLoaded=true;}state=next;if(next.availableGames){GAMES=next.availableGames;renderGameRails()}renderState();}
 // 当前游戏设置的三项（GIMI / ZZMI / SRMI 文件夹、外部程序、启动器背景）：首页弹出的设置窗口与
-// 「全部游戏」页里的同一组设置都读这里，切游戏后两边一起变。
+// 「设置」页里的同一组设置都读这里，切游戏后两边一起变。
 function renderGameValues(root=document){
   for(const input of $$('[data-program-tabs]',root))input.checked=state.settings.programTabs===true;
   for(const el of $$('[data-secondary-program]',root))el.textContent=state.settings.secondaryExe||'尚未选择';
@@ -394,6 +438,7 @@ async function selectGame(gameId){
   gameSwitch=(async()=>{
     try{
       const next=await api.call('setActiveGame',{gameId});
+      await backgroundController.show(backgroundScene(gameId,next));
       activeGame=gameId;state=next;++browseRevision;
       const view=gameViews.get(gameId)||{};taxonomy=view.taxonomy||[];categories=view.categories||[];category=view.category||'';page=view.page||1;query=view.query||'';libraryNavigation=view.libraryNavigation||[];
       $('#search-input').value=query;$('#character-search').value='';$('#sort-select').value=view.sort||'uploaded';$('#sfw-filter').checked=view.sfw!==false;$('#nsfw-filter').checked=view.nsfw!==false;
@@ -406,7 +451,7 @@ async function selectGame(gameId){
   })();
   try{return await gameSwitch}finally{gameSwitch=null;}
 }
-// 「全部游戏」页：大图标网格 + 当前游戏设置；切换游戏时更新标题与状态文案（需求 26/27）。
+// 「全部游戏」只显示图标与名称；当前游戏设置显示在设置页及首页弹窗。
 function renderGamesPage(){
   const game=gameById(activeGame),panel=$('#game-settings-panel');
   for(const el of $$('[data-game-name]'))el.textContent=game.name;
@@ -418,7 +463,7 @@ function renderGameRails(){
   const image=game=>`<img src="${game.icon}" alt="" draggable="false">`;
   list.innerHTML=GAMES.map(game=>`<button type="button" class="game-tile${game.id===activeGame?' active':''}" data-game="${game.id}" data-testid="game-tile" title="${esc(GAME_HINT)}" aria-label="${esc(GAME_HINT)}">${image(game)}</button>`).join('');
   back.innerHTML=image(gameById(activeGame));
-  const grid=$('#page-games .game-grid');if(grid){grid.innerHTML=GAMES.map(game=>`<button type="button" class="game-card" data-game="${game.id}" data-testid="game-card" title="${esc(GAME_HINT)}">${image(game)}<strong>${esc(game.name)}</strong><small data-game-state>独立模组工作区</small></button>`).join('');for(const tile of $$('[data-game]',grid)){tile.onclick=()=>selectGame(tile.dataset.game);tile.ondblclick=()=>enterWorkspace(tile.dataset.game,tile);tile.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();enterWorkspace(tile.dataset.game,tile)}}}}
+  const grid=$('#page-games .game-grid');if(grid){grid.innerHTML=GAMES.map(game=>`<button type="button" class="game-card" data-game="${game.id}" data-testid="game-card" title="${esc(GAME_HINT)}">${image(game)}<strong>${esc(game.name)}</strong></button>`).join('');for(const tile of $$('[data-game]',grid)){tile.onclick=()=>selectGame(tile.dataset.game);tile.ondblclick=()=>enterWorkspace(tile.dataset.game,tile);tile.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();enterWorkspace(tile.dataset.game,tile)}}}}
 
   for(const tile of $$('.game-tile[data-game]',list)){
     tile.onclick=async()=>{if(await selectGame(tile.dataset.game))showPage('home')};
@@ -504,7 +549,7 @@ function showPage(name){
   if(!titles[name])return;
   if(name!=='settings')setMode(launcherPages.has(name)?'launcher':'workspace');
   document.documentElement.dataset.page=name;
-  $('#open-mods-button').hidden=name!=='library';$('#open-library-button').hidden=name!=='library';$('#replace-hash').hidden=name!=='library';
+  $('#open-mods-button').hidden=name!=='library';$('#open-library-button').hidden=name!=='library';$('#replace-hash').hidden=name!=='library';$('#shaderfixes-history').hidden=name!=='library';
   hideContextMenu();pageScroll[activePage]=window.scrollY;activePage=name;
   $$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===name));
   $$('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+name));
@@ -913,14 +958,14 @@ async function showHotkeys(mod){
   }catch(error){notifyError(error)}
 }
 
-// 「替换 Hash」是一个二级窗口：查找替换、替换记录、回溯记录三块放在同一个弹窗里用标签切换。
+// 「替换 Hash」二级窗口通过标签展示查找替换、替换记录、回溯记录和 ShaderFixes 历史。
 // 替换记录回答「什么值换成了什么值」；回溯记录用来查看并执行「换回替换前」。
-const HASH_TABS=[['apply','查找替换'],['records','替换记录'],['rollback','回溯记录']];
+const HASH_TABS=[['apply','查找替换'],['records','替换记录'],['rollback','回溯记录'],['shaderfixes','ShaderFixes']];
 let hashTab='apply',hashInputs={old:'',new:''},hashPreview=null;
 function hashFileRows(files){return `<div class="hash-file-list">${files.map(f=>`<p><strong>${esc(f.modName)}</strong><br><small>${esc(f.file)} · ${f.count} 处</small></p>`).join('')}</div>`}
 function openHashReplace(){
   hashPreview=null;
-  const dialog=modal('替换 Hash','安装库内全部已安装模组（含未启用）的 .ini','<nav id="hash-tabs" class="dialog-tabs" role="tablist" aria-label="替换 Hash 分区"></nav><div id="hash-panel" class="hash-panel" role="tabpanel"></div>','<button class="button secondary" value="cancel">关闭</button>');
+  const dialog=modal(hashTab==='shaderfixes'?'ShaderFixes 历史':'替换 Hash','安装库内全部已安装模组（含未启用）的 .ini','<nav id="hash-tabs" class="dialog-tabs" role="tablist" aria-label="模组工具分区"></nav><div id="hash-panel" class="hash-panel" role="tabpanel"></div>','<button class="button secondary" value="cancel">关闭</button>');
   $('#hash-tabs',dialog).innerHTML=HASH_TABS.map(([id,name])=>`<button type="button" role="tab" class="dialog-tab" data-hash-tab="${id}">${name}</button>`).join('');
   for(const button of $$('[data-hash-tab]',dialog))button.onclick=()=>{hashTab=button.dataset.hashTab;renderHashPanel(dialog)};
   renderHashPanel(dialog);
@@ -929,10 +974,22 @@ function renderHashPanel(dialog){
   if(!dialog.open)return;
   for(const button of $$('[data-hash-tab]',dialog))button.setAttribute('aria-selected',String(button.dataset.hashTab===hashTab));
   const panel=$('#hash-panel',dialog);if(!panel)return;
-  panel.replaceChildren();
+  panel.hashRequest=Symbol();panel.replaceChildren();
+  if(hashTab==='shaderfixes')return renderShaderFixes(dialog,panel);
   if(hashTab==='records')return renderHashRecords(dialog,panel);
   if(hashTab==='rollback')return renderHashRollback(dialog,panel);
   return renderHashApply(dialog,panel);
+}
+async function renderShaderFixes(dialog,panel){
+  const game=activeGame,request=panel.hashRequest;
+  const current=()=>dialog.open&&panel.isConnected&&hashTab==='shaderfixes'&&activeGame===game&&panel.hashRequest===request;
+  panel.innerHTML='<p class="meta">正在读取 ShaderFixes 历史记录…</p>';
+  try{
+    const rows=await call('shaderFixesHistory',{},{foreground:false});
+    if(!current())return;
+    const labels={written:'已写入',skipped:'同名或路径冲突，已跳过',pending:'写入状态待核对（可能中断）',failed:'写入失败'};
+    panel.innerHTML='<p class="meta">以下文件独立存放于加载器的 ShaderFixes 目录。已有同名项会保留；移除或停用模组不会删除这些共享文件。如需清理，请按记录路径在文件管理器中手动删除。</p>'+(rows.length?rows.slice().reverse().map(batch=>`<article class="hotkey-entry"><h3>${esc(batch.name)}</h3><p class="meta">${esc(new Date(batch.createdAt).toLocaleString('zh-CN'))}${batch.sourceFileName?' · '+esc(batch.sourceFileName):''}</p><p class="shaderfixes-path">目标目录：${esc(batch.target)}</p><div class="hash-file-list">${batch.files.map(file=>`<p><strong>${esc(file.file)}</strong> · ${esc(labels[file.status]||'待核对')}<br><small class="shaderfixes-path">${esc(file.destination||batch.target+'/'+file.file)}${file.reason?' · '+esc(file.reason):''}</small></p>`).join('')}</div></article>`).join(''):'<p class="summary-ok">还没有 ShaderFixes 安装记录。</p>');
+  }catch(error){if(current())panel.innerHTML=`<p class="notice error">${esc(error.message)}</p>`}
 }
 function renderHashApply(dialog,panel){
   panel.innerHTML=`<div class="field"><label for="old-hash">查找 Hash</label><input id="old-hash" maxlength="66" spellcheck="false" placeholder="例如 a1b2c3d4"></div><div class="field"><label for="new-hash">替换为</label><input id="new-hash" maxlength="66" spellcheck="false" placeholder="输入新的 hash"></div><div class="row-actions hash-actions"><button type="button" class="button primary" id="preview-hash">查找并预览</button></div><div id="hash-preview"></div>`;
@@ -962,22 +1019,26 @@ function renderHashPreview(dialog,panel,result){
   });
 }
 async function renderHashRecords(dialog,panel){
+  const request=panel.hashRequest,game=activeGame;
+  const current=()=>dialog.open&&panel.isConnected&&hashTab==='records'&&panel.hashRequest===request&&activeGame===game;
   panel.innerHTML='<p class="meta">正在读取替换记录…</p>';
   try{
     const rows=(await call('hashHistory',{},{foreground:false})).slice().reverse();
-    if(!dialog.open||$('#hash-panel',dialog)!==panel||!panel.isConnected)return;
+    if(!current())return;
     panel.innerHTML=rows.length?rows.map(batch=>`<article class="hotkey-entry"><h3>${esc(batch.oldHash)} → ${esc(batch.newHash)}</h3><p>${esc(new Date(batch.createdAt).toLocaleString('zh-CN'))} · ${batch.count} 处 · ${batch.status==='rolledBack'?'已回溯':'已替换'}</p><p>${batch.entries.map(entry=>esc(entry.name)).join('、')}</p></article>`).join(''):'<p class="summary-ok">还没有批量替换记录。</p>';
-  }catch(error){if(dialog.open&&panel.isConnected)panel.innerHTML=`<p class="notice error">${esc(error.message)}</p>`}
+  }catch(error){if(current())panel.innerHTML=`<p class="notice error">${esc(error.message)}</p>`}
 }
 async function renderHashRollback(dialog,panel){
+  const request=panel.hashRequest,game=activeGame;
+  const current=()=>dialog.open&&panel.isConnected&&hashTab==='rollback'&&panel.hashRequest===request&&activeGame===game;
   panel.innerHTML='<p class="meta">正在读取回溯记录…</p>';
   try{
     const rows=await call('hashHistory',{},{foreground:false}),pending=rows.filter(batch=>batch.status!=='rolledBack').slice().reverse(),done=rows.filter(batch=>batch.status==='rolledBack').slice().reverse();
-    if(!dialog.open||$('#hash-panel',dialog)!==panel||!panel.isConnected)return;
+    if(!current())return;
     const batchLine=batch=>`<p>${esc(new Date(batch.createdAt).toLocaleString('zh-CN'))} · ${batch.count} 处 · 备份于“${esc(batch.entries.map(entry=>entry.name).join('、'))}”</p>`;
     panel.innerHTML=`${pending.length?`<h3 class="hash-heading">可以回溯的替换</h3>${pending.map(batch=>`<article class="hotkey-entry"><h3>${esc(batch.oldHash)} ← ${esc(batch.newHash)}</h3>${batchLine(batch)}<div class="row-actions hash-actions"><button type="button" class="button secondary hash-rollback" data-batch="${esc(batch.id)}">回溯到替换前</button></div></article>`).join('')}`:'<p class="summary-ok">当前没有可以回溯的替换。</p>'}${done.length?`<h3 class="hash-heading">回溯记录</h3>${done.map(batch=>`<article class="hotkey-entry"><h3>${esc(batch.oldHash)} ← ${esc(batch.newHash)}</h3>${batchLine(batch)}<p class="meta">已于 ${esc(new Date(batch.rolledBackAt||batch.createdAt).toLocaleString('zh-CN'))} 回溯到替换前。</p></article>`).join('')}`:''}`;
     $$('.hash-rollback',panel).forEach(button=>button.onclick=()=>confirmHashRollback(dialog,panel,rows.find(batch=>batch.id===button.dataset.batch)));
-  }catch(error){if(dialog.open&&panel.isConnected)panel.innerHTML=`<p class="notice error">${esc(error.message)}</p>`}
+  }catch(error){if(current())panel.innerHTML=`<p class="notice error">${esc(error.message)}</p>`}
 }
 function confirmHashRollback(dialog,panel,batch){
   const entry=$$('.hotkey-entry',panel).find(item=>$('.hash-rollback',item)?.dataset.batch===batch.id),box=$('.hash-actions',entry||panel);
@@ -991,6 +1052,7 @@ function confirmHashRollback(dialog,panel,batch){
   };
 }
 $('#replace-hash').onclick=()=>{hashTab='apply';openHashReplace()};
+$('#shaderfixes-history').onclick=()=>{hashTab='shaderfixes';openHashReplace()};
 
 function renameMod(mod){
  modal('修改模组名称','只修改显示名称，文件、分类、来源和启用状态保持不变。',`<div class="field"><label for="mod-name">模组名称</label><input id="mod-name" maxlength="200" value="${esc(mod.name)}" autofocus></div>`,'<button class="button secondary" value="cancel">取消</button><button class="button primary" type="button" id="rename-confirm">保存</button>');
@@ -1047,7 +1109,6 @@ document.addEventListener('pointerdown',event=>{if(!event.target.closest('.conte
 // 滚动条只在滑动时显形，停下约 0.7 秒后淡回几乎透明。
 let scrollIdleTimer;document.addEventListener('scroll',()=>{document.documentElement.dataset.scrolling='true';clearTimeout(scrollIdleTimer);scrollIdleTimer=setTimeout(()=>{delete document.documentElement.dataset.scrolling},700)},{capture:true,passive:true});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')hideContextMenu();});window.addEventListener('scroll',()=>{const menu=$('#context-menu');if(!menu.hidden&&(Number(menu.dataset.scrollY)!==scrollY||Number(menu.dataset.scrollX)!==scrollX))hideContextMenu();});
-$('#app-background').onerror=()=>{const img=$('#app-background'),fallback=gameById(activeGame).background||'home-background.jpg';if(img.getAttribute('src')!==fallback){img.src=fallback;notify('自定义背景无法读取，已使用当前游戏默认背景。',true);}};
 document.documentElement.dataset.mode='launcher';
 document.documentElement.dataset.page='home';
 

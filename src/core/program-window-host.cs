@@ -43,6 +43,7 @@ public static class ProgramWindowHost {
     [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
     [DllImport("user32.dll", SetLastError=true)] static extern bool SetWindowPos(IntPtr window,IntPtr after,int x,int y,int width,int height,uint flags);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window,int command);
     [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window,int command);
     [DllImport("user32.dll", SetLastError=true)] static extern bool PostMessageW(IntPtr window,uint message,IntPtr wParam,IntPtr lParam);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
@@ -50,7 +51,7 @@ public static class ProgramWindowHost {
     [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from,uint to,bool attach);
     [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr window);
     [DllImport("user32.dll")] static extern bool PeekMessageW(out MSG message,IntPtr window,uint first,uint last,uint remove);
-    const long CHILD=0x40000000L, POPUP=0x80000000L, CAPTION=0x00C00000L, THICKFRAME=0x00040000L;
+    const long CHILD=0x40000000L, POPUP=0x80000000L, CAPTION=0x00C00000L, THICKFRAME=0x00040000L, APPWINDOW=0x00040000L, TOOLWINDOW=0x00000080L, VISIBLE=0x10000000L;
     class ProcessInfo { public uint pid,ppid; public string file,start; }
     class Saved { public IntPtr Window,Parent,Style,Extended; public RECT Bounds; public uint Pid; public string Start; }
     static readonly Dictionary<long,Saved> Windows=new Dictionary<long,Saved>();
@@ -90,10 +91,18 @@ public static class ProgramWindowHost {
         SetLastError(0);var previous=SetWindowLongPtr(h,index,style);
         if(previous==IntPtr.Zero&&Marshal.GetLastWin32Error()!=0)throw new Win32Exception();
     }
+    static void HideBeforeStyleChange(IntPtr window) {
+        // Shell removes an existing taskbar entry only while the original
+        // taskbar-eligible style is still present. Complete SW_HIDE before
+        // SetWindowLongPtr/SetParent; ShowWindowAsync can race those calls.
+        ShowWindow(window,0);
+        if(IsWindowVisible(window))throw new Exception("无法隐藏程序窗口，已取消嵌入。");
+    }
     static void Restore(Saved w) {
         if(!Valid(w))return;
+        HideBeforeStyleChange(w.Window);
         SetParent(w.Window,IsWindow(w.Parent)?w.Parent:IntPtr.Zero);
-        SetStyle(w.Window,-16,w.Style);SetStyle(w.Window,-20,w.Extended);
+        SetStyle(w.Window,-16,new IntPtr(w.Style.ToInt64()&~VISIBLE));SetStyle(w.Window,-20,w.Extended);
         SetWindowPos(w.Window,IntPtr.Zero,w.Bounds.Left,w.Bounds.Top,w.Bounds.Right-w.Bounds.Left,w.Bounds.Bottom-w.Bounds.Top,0x0034);
         ShowWindowAsync(w.Window,5);
     }
@@ -142,8 +151,9 @@ public static class ProgramWindowHost {
             var w=new Saved {Window=window,Parent=GetParent(window),Style=GetWindowLongPtr(window,-16),Extended=GetWindowLongPtr(window,-20),Pid=pid,Start=start};
             if(!GetWindowRect(window,out w.Bounds))throw new Win32Exception();
             try {
-                SetStyle(window,-16,new IntPtr((w.Style.ToInt64()|CHILD)&~(POPUP|CAPTION|THICKFRAME)));
-                SetStyle(window,-20,new IntPtr(w.Extended.ToInt64()&~0x00040000L));
+                HideBeforeStyleChange(window);
+                SetStyle(window,-16,new IntPtr((w.Style.ToInt64()|CHILD)&~(POPUP|CAPTION|THICKFRAME|VISIBLE)));
+                SetStyle(window,-20,new IntPtr((w.Extended.ToInt64()|TOOLWINDOW)&~APPWINDOW));
                 SetLastError(0);var previous=SetParent(window,ParentWindow);
                 if(previous==IntPtr.Zero&&Marshal.GetLastWin32Error()!=0)throw new Win32Exception();
                 if(GetParent(window)!=ParentWindow)throw new Exception("程序不接受窗口嵌入。");

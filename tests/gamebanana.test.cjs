@@ -3,6 +3,13 @@ const assert = require('node:assert/strict');
 
 const { GameBanana, selectUpdateFile } = require('../src/core/gamebanana.cjs');
 
+test('GameBanana uses official Chinese character names without changing mod titles',async()=>{
+  const api=new GameBanana(async()=>({_aRecords:[{_idRow:1,_sModelName:'Mod',_sName:'Raiden Skin',_aGame:{_idRow:8552},_aCategory:{_idRow:19498,_sName:'Raiden Shogun'},_nDownloadCount:1}]}));
+  const record=(await api.list()).records[0];
+  assert.equal(record.characterName,'雷电将军');
+  assert.equal(record.name,'Raiden Skin');
+});
+
 test('categories returns the Genshin character subcategories with ids parsed from URLs', async () => {
   const calls = [];
   const api = new GameBanana(async (url) => {
@@ -18,8 +25,8 @@ test('categories returns the Genshin character subcategories with ids parsed fro
   });
 
   assert.deepEqual(await api.categories(), [
-    {id: 18959, name: 'Mona', icon: 'https://images.gamebanana.com/mona.png'},
-    {id: 18989, name: 'Zhongli', icon: ''}
+    {id: 18959, name: '莫娜', icon: 'https://images.gamebanana.com/mona.png'},
+    {id: 18989, name: '钟离', icon: ''}
   ]);
   assert.match(calls[0], /\/Mod\/Categories\?/);
   assert.match(calls[1], /\/ModCategory\/18140\/SubCategories$/);
@@ -149,7 +156,7 @@ test('taxonomy includes genuine game roots and recursively nested children, cach
   throw Error('unexpected URL '+url);
  });
  const tree=await api.taxonomy();
- assert.deepEqual(tree,[{id:17510,name:'Skins',icon:'',children:[{id:18140,name:'Characters',icon:'',children:[{id:19513,name:'Xingqiu',icon:'',children:[]}]}]},{id:22474,name:'UI',icon:'',children:[]}]);
+ assert.deepEqual(tree,[{id:17510,name:'Skins',icon:'',children:[{id:18140,name:'Characters',icon:'',children:[{id:19513,name:'行秋',icon:'',children:[]}]}]},{id:22474,name:'UI',icon:'',children:[]}]);
  assert.deepEqual(await api.taxonomy(),tree);assert.equal(calls.length,3);
 });
 test('list hydrates missing counts through minimal property API with bounded concurrency and cache',async()=>{
@@ -175,7 +182,7 @@ test('detail resolves genuine root ancestry while retaining actual leaf category
   if(p.get('_idCategoryRow')==='17510')return [{_idRow:18140,_sName:'Characters',_nCategoryCount:1}];
   return [{_idRow:19513,_sName:'Xingqiu',_nCategoryCount:0}];
  });
- const d=await api.detail(55);assert.equal(d.rootCategoryId,17510);assert.equal(d.rootCategoryName,'Skins');assert.equal(d.characterId,19513);assert.equal(d.characterName,'Xingqiu');assert.equal(d.characterGroupId,'19513');
+ const d=await api.detail(55);assert.equal(d.rootCategoryId,17510);assert.equal(d.rootCategoryName,'Skins');assert.equal(d.characterId,19513);assert.equal(d.characterName,'行秋');assert.equal(d.characterGroupId,'19513');
 });
 
 test('detail classifies nested role skins but not other skin categories',async()=>{

@@ -4,6 +4,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const {scanHotkeys}=require('./hotkeys.cjs');
 const hashReplace=require('./hash-replace.cjs');
+const shaderFixes=require('./shader-fixes.cjs');
 const {characterGroups}=require('./character-groups.cjs');
 
 const DEFAULT_STATE = Object.freeze({
@@ -107,30 +108,6 @@ async function exists(target) {
     if (error.code === 'ENOENT') return false;
     throw error;
   }
-}
-
-async function hasIni(folder) {
-  const entries = await fs.readdir(folder, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.isFile() && entry.name.toLowerCase().endsWith('.ini')) return true;
-    if (entry.isDirectory() && await hasIni(path.join(folder, entry.name))) return true;
-  }
-  return false;
-}
-
-// ShaderFixes belongs next to Mods in the GIMI folder. The manager deploys into
-// GIMI/Mods/<managed>/<id>, so a ShaderFixes folder at any depth would land in the
-// wrong place and silently not load. Report it instead of installing the package.
-async function shaderFixesFolder(folder, depth = 0) {
-  const entries = await fs.readdir(folder, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (entry.name.toLowerCase() === 'shaderfixes') return entry.name;
-    if (depth >= 12) continue;
-    const nested = await shaderFixesFolder(path.join(folder, entry.name), depth + 1);
-    if (nested) return nested;
-  }
-  return null;
 }
 
 async function folderBytes(folder){
@@ -339,9 +316,11 @@ class Library {
     });
   }
 
+  shaderFixesHistory(){return shaderFixes.history(this);}
+
   install(folder, metadata) {
     return this._enqueue(async () => {
-      await this._validateInstall(folder, metadata);
+      const shaders=await this._validateInstall(folder, metadata);
       const old = metadata.id ? this.state.mods.find((mod) => mod.id === metadata.id) : undefined;
       if(old&&metadata.expectedFolder&&old.folder!==metadata.expectedFolder)throw new Error('下载期间此模组已被更新或批量修改，请从下载列表重试。');
       if (metadata.id && !old) throw new Error('更新 ID 必须对应现有 Mod');
@@ -362,7 +341,9 @@ class Library {
           })):this.libraryRoot;
       await fs.mkdir(parent,{recursive:true});
       const destination = path.join(parent, `${id}-${randomUUID()}`);
-      await fs.cp(path.resolve(folder), destination, { recursive: true, errorOnExist: true, force: false });
+      try{
+        await fs.cp(path.resolve(folder), destination, { recursive: true, errorOnExist: true, force: false, filter:source=>!shaders.roots.includes(source) });
+      }catch(error){await fs.rm(destination,{recursive:true,force:true});throw error;}
       const mod = {
         id,
         name: old?.customName || metadata.name.trim(),
@@ -384,6 +365,7 @@ class Library {
       if (index < 0) next.mods.push(mod); else next.mods[index] = mod;
       let committed = false;
       try {
+        await shaderFixes.install(this,shaders.files,metadata,folder);
         if(old?.active)await this._commit(next);
         else {await this._writeState(next);this.state=next;}
         committed = true;
@@ -624,7 +606,7 @@ class Library {
     if (!validFolder) throw new Error(`Mod ${mod.id} 的资源目录无效`);
     const relative=mod.libraryPath??folderName;
     const pieces=typeof relative==='string'?relative.split('/'):[];
-    if(![1,3].includes(pieces.length)||pieces.at(-1)!==folderName||pieces.some(piece=>!piece||piece==='.'||piece==='..'||/[<>:"\\|?*\x00-\x1f]/.test(piece)||/[ .]$/.test(piece)))throw new Error(`Mod ${mod.id} 的资源目录无效`);
+    if(![1,2,3].includes(pieces.length)||pieces.at(-1)!==folderName||pieces.some(piece=>!piece||piece==='.'||piece==='..'||/[<>:"\\|?*\x00-\x1f]/.test(piece)||/[ .]$/.test(piece)))throw new Error(`Mod ${mod.id} 的资源目录无效`);
     const ignored=Array.isArray(mod.ignoredUpdates)?mod.ignoredUpdates.filter(entry=>entry&&Number.isFinite(Number(entry.uploadedAt))).slice(0,20).map(entry=>({...entry,uploadedAt:Number(entry.uploadedAt)})):undefined;
     return { ...mod, ...(ignored?{ignoredUpdates:ignored}:{}), folder: path.join(this.libraryRoot,...pieces) };
   }
@@ -640,13 +622,13 @@ class Library {
     if (!path.isAbsolute(folder)) throw new Error('Mod 文件夹必须是绝对路径');
     const stat = await fs.stat(folder);
     if (!stat.isDirectory()) throw new Error('Mod 路径必须指向文件夹');
-    if (!await hasIni(folder)) throw new Error('Mod 文件夹中必须包含 ini 文件');
-    const shaderFixes = await shaderFixesFolder(folder);
-    if (shaderFixes) throw new Error(`该压缩包包含 ${shaderFixes} 文件夹，它需要放在加载器根目录而不是模组目录，程序无法正确安装，请手动安装到加载器文件夹。`);
+    const shaders=await shaderFixes.scan(folder);
+    if(!shaders.hasIni)throw new Error('Mod 文件夹中必须包含 ShaderFixes 以外的 ini 文件；纯 ShaderFixes 包请按作者说明手动处理。');
     for (const field of ['name', 'characterId', 'characterName']) {
       if (typeof metadata?.[field] !== 'string' || !metadata[field].trim()) throw new Error(`缺少角色信息：${field}`);
     }
     if (metadata.id !== undefined && (typeof metadata.id !== 'string' || !metadata.id)) throw new Error('Mod ID 必须是字符串');
+    return shaders;
   }
 
   async _validateModsPath(modsPath) {

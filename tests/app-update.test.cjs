@@ -28,6 +28,13 @@ test('successful preparation writes only updater workspace, deduplicates downloa
  await assert.rejects(fs.access(path.join(service.job,'update.zip')),'解包校验通过后原下载包立即删除');
  await fs.access(path.join(service.job,'staging','resources','app.asar'));
 });
+test('update preparation awaits protected paths supplied after lazy game loading',async t=>{
+ const {AppUpdate}=require('../src/core/app-update.cjs'),{createHash}=require('node:crypto');
+ const {appDir,staging}=await fixture(t),r=release();r.assets[0].size=3;r.assets[0].digest='sha256:'+createHash('sha256').update('zip').digest('hex');
+ const service=new AppUpdate({appDir,version:'0.8.0',json:async()=>r,download:async(_url,file)=>fs.writeFile(file,'zip'),extract:async(_zip,out)=>fs.cp(staging,out,{recursive:true}),protectedPaths:async()=>[path.join(appDir,'resources','GIMI')]});
+ await service.check();await assert.rejects(service.prepare(),/配置|重叠/);
+ assert.equal(service.snapshot().status,'error');
+});
 test('interrupted update is surfaced as recovery and cannot silently check/download over its journal',async t=>{
  const {AppUpdate}=require('../src/core/app-update.cjs'),{randomUUID}=require('node:crypto');const {appDir}=await fixture(t),job=randomUUID(),dir=path.join(appDir,'.hoyo-updates',job);await fs.mkdir(path.join(dir,'backup'),{recursive:true});await fs.writeFile(path.join(dir,'backup','old.dll'),'old');await fs.writeFile(path.join(appDir,'.hoyo-updates','current.json'),JSON.stringify({job}));await fs.writeFile(path.join(dir,'status.txt'),'updating');let calls=0;
  const service=new AppUpdate({appDir,version:'0.8.0',json:async()=>{calls++;return release()}});await service.init();assert.equal((await service.check()).status,'recovery');assert.equal(calls,0);await assert.rejects(service.prepare());

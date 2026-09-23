@@ -119,6 +119,23 @@ async function main(){
   await waitFor('document.querySelector("#notification-list").children.length===0','空历史');
   assert.equal(await evaluate('document.querySelector("#notification-badge").hidden'),true,'没有未读时不显示角标');
 
+  // 新消息排在底部；超过四条时只显示四条，其余通过消息区滚轮查看。
+  await evaluate('document.querySelector("#notification-button").click()');
+  await waitFor('!document.querySelector("#notification-panel").hidden','展开消息面板');
+  for(let number=1;number<=5;number++){
+    await evaluate(`window.hoyo.call("addNotification",{text:"排序验证 ${number}"}).then(()=>window.hoyo.call("notifications")).then(applyNotifications)`);
+  }
+  assert.deepEqual(await evaluate('[...document.querySelectorAll("#notification-list .notification-item")].map(item=>item.querySelector("p").textContent)'),['排序验证 1','排序验证 2','排序验证 3','排序验证 4','排序验证 5'],'新消息应逐条排在底部');
+  assert.equal(await evaluate('(()=>{const list=document.querySelector("#notification-list"),cards=[...list.children],area=list.getBoundingClientRect();return cards.filter(card=>{const box=card.getBoundingClientRect();return box.bottom>area.top+1&&box.top<area.bottom-1}).length})()'),4,'面板最多露出四条消息');
+  assert.equal(await evaluate('(()=>{const list=document.querySelector("#notification-list");return list.scrollHeight>list.clientHeight&&Math.abs(list.scrollTop-(list.scrollHeight-list.clientHeight))<2})()'),true,'新增消息后滚到最底部');
+  const listRect=await evaluate('(()=>{const r=document.querySelector("#notification-list").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()');
+  await client.send('Input.dispatchMouseEvent',{type:'mouseWheel',x:listRect.x,y:listRect.y,deltaX:0,deltaY:-300});
+  await waitFor('document.querySelector("#notification-list").scrollTop===0','滚轮查看旧消息');
+  await evaluate('window.hoyo.call("clearNotifications").then(applyNotifications)');
+  await waitFor('document.querySelector("#notification-list").children.length===0','清空排序验证消息');
+  await evaluate('document.querySelector("#notification-close").click()');
+  await waitFor('document.querySelector("#notification-panel").hidden','收起消息面板');
+
   // 1. 3 秒即时通知：只弹一次，不进通知中心、不计未读、不落盘
   const instant='已加入下载列表';
   await evaluate(`showToast(${quoted(instant)})`);

@@ -33,6 +33,35 @@ test('three games isolate identical role IDs, profiles, hotkeys and deployment; 
   await assert.rejects(store.get('zzz').lib.setActiveGame('genshin'),/未知/);
 });
 
+test('active-only startup reads just the selected game and initializes another game on selection',async t=>{
+  const {root,store}=await setup(t);
+  await store.select('zzz');
+  const genshin=store.get('genshin').lib;
+  const original=await fs.readFile(genshin.stateFile,'utf8');
+  await fs.writeFile(genshin.stateFile,'{broken');
+  const restarted=await new Workspaces(root).init({activeOnly:true});
+  assert.equal(restarted.activeGameId,'zzz');
+  assert.equal(restarted.get('zzz').initialized,true);
+  assert.equal(restarted.get('genshin').initialized,false);
+  await assert.rejects(restarted.select('genshin'),SyntaxError);
+  assert.equal(restarted.activeGameId,'zzz');
+  assert.equal(await fs.readFile(genshin.stateFile,'utf8'),'{broken');
+  await fs.writeFile(genshin.stateFile,original);
+  await restarted.select('genshin');
+  assert.equal(restarted.get('genshin').initialized,true);
+  assert.equal(restarted.activeGameId,'genshin');
+});
+
+test('path checks load an inactive game before accepting a conflicting loader',async t=>{
+  const {dir,root,store}=await setup(t),otherMods=path.join(dir,'ZZMI','Mods');
+  await store.setSettings('zzz',{modsPath:otherMods});
+  const restarted=await new Workspaces(root).init({activeOnly:true});
+  assert.equal(restarted.get('zzz').initialized,false);
+  await assert.rejects(restarted.setSettings('genshin',{modsPath:otherMods}),/相同|嵌套/);
+  assert.equal(restarted.get('zzz').initialized,true);
+  assert.equal(restarted.get('genshin').lib.effectiveSettings().modsPath,'');
+});
+
 test('all game data uses the same game root, with no legacy reads or deletion',async t=>{
   const {root,store}=await setup(t);
   await fs.writeFile(path.join(root,'state.json'),'{legacy untouched');

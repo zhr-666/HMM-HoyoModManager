@@ -100,6 +100,25 @@ async function main(){
   await waitFor('!!document.querySelector("#page-library")','界面加载');
   await waitFor('taxonomy.length>0','分类缓存就绪');
 
+  // Open ShaderFixes through the same visible button the user clicks.
+  await evaluate('showPage("library")');
+  assert.equal(await evaluate('(()=>{const button=document.querySelector("#shaderfixes-history");return !!button&&!button.hidden&&button.getClientRects().length>0})()'),true,'我的模组应显示 ShaderFixes 历史按钮');
+  if(process.env.HOYO_SCREENSHOT_DIR){const shot=await client.send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(process.env.HOYO_SCREENSHOT_DIR,'shaderfixes-entry.png'),Buffer.from(shot.data,'base64'));}
+  await evaluate('document.querySelector("#shaderfixes-history").click()');
+  assert.equal(await evaluate('document.querySelector(\'[data-hash-tab="shaderfixes"]\').getAttribute("aria-selected")'), 'true');
+  await waitFor('document.querySelector("#hash-panel").textContent.includes("还没有 ShaderFixes")','空 ShaderFixes 历史');
+  const shaderTarget=path.join(dataDir,'GIMI','ShaderFixes');
+  await fs.writeFile(path.join(data,'games','genshin','shader-fixes-history.json'),JSON.stringify([{id:'test',name:'<img src=x onerror=alert(1)>',sourceFileName:'mod.zip',createdAt:Date.now(),target:shaderTarget,files:[{file:'nested/fix.txt',status:'written'},{file:'old.txt',status:'skipped',reason:'已存在同名项'},{file:'interrupted.txt',status:'pending'}]}]));
+  await evaluate('document.querySelector(\'[data-hash-tab="records"]\').click();document.querySelector(\'[data-hash-tab="shaderfixes"]\').click()');
+  await waitFor('document.querySelector("#hash-panel").textContent.includes("nested/fix.txt")','ShaderFixes 文件历史');
+  const shaderText=await evaluate('document.querySelector("#hash-panel").textContent');
+  assert.match(shaderText,/已写入/);assert.match(shaderText,/已跳过/);assert.match(shaderText,/状态待核对/);assert.ok(shaderText.includes(shaderTarget));
+  assert.equal(await evaluate('document.querySelectorAll("#hash-panel img").length'),0);
+  await evaluate('document.querySelector(\'[data-hash-tab="shaderfixes"]\').click();document.querySelector(\'[data-hash-tab="apply"]\').click()');
+  await sleep(300);assert.equal(await evaluate('!!document.querySelector("#old-hash")'),true);
+  await evaluate('closeModal()');
+  console.log('✓ ShaderFixes 真实 IPC、空历史、文件状态、路径、转义与标签切换');
+
   // 1. 我的模组：已登记的空文件夹显示为文件夹，有模组的显示数量
   await evaluate('showPage("library")');
   await waitFor('document.querySelectorAll("#library-folders .folder-card").length>0','库文件夹渲染');

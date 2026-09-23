@@ -60,7 +60,7 @@ class AppUpdate{
      const plan=JSON.parse(await fs.readFile(path.join(job,'plan.json'),'utf8'));
      if(path.resolve(plan.appDir)!==this.appDir||path.resolve(plan.staging)!==path.join(job,'staging'))throw Error('更新记录路径无效');
      if((await fs.readdir(path.join(job,'backup'))).length)throw Error('已有恢复备份');
-     const checked=await replacementPlan(this.appDir,plan.staging,this.protectedPaths());
+     const checked=await replacementPlan(this.appDir,plan.staging,await this.protectedPaths());
      if(notNewer(plan.version,this.version)){finished.push(job);this.emit({status:'idle',message:'旧更新未执行，当前程序已是相同或更新版本。'});return this._sweep(finished);}
      if(JSON.stringify(checked.entries)!==JSON.stringify(plan.entries))throw Error('更新文件已改变');
      this.job=job;this.emit({status:'ready',update:{version:plan.version},message:'上次更新助手未启动，可以重新点击重启并安装。'});return this._sweep(finished);
@@ -146,7 +146,7 @@ class AppUpdate{
    await fs.mkdir(this.home,{recursive:true});await noLinks(this.home);job=path.join(this.home,randomUUID());await fs.mkdir(job);const archive=path.join(job,'update.zip'),staging=path.join(job,'staging'),update=this.state.update;
    await this.download(update.url,archive,p=>this.emit({received:p.received||0,total:p.total||update.size}),update.digest,{expectedSize:update.size});
    if(await sha256(archive)!==update.digest)throw Error('更新包 SHA256 校验失败，原程序和配置未更改。');
-   this.emit({status:'preparing'});await this.extract(archive,staging);const plan=await replacementPlan(this.appDir,staging,this.protectedPaths());
+   this.emit({status:'preparing'});await this.extract(archive,staging);const plan=await replacementPlan(this.appDir,staging,await this.protectedPaths());
    // 解包并校验通过后原包就没用了：替换和重试用的是暂存目录，留着它只占空间。
    await fs.rm(archive,{force:true}).catch(()=>{});
    await fs.mkdir(path.join(job,'backup'));await this._installHelpers(job);await fs.writeFile(path.join(job,'plan.json'),JSON.stringify({...plan,version:update.version},null,2));
@@ -161,7 +161,7 @@ class AppUpdate{
   if(this.platform!=='win32'||!packaged)throw Error('自动替换仅支持 Windows 便携版。');
   if(!this.job||(!recover&&this.state.status!=='ready')||(recover&&this.state.status!=='recovery'))throw Error('更新尚未准备好。');
   const planFile=path.join(this.job,'plan.json'),plan=JSON.parse(await fs.readFile(planFile,'utf8'));
-  if(!recover)await replacementPlan(this.appDir,plan.staging,this.protectedPaths());
+  if(!recover)await replacementPlan(this.appDir,plan.staging,await this.protectedPaths());
   await fs.writeFile(planFile,JSON.stringify({...plan,parentPid},null,2));
   // 旧任务目录（0.9.x 只复制了 update.ps1）在重试时补齐引擎文件。
   await this._installHelpers(this.job);

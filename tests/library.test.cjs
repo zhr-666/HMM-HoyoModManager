@@ -588,19 +588,33 @@ test('missing local target can be removed and GIMI can change after disabling im
  const m=await library.importLocal(await modFolder('gone'),{name:'Gone',target});await library.disableAll();await fs.rm(target,{recursive:true});await library.remove(m.id);
  await fs.mkdir(target);const n=await library.importLocal(await modFolder('move'),{name:'Move',target});await library.disableAll();const other=path.join(root,'OtherMods');await library.settings({modsPath:other});await library.enable(n.id);await fs.access(path.join(other,'missing',n.id,'move.ini'));
 });
-test('packages containing a ShaderFixes folder at any depth are refused with a manual install hint',async t=>{
+test('packages split ShaderFixes at any depth without changing source files',async t=>{
  const {library,modsPath,input}=await fixture(t);await library.settings({modsPath});
  const pack=async(name,build)=>{const folder=path.join(input,name);await fs.mkdir(folder,{recursive:true});await build(folder);return folder;};
  const skin=async folder=>{await fs.mkdir(path.join(folder,'mods','Amber'),{recursive:true});await fs.writeFile(path.join(folder,'mods','Amber','Amber.ini'),'[TextureOverride]');};
  const top=await pack('top-shader',async folder=>{await skin(folder);await fs.mkdir(path.join(folder,'ShaderFixes'));await fs.writeFile(path.join(folder,'ShaderFixes','fix.fx'),'// shader');});
- await assert.rejects(library.install(top,meta('Top shader')),/ShaderFixes.*手动安装/s);
+ const topMod=await library.install(top,meta('Top shader'));
+ await fs.access(path.join(topMod.folder,'mods/Amber/Amber.ini'));
  const nested=await pack('nested-shader',async folder=>{await fs.mkdir(path.join(folder,'Amber','ShaderFixes'),{recursive:true});await fs.writeFile(path.join(folder,'Amber','Amber.ini'),'[TextureOverride]');await fs.writeFile(path.join(folder,'Amber','ShaderFixes','fix.fx'),'// shader');});
- await assert.rejects(library.install(nested,meta('Nested shader')),/ShaderFixes.*手动安装/s);
+ const nestedMod=await library.install(nested,meta('Nested shader'));
+ await fs.access(path.join(nestedMod.folder,'Amber/Amber.ini'));
  const deep=await pack('deep-shader',async folder=>{await fs.mkdir(path.join(folder,'Amber','Textures','ShaderFixes'),{recursive:true});await fs.writeFile(path.join(folder,'Amber','Amber.ini'),'[TextureOverride]');await fs.writeFile(path.join(folder,'Amber','Textures','ShaderFixes','fix.fx'),'// shader');});
- await assert.rejects(library.install(deep,meta('Deep shader')),/ShaderFixes.*手动安装/s);
+ const deepMod=await library.install(deep,meta('Deep shader'));
+ await fs.access(path.join(deepMod.folder,'Amber/Amber.ini'));
  const upper=await pack('upper-shader',async folder=>{await fs.mkdir(path.join(folder,'Amber','SHADERFIXES'),{recursive:true});await fs.writeFile(path.join(folder,'Amber','Amber.ini'),'[TextureOverride]');await fs.writeFile(path.join(folder,'Amber','SHADERFIXES','fix.fx'),'// shader');});
- await assert.rejects(library.install(upper,meta('Upper shader')),/SHADERFIXES.*手动安装/s);
- assert.deepEqual(library.snapshot().mods,[]);
+ const upperMod=await library.install(upper,meta('Upper shader'));
+ await fs.access(path.join(upperMod.folder,'Amber/Amber.ini'));
+ assert.equal(library.snapshot().mods.length,4);
+ await assert.rejects(fs.access(path.join(topMod.folder,'ShaderFixes')));
+ await assert.rejects(fs.access(path.join(deepMod.folder,'Amber','Textures','ShaderFixes')));
+ assert.equal(await fs.readFile(path.join(path.dirname(modsPath),'ShaderFixes','fix.fx'),'utf8'),'// shader');
+ await fs.access(path.join(top,'ShaderFixes','fix.fx'));
+ const records=await library.shaderFixesHistory();
+ assert.deepEqual(records.map(row=>row.files[0].status),['written','skipped','skipped','skipped']);
+ const reopened=new Library(library.root);await reopened.init();
+ assert.deepEqual(await reopened.shaderFixesHistory(),records);
+ await reopened.remove(topMod.id);
+ assert.deepEqual(await reopened.shaderFixesHistory(),records);
  const buffers=await pack('buffer-pack',async folder=>{await fs.mkdir(path.join(folder,'BufferValues','nested'),{recursive:true});await fs.writeFile(path.join(folder,'BufferValues','nested','value.ini'),'[Resource]');});
  assert.equal((await library.install(buffers,meta('Buffer pack'))).name,'Buffer pack');
  const mixed=await pack('mixed-pack',async folder=>{await skin(folder);await fs.mkdir(path.join(folder,'extras'));await fs.writeFile(path.join(folder,'extras','notes.txt'),'text');});
@@ -612,12 +626,18 @@ test('packages containing a ShaderFixes folder at any depth are refused with a m
  const plain=await pack('plain-pack',async folder=>{await fs.mkdir(path.join(folder,'Amber'),{recursive:true});await fs.writeFile(path.join(folder,'Amber','Amber.ini'),'[TextureOverride]');});
  assert.equal((await library.install(plain,meta('Plain pack'))).name,'Plain pack');
 });
-test('local imports reject a nested ShaderFixes folder as well',async t=>{
+test('local imports split nested ShaderFixes and keep existing files',async t=>{
  const {library,modsPath,input}=await fixture(t);await library.settings({modsPath});const target=path.join(modsPath,'Other','Misc');await fs.mkdir(target,{recursive:true});
  const folder=path.join(input,'local-shader');await fs.mkdir(path.join(folder,'Amber','shaderfixes'),{recursive:true});
  await fs.writeFile(path.join(folder,'Amber','Amber.ini'),'[TextureOverride]');await fs.writeFile(path.join(folder,'Amber','shaderfixes','fix.fx'),'// shader');
- await assert.rejects(library.importLocal(folder,{name:'Local shader',target}),/shaderfixes.*手动安装/s);
- assert.deepEqual(library.snapshot().mods,[]);
+ const shaders=path.join(path.dirname(modsPath),'shaderfixes');await fs.mkdir(shaders);
+ await fs.writeFile(path.join(shaders,'FIX.FX'),'personal');
+ const mod=await library.importLocal(folder,{name:'Local shader',target});
+ assert.equal(mod.active,true);
+ await assert.rejects(fs.access(path.join(mod.folder,'Amber','shaderfixes')));
+ assert.equal(await fs.readFile(path.join(shaders,'FIX.FX'),'utf8'),'personal');
+ assert.deepEqual(await fs.readdir(shaders),['FIX.FX']);
+ assert.equal((await library.shaderFixesHistory())[0].files[0].status,'skipped');
 });
 
 const amberFolder={characterId:'19513',characterName:'胡桃',rootCategoryId:'17510',rootCategoryName:'Skins',characterGroupId:'19513'};

@@ -34,10 +34,10 @@ class Workspaces {
     this.file=path.join(this.root,'workspaces.json');this.corrupt=false;
     this.globalSettings=Object.fromEntries(Object.entries(DEFAULT_SETTINGS).filter(([key])=>!GAME_KEYS.has(key)));
   }
-  async init(){
+  async init({activeOnly=false}={}){
     for(const game of GAMES){
       const root=gameRoot(this.root,game.id);
-      const ctx={game,root,lib:null,api:null,installer:null,downloadQueue:null,downloadReporter:null,busy:false,hashPreview:null,lastUpdateSummary:null,legacyDownloads:[],checkAbort:new AbortController()};
+      const ctx={game,root,lib:null,api:null,installer:null,downloadQueue:null,downloadReporter:null,busy:false,hashPreview:null,lastUpdateSummary:null,legacyDownloads:[],checkAbort:new AbortController(),initialized:false,loading:null};
       ctx.lib=new Library(root,{
         gameId:game.id,libraryRoot:path.join(root,'library'),
         previewRoot:root,dataRoot:this.root,getGlobalSettings:()=>this.getGlobalSettings(),
@@ -45,7 +45,6 @@ class Workspaces {
       });
       this.contexts.set(game.id,ctx);
     }
-    for(const ctx of this.contexts.values())await ctx.lib.init();
     try{
       const saved=JSON.parse(await fs.readFile(this.file,'utf8'));
       if(this.contexts.has(saved?.activeGameId))this.activeGameId=saved.activeGameId;
@@ -55,7 +54,17 @@ class Workspaces {
         require('./preferences.cjs').proxyConfig(this.globalSettings);
       }
     }catch(error){if(error instanceof SyntaxError)this.corrupt=true;else if(error.code!=='ENOENT')throw error;}
+    if(activeOnly)await this.ensure(this.activeGameId);
+    else for(const ctx of this.contexts.values())await this.ensure(ctx.game.id);
     return this;
+  }
+  async ensure(id){
+    const ctx=this.get(id);
+    if(ctx.initialized)return ctx;
+    if(!ctx.loading){
+      ctx.loading=ctx.lib.init().then(()=>{ctx.initialized=true;return ctx}).finally(()=>{ctx.loading=null});
+    }
+    return ctx.loading;
   }
   get(id){const ctx=this.contexts.get(id);if(!ctx)throw new Error('未知的游戏。');return ctx;}
   get current(){return this.storage.getStore()||this.get(this.activeGameId);}
@@ -68,6 +77,7 @@ class Workspaces {
   select(id){
     this.get(id);
     return this._enqueue(async()=>{
+      await this.ensure(id);
       await this.saveMetadata(id,this.globalSettings);
       this.activeGameId=id;return this.get(id);
     });
@@ -82,6 +92,7 @@ class Workspaces {
   setSettings(gameId,patch){
     const ctx=this.get(gameId);
     return this._enqueue(async()=>{
+      await this.ensure(gameId);
       patch=validateSettingsPatch(patch);
       require('./preferences.cjs').proxyConfig({...this.globalSettings,...patch});
       const global={},local={};
@@ -116,6 +127,7 @@ class Workspaces {
     }
     for(const ctx of this.contexts.values()){
       if(ctx.game.id===gameId)continue;
+      await this.ensure(ctx.game.id);
       const other=ctx.lib.effectiveSettings().modsPath;
       if(other&&overlaps(resolved,await canonical(other)))throw new Error(`启用库不能与${ctx.game.name}的启用库相同或相互嵌套`);
     }
