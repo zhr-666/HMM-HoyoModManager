@@ -110,3 +110,6 @@ SHA256：`bbad3801d194edb6e00dfb8e330a39832be568174a581f19a7a3bb2756585910`
 - 文件：`HoYoMod-1.0.0-Windows-x64.zip`，166605568 字节。
 - SHA256：`1bdab4122ea3960221021b02e7bf405a3aa1f58ee2b2dba695da02b7494790c9`。
 - 新版本不自动迁移旧分散目录；原有本机旧版本产物和旧仓库标签保留，未覆盖。
+- 发布核验：[v1.0.0](https://github.com/zhr-666/HMM-HoyoModManager/releases/tag/v1.0.0) 已上传 ZIP 与 SHA256 文件；Release 正文为空；远程资产 SHA256 与上列值一致，更新器能识别新仓库发布。
+- 首次 Windows CI 暴露旧测试将链接类型固定为 `dir`，已在 `e0db9d5` 按平台改为 Windows `junction` / 其他平台 `dir`，仅改变测试断言，不改变程序包或版本标签。
+- [修正后的远程 CI](https://github.com/zhr-666/HMM-HoyoModManager/actions/runs/35809839500) Windows / macOS 均通过。该自动检查不等于 Windows GUI、游戏或更新重启的人工验收。
