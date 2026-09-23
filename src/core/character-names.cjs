@@ -1,5 +1,5 @@
-// GameBanana 分类 ID 是映射键。新增角色时只需给对应游戏补一条中文名；
-// 未核实的名称留在 GameBanana 原文中，不猜译，也不处理 UI 等普通分类。
+// GameBanana 分类 ID 是映射键。角色名与清楚可译的大分类共用这一份映射；
+// 未核实的名称留在原文中，UI、缩写及专有名词不翻译。
 const names=require('./character-names.zh-CN.json');
 
 function translateCategory(gameId,id,original){
@@ -19,8 +19,8 @@ function localizeTaxonomy(gameId,nodes){
 function localizeLibraryState(gameId,state){
   return {
     ...state,
-    mods:(state.mods||[]).map(mod=>({...mod,characterName:translateCategory(gameId,mod.characterId,mod.characterName)})),
-    folders:(state.folders||[]).map(folder=>({...folder,name:translateCategory(gameId,folder.id,folder.name)}))
+    mods:(state.mods||[]).map(mod=>({...mod,characterName:translateCategory(gameId,mod.characterId,mod.characterName),rootCategoryName:translateCategory(gameId,mod.rootCategoryId,mod.rootCategoryName)})),
+    folders:(state.folders||[]).map(folder=>({...folder,name:translateCategory(gameId,folder.id,folder.name),rootCategoryName:translateCategory(gameId,folder.rootCategoryId,folder.rootCategoryName)}))
   };
 }
 

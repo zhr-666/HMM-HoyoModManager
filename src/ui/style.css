@@ -362,8 +362,7 @@ dialog{background:var(--surface);color:var(--text)}
 
 /* ===== 米哈游官方启动器风格：两级侧栏（启动器 / 模组工作空间）===== */
 .rail{display:grid;gap:5px;align-content:start}
-/* 启动器侧栏：游戏图标紧贴横杠往上排，横杠下面是「全部游戏」，再下面是设置。
-   column-reverse 让第一个加入的游戏离「全部游戏」最近，后续游戏往上叠。 */
+/* 启动器侧栏：游戏图标紧贴横杠往上排。JS 按加入顺序倒序写入，新游戏落在最下方。 */
 .game-list{display:flex;flex-direction:column-reverse;gap:5px}
 .rail-foot{display:grid;gap:5px;margin-top:auto;padding-top:10px}
 /* 「全部游戏」上方的小横杠：区分游戏区与底部入口 */

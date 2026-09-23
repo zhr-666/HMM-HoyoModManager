@@ -70,7 +70,7 @@ function baseRecord(row,gameId) {
     uploadedAt: Number(row._tsDateAdded) || 0,
     updatedAt: Math.max(Number(row._tsDateUpdated)||0,Number(row._tsDateModified)||0,Number(row._tsDateAdded)||0),
     rootCategoryId: Number(root._idRow) || rowId(root._sProfileUrl),
-    rootCategoryName: root._sName || '',
+    rootCategoryName: translateCategory(gameId,Number(root._idRow) || rowId(root._sProfileUrl),root._sName || ''),
     downloadCount: countValue(row._nDownloadCount),
     nsfw: labels.length > 0 || row._bHasContentRatings === true || ['warn','hide'].includes(row._sInitialVisibility),
     ratingLabels: labels,

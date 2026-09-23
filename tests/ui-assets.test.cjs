@@ -47,5 +47,5 @@ test('注册游戏的图标与默认背景均有白名单和实体文件',async(
   assert.match(game.background,/\.jpg$/,'默认背景统一使用压缩后的 JPEG');
   totalBackgroundBytes+=(await fs.stat(path.join(__dirname,'..','src','ui',game.background))).size;
  }
- assert.ok(totalBackgroundBytes<3*1024*1024,'三款内置背景总大小应低于 3 MiB');
+ assert.ok(totalBackgroundBytes<3*1024*1024,'四款内置背景总大小应低于 3 MiB');
 });

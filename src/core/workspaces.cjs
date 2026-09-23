@@ -7,6 +7,7 @@ const {GAMES}=require('./games.cjs');
 const {DEFAULT_SETTINGS,GAME_SETTING_KEYS,validateSettingsPatch}=require('./settings.cjs');
 const GAME_KEYS=new Set(GAME_SETTING_KEYS);
 const {gameRoot}=require('./game-data.cjs');
+const {MARKER}=require('./local-deployment.cjs');
 
 // Resolve existing ancestors too: a newly chosen directory may not exist yet.
 async function canonical(value){
@@ -29,7 +30,7 @@ function overlaps(a,b){
 class Workspaces {
   constructor(root){
     if(!path.isAbsolute(root))throw new Error('数据目录必须是绝对路径');
-    this.root=path.resolve(root);this.contexts=new Map();this.activeGameId='genshin';
+    this.root=path.resolve(root);this.contexts=new Map();this.activeGameId='genshin';this.addedGameIds=[];
     this.storage=new AsyncLocalStorage();this.queue=Promise.resolve();
     this.file=path.join(this.root,'workspaces.json');this.corrupt=false;
     this.globalSettings=Object.fromEntries(Object.entries(DEFAULT_SETTINGS).filter(([key])=>!GAME_KEYS.has(key)));
@@ -45,28 +46,44 @@ class Workspaces {
       });
       this.contexts.set(game.id,ctx);
     }
+    let hasSavedList=false;
     try{
       const saved=JSON.parse(await fs.readFile(this.file,'utf8'));
       if(this.contexts.has(saved?.activeGameId))this.activeGameId=saved.activeGameId;
+      if(Array.isArray(saved?.addedGameIds)){
+        this.addedGameIds=[...new Set(saved.addedGameIds.filter(id=>this.contexts.has(id)))];hasSavedList=true;
+      }
       if(saved.settings){
         const patch=validateSettingsPatch(saved.settings);
         this.globalSettings={...this.globalSettings,...Object.fromEntries(Object.entries(patch).filter(([key])=>!GAME_KEYS.has(key)))};
         require('./preferences.cjs').proxyConfig(this.globalSettings);
       }
     }catch(error){if(error instanceof SyntaxError)this.corrupt=true;else if(error.code!=='ENOENT')throw error;}
-    if(activeOnly)await this.ensure(this.activeGameId);
-    else for(const ctx of this.contexts.values())await this.ensure(ctx.game.id);
+    if(!hasSavedList){
+      for(const game of GAMES){
+        const stat=await fs.lstat(gameRoot(this.root,game.id)).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+        if(stat?.isDirectory())this.addedGameIds.push(game.id);
+      }
+    }
+    if(!this.addedGameIds.includes(this.activeGameId))this.activeGameId=this.addedGameIds[0]||'genshin';
+    if(activeOnly){if(this.addedGameIds.length)await this.ensure(this.activeGameId);}
+    else for(const id of this.addedGameIds)await this.ensure(id);
     return this;
   }
   async ensure(id){
     const ctx=this.get(id);
     if(ctx.initialized)return ctx;
     if(!ctx.loading){
-      ctx.loading=ctx.lib.init().then(()=>{ctx.initialized=true;return ctx}).finally(()=>{ctx.loading=null});
+      ctx.loading=(async()=>{
+        const stat=await fs.lstat(ctx.root).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+        if(stat&&!stat.isDirectory())throw Error('游戏数据目录不能是链接或文件。');
+        await ctx.lib.init();ctx.initialized=true;return ctx;
+      })().finally(()=>{ctx.loading=null});
     }
     return ctx.loading;
   }
   get(id){const ctx=this.contexts.get(id);if(!ctx)throw new Error('未知的游戏。');return ctx;}
+  isAdded(id){return this.addedGameIds.includes(id);}
   get current(){return this.storage.getStore()||this.get(this.activeGameId);}
   run(idOrContext,fn){
     const ctx=typeof idOrContext==='string'?this.get(idOrContext):idOrContext;
@@ -78,25 +95,58 @@ class Workspaces {
     this.get(id);
     return this._enqueue(async()=>{
       await this.ensure(id);
-      await this.saveMetadata(id,this.globalSettings);
+      const added=this.isAdded(id)?this.addedGameIds:[...this.addedGameIds,id];
+      await this.saveMetadata(id,this.globalSettings,added);
+      this.addedGameIds=added;
       this.activeGameId=id;return this.get(id);
     });
   }
-  async saveMetadata(activeGameId,settings){
+  remove(id){
+    this.get(id);
+    return this._enqueue(async()=>{
+      if(!this.isAdded(id))throw Error('游戏尚未添加。');
+      const ctx=await this.ensure(id),modsPath=ctx.lib.effectiveSettings().modsPath;
+      const managed=modsPath?path.join(modsPath,'HoYoModManaged'):null;
+      if(managed){
+        await this.validateModsPath(id,modsPath);
+        const stat=await fs.lstat(managed).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+        if(stat&&(!stat.isDirectory()||await fs.readFile(path.join(managed,MARKER),'utf8').catch(()=>null)!=='managed\n'))throw Error('启用库中的 HoYoModManaged 不属于本程序，已停止移除以保护文件。');
+      }
+      await ctx.lib.disableAll();
+      if(managed)await fs.rm(managed,{recursive:true,force:true});
+      const added=this.addedGameIds.filter(value=>value!==id);
+      const active=this.activeGameId===id?(added[0]||'genshin'):this.activeGameId;
+      await this.saveMetadata(active,this.globalSettings,added);
+      try{await fs.rm(ctx.root,{recursive:true,force:true});}
+      catch(error){
+        try{await this.saveMetadata(this.activeGameId,this.globalSettings,this.addedGameIds);}
+        catch(restoreError){error.message+=`；游戏列表恢复失败：${restoreError.message}`;}
+        throw error;
+      }
+      this.addedGameIds=added;this.activeGameId=active;
+      ctx.lib=new Library(ctx.root,{gameId:id,libraryRoot:path.join(ctx.root,'library'),previewRoot:ctx.root,dataRoot:this.root,getGlobalSettings:()=>this.getGlobalSettings(),resolveTaxonomy:()=>ctx.api.taxonomy(),validateModsPath:value=>this.validateModsPath(id,value)});
+      ctx.initialized=false;ctx.started=false;
+      return this.get(active);
+    });
+  }
+  async saveMetadata(activeGameId,settings,addedGameIds=this.addedGameIds){
     if(this.corrupt)throw new Error('游戏工作区记录损坏，请保留 workspaces.json 后修复；程序不会覆盖该文件。');
     const temp=this.file+'.tmp-'+randomUUID();
-    try{await fs.writeFile(temp,JSON.stringify({activeGameId,settings},null,2)+'\n');await fs.rename(temp,this.file);}
+    try{await fs.mkdir(this.root,{recursive:true});await fs.writeFile(temp,JSON.stringify({activeGameId,addedGameIds,settings},null,2)+'\n');await fs.rename(temp,this.file);}
     catch(error){await fs.rm(temp,{force:true});throw error;}
   }
   getGlobalSettings(){return {...this.globalSettings};}
   setSettings(gameId,patch){
     const ctx=this.get(gameId);
     return this._enqueue(async()=>{
-      await this.ensure(gameId);
       patch=validateSettingsPatch(patch);
       require('./preferences.cjs').proxyConfig({...this.globalSettings,...patch});
       const global={},local={};
       for(const [key,value] of Object.entries(patch))(GAME_KEYS.has(key)?local:global)[key]=value;
+      if(Object.keys(local).length){
+        if(!this.isAdded(gameId))throw Error('请先从全部游戏添加该游戏。');
+        await this.ensure(gameId);
+      }
       // Validate and save game paths first, so a rejected path cannot change global preferences.
       if(Object.keys(local).length)await ctx.lib.settings(local,{gameId});
       if(Object.keys(global).length){
@@ -127,6 +177,7 @@ class Workspaces {
     }
     for(const ctx of this.contexts.values()){
       if(ctx.game.id===gameId)continue;
+      if(!this.isAdded(ctx.game.id))continue;
       await this.ensure(ctx.game.id);
       const other=ctx.lib.effectiveSettings().modsPath;
       if(other&&overlaps(resolved,await canonical(other)))throw new Error(`启用库不能与${ctx.game.name}的启用库相同或相互嵌套`);
