@@ -96,6 +96,25 @@ async function main(){
   assert.equal(corner.bottom,32,'悬浮按钮距底边 32px（右下角原位）：'+JSON.stringify(corner));
   console.log('✓ 通知提示卡与通知中心画在对话框与遮罩之上，画面保持清晰');
 
+  // 模组详情打开时，通知中心仍能展开和收起；关闭详情后也保持正常。
+  await evaluate(`document.querySelectorAll('.notification-popup').forEach(el=>el.remove());syncNotificationLayer();window.originalDetailCall=api.call;api.call=async(action,p)=>action==='detail'?{id:p.id,name:'通知交互回归',images:[],files:[]}:window.originalDetailCall(action,p);openDetail({id:1,name:'通知交互回归'})`);
+  await waitFor(`document.querySelector('#modal').open && document.querySelector('#modal-title').textContent==='通知交互回归'`,'模组详情');
+  await evaluate(`showNotificationPopup({text:'详情期间收到新通知'})`);
+  const buttonPoint=await evaluate(`(()=>{const r=document.querySelector('#notification-button').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  const clickNotification=async()=>{
+    await client.send('Input.dispatchMouseEvent',{type:'mousePressed',x:buttonPoint.x,y:buttonPoint.y,button:'left',clickCount:1});
+    await client.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:buttonPoint.x,y:buttonPoint.y,button:'left',clickCount:1});
+  };
+  await clickNotification();
+  await waitFor(`!document.querySelector('#notification-panel').hidden`,'详情打开时通知中心可操作');
+  await clickNotification();
+  await waitFor(`document.querySelector('#notification-panel').hidden`,'详情打开时通知中心可收起');
+  await evaluate(`document.querySelector('#modal .dialog-back').click();api.call=window.originalDetailCall;delete window.originalDetailCall`);
+  await clickNotification();
+  await waitFor(`!document.querySelector('#notification-panel').hidden`,'关闭详情后通知中心恢复');
+  await evaluate(`closeNotificationPanel()`);
+  await waitFor(`document.querySelector('#notification-panel').hidden`,'通知中心收起');
+
   // 提示卡可见时，通知容器的透明区域不能截获首页设置齿轮的点击。
   const gearHit=await evaluate(`(()=>{const b=document.querySelector('#home-game-settings').getBoundingClientRect();return document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.closest('#home-game-settings')?.id||''})()`);
   assert.equal(gearHit,'home-game-settings','通知弹窗显示时仍应能点击当前游戏设置');
