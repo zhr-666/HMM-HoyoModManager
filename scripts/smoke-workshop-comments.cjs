@@ -1,7 +1,7 @@
 // Electron renderer check with a controlled IPC boundary; no user data or GameBanana account is used.
 if(process.type==='renderer'){
   const {contextBridge}=require('electron');
-  const calls=[];let commentsAttempt=0;
+  const calls=[];let commentsAttempt=0,repliesAttempt=0;
   contextBridge.exposeInMainWorld('hoyo',{
     call:async(action,p={})=>{
       calls.push({action,p});
@@ -13,7 +13,11 @@ if(process.type==='renderer'){
       if(action==='detail')return {id:55,name:'Test Mod',author:'Author',files:[{id:88,name:'safe.zip',size:1024,uploadedAt:100}],images:[]};
       if(action==='comments'){
         if(++commentsAttempt===1)throw Error('Temporary failure');
-        return {page:p.page,comments:[{id:1,author:'Alice',text:'Safe comment',postedAt:100,replyCount:0}],hasMore:false};
+        return {page:p.page,comments:[{id:1,author:'Alice',text:'Safe comment',postedAt:100,replyCount:1}],hasMore:false};
+      }
+      if(action==='replies'){
+        if(++repliesAttempt===1)throw Error('Temporary reply failure');
+        return {page:p.page,comments:[{id:2,author:'Bob',text:'Safe reply',postedAt:200,replyCount:0}],hasMore:false};
       }
       if(action==='testCalls')return calls;
       return {};
@@ -43,6 +47,10 @@ if(process.type==='renderer'){
       await wait(win,"document.querySelector('.comments-more')?.textContent==='重试' && !document.querySelector('.comments-more').hidden");
       await win.webContents.executeJavaScript("document.querySelector('.comments-more').click()");
       await wait(win,"document.querySelector('.comment-row')?.textContent.includes('Safe comment')");
+      await win.webContents.executeJavaScript("document.querySelector('.comment-replies summary').click()");
+      await wait(win,"document.querySelector('.replies-more')?.textContent==='重试' && !document.querySelector('.replies-more').hidden");
+      await win.webContents.executeJavaScript("document.querySelector('.replies-more').click()");
+      await wait(win,"document.querySelector('.reply-list .comment-row')?.textContent.includes('Safe reply')");
       if(process.env.HMM_SMOKE_SCREENSHOT){
         await win.webContents.executeJavaScript("document.querySelector('.detail-comments').scrollIntoView({block:'start'})");
         await new Promise(resolve=>setTimeout(resolve,250));
@@ -51,6 +59,7 @@ if(process.type==='renderer'){
       await win.webContents.executeJavaScript("document.querySelector('.file-direct-download').click()");
       const calls=await win.webContents.executeJavaScript("hoyo.call('testCalls')");
       assert.ok(calls.some(row=>row.action==='comments'&&row.p.id===55&&row.p.page===1));
+      assert.ok(calls.some(row=>row.action==='replies'&&row.p.id==='1'&&row.p.page===1));
       assert.ok(calls.some(row=>row.action==='openGameBananaDownload'&&row.p.id==='88'));
       assert.equal(await win.webContents.executeJavaScript("document.querySelector('#modal .dialog-back')!==null && document.querySelector('#modal .dialog-head .icon-button')!==null"),true);
       await win.webContents.executeJavaScript("document.querySelector('#modal .dialog-back').click();confirmRemove({id:'local',name:'Local Mod'})");

@@ -153,6 +153,20 @@ test('comments rejects invalid mod IDs and pages before requesting GameBanana', 
   await assert.rejects(api.comments(55,0),/页/);
 });
 
+test('replies loads a post thread without changing its author and text', async () => {
+  const api = new GameBanana(async url => {
+    assert.equal(url,'https://gamebanana.com/apiv11/Post/10/Posts?_nPage=1');
+    return {_aMetadata:{_nRecordCount:1,_nPerpage:15,_bIsComplete:true},_aRecords:[
+      {_idRow:11,_sText:'<p>Reply &amp; detail</p>',_tsDateAdded:200,_aPoster:{_sName:'Bob'},_nReplyCount:0}
+    ]};
+  });
+  assert.deepEqual(await api.replies(10),{
+    comments:[{id:11,author:'Bob',text:'Reply & detail',postedAt:200,replyCount:0}],
+    page:1,total:1,hasMore:false
+  });
+  await assert.rejects(api.replies(0),/ID/);
+});
+
 test('selectUpdateFile only selects one file whose name exactly matches', () => {
   const files = [{id: 1, name: 'mod-v2.zip'}, {id: 2, name: 'mod.zip'}];
   assert.deepEqual(selectUpdateFile(files, 'mod.zip'), files[1]);

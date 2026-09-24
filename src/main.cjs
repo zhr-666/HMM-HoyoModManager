@@ -353,6 +353,7 @@ const actions={
   browse:p=>api.list({category:p.category,page:Math.max(1,Math.min(1000,Number(p.page)||1)),query:String(p.query||'').slice(0,100),sort:p.sort,sfw:p.sfw!==false,nsfw:p.nsfw!==false}),
   detail:p=>api.detail(id(p.id)),
   comments:p=>api.comments(id(p.id),p.page),
+  replies:p=>api.replies(id(p.id),p.page),
   install:p=>exclusive(()=>enqueueMod(p)),
   downloads:()=>downloadRows(),
   cancelDownload:p=>downloadQueue.cancel(p.id),

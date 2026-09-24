@@ -890,6 +890,34 @@ async function openDetail(record){
   $$('.file-direct-download',dialog).forEach(button=>button.onclick=()=>call('openGameBananaDownload',{id:button.dataset.fileId},{foreground:false}).catch(()=>{}));
   const comments=q('.detail-comments'),status=q('.comments-status'),list=q('.comments-list'),more=q('.comments-more');
   let commentPage=0,loadingComments=false;
+  const commentMarkup=row=>`<article class="comment-row"><div><strong>${esc(row.author)}</strong><small>${esc(row.postedAt?formatDate(row.postedAt):'日期未知')}</small></div><p>${esc(row.text||'（空评论）')}</p>${row.replyCount?`<details class="comment-replies" data-post-id="${esc(row.id)}"><summary>查看 ${esc(row.replyCount)} 条回复</summary><p class="meta replies-status">展开后加载回复…</p><div class="reply-list"></div><button type="button" class="button secondary replies-more" hidden>加载更多回复</button></details>`:''}</article>`;
+  const bindReplies=host=>{
+    $$('.comment-replies',host).forEach(thread=>{
+      if(thread.dataset.bound)return;
+      thread.dataset.bound='true';
+      const replyStatus=$('.replies-status',thread),replyList=$('.reply-list',thread),replyMore=$('.replies-more',thread);
+      let page=0,loading=false;
+      const loadReplies=async()=>{
+        if(loading)return;
+        loading=true;replyMore.hidden=true;replyStatus.hidden=false;replyStatus.textContent='正在加载回复…';
+        try{
+          const result=await call('replies',{id:thread.dataset.postId,page:page+1},{foreground:false,silent:true});
+          if(!dialog.open||dialog.dataset.layerRevision!==revision)return;
+          page=result.page;
+          replyList.insertAdjacentHTML('beforeend',result.comments.map(commentMarkup).join(''));
+          bindReplies(replyList);
+          replyStatus.textContent=page===1&&!result.comments.length?'暂无回复':'';
+          replyStatus.hidden=!replyStatus.textContent;
+          replyMore.hidden=!result.hasMore;
+          replyMore.textContent='加载更多回复';
+        }catch(error){
+          if(dialog.open&&dialog.dataset.layerRevision===revision){replyStatus.textContent='回复加载失败，请重试。';replyMore.textContent='重试';replyMore.hidden=false;}
+        }finally{loading=false;}
+      };
+      thread.addEventListener('toggle',()=>{if(thread.open&&page===0)loadReplies()});
+      replyMore.onclick=()=>loadReplies();
+    });
+  };
   const loadComments=async()=>{
     if(loadingComments)return;
     loadingComments=true;more.hidden=true;status.hidden=false;status.textContent='正在加载评论…';
@@ -897,7 +925,8 @@ async function openDetail(record){
       const result=await call('comments',{id:d.id,page:commentPage+1},{foreground:false,silent:true});
       if(!dialog.open||dialog.dataset.layerRevision!==revision)return;
       commentPage=result.page;
-      list.insertAdjacentHTML('beforeend',result.comments.map(row=>`<article class="comment-row"><div><strong>${esc(row.author)}</strong><small>${esc(row.postedAt?formatDate(row.postedAt):'日期未知')}</small></div><p>${esc(row.text||'（空评论）')}</p>${row.replyCount?`<small>${esc(row.replyCount)} 条回复</small>`:''}</article>`).join(''));
+      list.insertAdjacentHTML('beforeend',result.comments.map(commentMarkup).join(''));
+      bindReplies(list);
       status.textContent=commentPage===1&&!result.comments.length?'暂无评论':'';
       status.hidden=!status.textContent;
       more.hidden=!result.hasMore;
