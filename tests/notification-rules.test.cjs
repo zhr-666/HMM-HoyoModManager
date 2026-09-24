@@ -81,12 +81,12 @@ test('通知中心面板右上角：× 只关面板，双勾＝清空消息',()=
   assert.match(app,/\$\('#notification-close'\)\.onclick=\(\)=>closeNotificationPanel\(\)/,'× 只收起面板，不删消息');
 });
 
-test('完成通知 8 秒后自动关闭，也能提前点「×」，关闭后消息仍在通知中心',()=>{
+test('完成通知 8 秒后自动收起；手动点叉会按消息 ID 删除历史',()=>{
   const app=read('src/ui/app.js');
   const popup=/function showNotificationPopup\(entry\)\{([\s\S]*?)\n\}/.exec(app);
   assert.ok(popup,'缺少 showNotificationPopup');
   assert.match(popup[1],/notification-popup-close/,'完成通知要有关闭按钮');
-  assert.equal(popup[1].includes('addNotification'),false,'关闭弹窗不等于删除消息');
+  assert.match(popup[1],/call\('removeNotification',\{id:entry\.id\}/,'手动关闭应删除这条消息');
   // 自动关闭的时间只由 POPUP_CLOSE_MS 定义：改动必须同时更新这里的期望值。
   assert.match(app,/const POPUP_CLOSE_MS=8000;/,'提示卡的自动关闭时间应为 8 秒');
   assert.match(popup[1],/setTimeout\(remove,POPUP_CLOSE_MS\)/,'提示卡弹出后要按 POPUP_CLOSE_MS 自动关闭');

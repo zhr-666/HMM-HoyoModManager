@@ -86,6 +86,20 @@ test('list maps download and update sorts and sends the exact server SFW filter'
   assert.equal(calls[1].searchParams.get('_aFilters[Generic_ContentRatings]'),'-');
 });
 
+test('list supports every sort advertised by GameBanana Mod/ListFilterConfig',async()=>{
+  const expected={
+    uploaded:'Generic_Newest',oldest:'Generic_Oldest',modified:'Generic_LatestModified',
+    newUpdated:'Generic_NewAndUpdated',updated:'Generic_LatestUpdated',alphabetical:'Generic_Alphabetically',
+    reverseAlphabetical:'Generic_ReverseAlphabetically',likes:'Generic_MostLiked',views:'Generic_MostViewed',
+    comments:'Generic_MostCommented',latestComment:'Generic_LatestComment',downloads:'Generic_MostDownloaded'
+  };
+  const urls=[];
+  const api=new GameBanana(async url=>{urls.push(new URL(url));return {_aMetadata:{_nRecordCount:0},_aRecords:[]};});
+  for(const key of Object.keys(expected))await api.list({sort:key});
+  await api.list({sort:'unknown'});
+  assert.deepEqual(urls.map(url=>url.searchParams.get('_sSort')),[...Object.values(expected),'Generic_Newest']);
+});
+
 test('list marks warned or rated records NSFW and exposes rating labels', async () => {
   const api = new GameBanana(async () => ({_aMetadata:{_nRecordCount:1},_aRecords:[{
     _idRow:9,_sModelName:'Mod',_sName:'Rated',_aGame:{_idRow:8552},
@@ -132,6 +146,39 @@ test('detail validates the game and exposes text, images and downloadable files'
 
   const otherGame = new GameBanana(async () => ({...fixture, _aGame: {_idRow: 6498}}));
   await assert.rejects(() => otherGame.detail(55), /原神/);
+});
+
+test('comments loads one page of mod posts as plain text without exposing HTML', async () => {
+  const api = new GameBanana(async url => {
+    assert.equal(url, 'https://gamebanana.com/apiv11/Mod/55/Posts?_nPage=2');
+    return {_aMetadata:{_nRecordCount:17,_nPerpage:15,_bIsComplete:true},_aRecords:[
+      {_idRow:10,_sText:'<p>Hello &amp; <b>friends</b></p>',_tsDateAdded:100,_aPoster:{_sName:'Alice'},_nReplyCount:2}
+    ]};
+  });
+  assert.deepEqual(await api.comments(55,2),{
+    comments:[{id:10,author:'Alice',text:'Hello & friends',postedAt:100,replyCount:2}],
+    page:2,total:17,hasMore:false
+  });
+});
+
+test('comments rejects invalid mod IDs and pages before requesting GameBanana', async () => {
+  const api = new GameBanana(async () => {throw Error('unexpected request');});
+  await assert.rejects(api.comments(0),/ID/);
+  await assert.rejects(api.comments(55,0),/页/);
+});
+
+test('replies loads a post thread without changing its author and text', async () => {
+  const api = new GameBanana(async url => {
+    assert.equal(url,'https://gamebanana.com/apiv11/Post/10/Posts?_nPage=1');
+    return {_aMetadata:{_nRecordCount:1,_nPerpage:15,_bIsComplete:true},_aRecords:[
+      {_idRow:11,_sText:'<p>Reply &amp; detail</p>',_tsDateAdded:200,_aPoster:{_sName:'Bob'},_nReplyCount:0}
+    ]};
+  });
+  assert.deepEqual(await api.replies(10),{
+    comments:[{id:11,author:'Bob',text:'Reply & detail',postedAt:200,replyCount:0}],
+    page:1,total:1,hasMore:false
+  });
+  await assert.rejects(api.replies(0),/ID/);
 });
 
 test('selectUpdateFile only selects one file whose name exactly matches', () => {

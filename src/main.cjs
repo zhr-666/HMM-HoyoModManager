@@ -352,6 +352,8 @@ const actions={
   taxonomy:()=>taxonomyRows(),
   browse:p=>api.list({category:p.category,page:Math.max(1,Math.min(1000,Number(p.page)||1)),query:String(p.query||'').slice(0,100),sort:p.sort,sfw:p.sfw!==false,nsfw:p.nsfw!==false}),
   detail:p=>api.detail(id(p.id)),
+  comments:p=>api.comments(id(p.id),p.page),
+  replies:p=>api.replies(id(p.id),p.page),
   install:p=>exclusive(()=>enqueueMod(p)),
   downloads:()=>downloadRows(),
   cancelDownload:p=>downloadQueue.cancel(p.id),
@@ -525,6 +527,7 @@ const actions={
   },
   openDownloadFolder:async p=>{const error=await shell.openPath(installer.folder(p.key));if(error)throw new Error(error);},
   openSource:p=>shell.openExternal('https://gamebanana.com/mods/'+id(p.id)),
+  openGameBananaDownload:p=>shell.openExternal('https://gamebanana.com/dl/'+id(p.id)),
   openData:async()=>{const error=await shell.openPath(root);if(error)throw new Error(error);}
 };
 // 下载只挂一张队列任务卡：当前文件进度与整个队列进度都在同一张卡上，不拆成两个任务。

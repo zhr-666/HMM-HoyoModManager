@@ -8,7 +8,7 @@ async function mediaResponse(file,request){
  try{
   const stat=await handle.stat();
   if(!stat.isFile()){await handle.close();return new Response('Not found',{status:404});}
-  const size=stat.size,headers=new Headers({'content-type':'video/webm','accept-ranges':'bytes','cache-control':'no-store'});
+  const size=stat.size,headers=new Headers({'content-type':file.endsWith('.mp4')?'video/mp4':'video/webm','accept-ranges':'bytes','cache-control':'no-store'});
   let start=0,end=size-1,status=200;
   const range=request.headers.get('range');
   if(range){

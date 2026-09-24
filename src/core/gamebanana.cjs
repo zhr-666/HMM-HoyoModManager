@@ -7,7 +7,16 @@ const {getGame}=require('./games.cjs');
 const SORTS = {
   downloads: 'Generic_MostDownloaded',
   uploaded: 'Generic_Newest',
-  updated: 'Generic_LatestUpdated'
+  oldest: 'Generic_Oldest',
+  modified: 'Generic_LatestModified',
+  newUpdated: 'Generic_NewAndUpdated',
+  updated: 'Generic_LatestUpdated',
+  alphabetical: 'Generic_Alphabetically',
+  reverseAlphabetical: 'Generic_ReverseAlphabetically',
+  likes: 'Generic_MostLiked',
+  views: 'Generic_MostViewed',
+  comments: 'Generic_MostCommented',
+  latestComment: 'Generic_LatestComment'
 };
 
 function rowId(value) {
@@ -225,6 +234,35 @@ class GameBanana {
         url: file._sDownloadUrl || '',
         checksum: file._sMd5Checksum || ''
       }))
+    };
+  }
+
+  async comments(id, page = 1) {
+    return this._posts('Mod',id,page);
+  }
+
+  async replies(id, page = 1) {
+    return this._posts('Post',id,page);
+  }
+
+  async _posts(type, id, page) {
+    id = Number(id);
+    page = Number(page);
+    if (!Number.isSafeInteger(id) || id < 1) throw new Error(`GameBanana ${type} ID 无效。`);
+    if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw new Error('评论页码无效。');
+    const data = await this.json(`${API}/${type}/${id}/Posts?_nPage=${page}`, {}, {allowLeadingWarnings:true});
+    const meta = data._aMetadata || {};
+    return {
+      comments: (data._aRecords || []).map(row => ({
+        id: Number(row._idRow),
+        author: row._aPoster?._sName || '未知用户',
+        text: plainText(row._sText),
+        postedAt: Number(row._tsDateAdded) || 0,
+        replyCount: Number(row._nReplyCount) || 0
+      })),
+      page,
+      total: Number(meta._nRecordCount) || 0,
+      hasMore: meta._bIsComplete === false || (meta._bIsComplete == null && page * (Number(meta._nPerpage) || 15) < (Number(meta._nRecordCount) || 0))
     };
   }
 }

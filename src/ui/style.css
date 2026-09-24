@@ -32,6 +32,14 @@ main{grid-column:2;padding:0 38px 48px;max-width:1480px;width:100%}
 .button.secondary{background:var(--surface);border-color:var(--control-line);color:var(--text)}
 .button.secondary:hover:not(:disabled){border-color:#aeb6c2;background:var(--hover)}
 .button.danger{color:var(--danger);background:var(--surface);border-color:var(--danger-line)}
+.hint-mark{position:relative;display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:7px;border:1px solid currentColor;border-radius:50%;color:var(--muted);font-size:10px;font-weight:700;line-height:1;vertical-align:1px;cursor:help;-webkit-app-region:no-drag}
+.hint-mark:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.hint-mark::before,.hint-mark::after{position:absolute;z-index:120;visibility:hidden;opacity:0;pointer-events:none;transition:opacity .12s ease}
+.hint-mark::before{content:"";top:calc(100% + 3px);left:calc(50% - 5px);width:9px;height:9px;background:#202834;border-left:1px solid #8190a2;border-top:1px solid #8190a2;transform:rotate(45deg)}
+.hint-mark::after{content:attr(data-hint);top:calc(100% + 7px);left:50%;transform:translateX(-50%);width:max-content;max-width:min(250px,calc(100vw - 32px));padding:8px 11px;border:1px solid #8190a2;border-radius:6px;background:#202834;color:#eef4fa;box-shadow:0 7px 20px #0007;font-size:12px;font-weight:400;line-height:1.5;text-align:left;white-space:normal}
+.hint-mark:hover::before,.hint-mark:hover::after,.hint-mark:focus-visible::before,.hint-mark:focus-visible::after,.button:focus-visible .hint-mark::before,.button:focus-visible .hint-mark::after{visibility:visible;opacity:1}
+#import-button .hint-mark{color:#fff}
+#import-button .hint-mark::after{left:auto;right:-10px;transform:none}
 /* 后台任务的「有新结果待查看」标记：挂在按钮右上角，和通知角标同一套红色语言。 */
 .button-dot{position:absolute;top:-3px;right:-3px;width:10px;height:10px;border-radius:50%;background:var(--danger);border:1px solid var(--surface)}
 #check-updates,#check-updates-library,#software-check{position:relative}
@@ -97,6 +105,7 @@ dialog form{margin:0}
 .icon-button{border:0;background:var(--inset);border-radius:50%;width:30px;height:30px;font-size:20px;cursor:pointer;color:var(--muted)}
 .dialog-body{padding:20px 22px;max-height:62vh;overflow:auto}
 .dialog-actions{display:flex;justify-content:flex-end;gap:9px;padding:14px 22px 20px}
+.dialog-actions:empty{display:none}
 .field{display:grid;gap:7px;margin-bottom:15px}
 .field label{font-size:12px;font-weight:700;color:var(--text-secondary)}
 .field input,.field select{width:100%;height:37px;border:1px solid var(--control-line);border-radius:6px;padding:0 10px;font:inherit;background:var(--surface)}
@@ -283,8 +292,8 @@ html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex
 .notification-center .notification-panel,.notification-center .notification-button{pointer-events:auto}
 .onboarding-tip[popover]{position:fixed;inset:auto;margin:0;width:max-content;max-width:min(260px,calc(100vw - 24px));padding:11px 14px;border:1px solid #ffdd81;border-radius:10px;background:#fff7df;color:#273343;box-shadow:0 12px 32px #0006;font-size:13px;font-weight:600;line-height:1.55;pointer-events:none;-webkit-app-region:no-drag}
 .onboarding-tip:after{content:"";position:absolute;width:9px;height:9px;background:#fff7df;border-left:1px solid #ffdd81;border-bottom:1px solid #ffdd81;transform:rotate(45deg)}
-.onboarding-tip[data-side="right"]:after{left:-6px;top:calc(50% - 5px)}
-.onboarding-tip[data-side="above"]:after{left:calc(50% - 5px);bottom:-6px;transform:rotate(-45deg)}
+.onboarding-tip[data-side="right"]:after{left:-6px;top:calc(var(--arrow-offset) - 5px)}
+.onboarding-tip[data-side="above"]:after{left:calc(var(--arrow-offset) - 5px);bottom:-6px;transform:rotate(-45deg)}
 .notification-popups{display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}
 .notification-popup{pointer-events:auto;width:min(344px,calc(100vw - 56px));display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(14px);box-shadow:0 10px 28px #0003;animation:notification-enter .2s cubic-bezier(.2,.8,.2,1) both}
 .notification-popup.leaving{animation:notification-leave .18s ease-in both}
@@ -516,6 +525,8 @@ html[data-mode="launcher"] .launcher-actions .home-launch.button{min-width:174px
    比图片区还高（竖图尤其明显），object-fit:contain 也就没机会缩，图的下半部分就被切掉了。
    鼠标停在大图上滚动切上一张/下一张（滚轮绑定见 app.js 的 detailGallery）。 */
 .detail-gallery-main img{display:block;width:100%;height:100%;min-width:0;min-height:0;object-fit:contain}
+.detail-gallery-main[role="button"]{cursor:zoom-in}.detail-gallery-main[role="button"]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.image-preview-dialog{width:min(1120px,calc(100vw - 36px));max-width:none}.image-preview-dialog .dialog-body{display:grid;place-items:center;max-height:calc(100vh - 145px);padding:12px}.image-preview-dialog .dialog-body img{display:block;width:100%;height:min(75vh,800px);object-fit:contain}
 .detail-gallery-main .preview-placeholder{color:var(--muted);font-size:12px}
 .detail-gallery-thumbs{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
 .detail-gallery-thumbs button{flex:0 0 auto;width:100px;height:64px;padding:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface);cursor:pointer}
@@ -530,6 +541,12 @@ html[data-mode="launcher"] .launcher-actions .home-launch.button{min-width:174px
 .file-option strong{font-size:14px;line-height:1.4}
 .file-option small{font-size:11.5px;line-height:1.45;margin-top:3px}
 .file-picker{margin:18px 0 12px}.file-picker legend{margin-bottom:9px}
+.file-row{display:flex;align-items:center;gap:10px}.file-row .file-option{flex:1}.file-direct-download{flex:0 0 auto}
+.detail-comments{margin:18px 0 8px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.detail-comments>summary{padding:13px 15px;cursor:pointer;font-weight:650}.detail-comments-content{padding:0 15px 15px}
+.comments-status{margin:8px 0}.comments-list{display:grid;gap:9px}.comment-row{padding:11px 12px;border:1px solid var(--line);border-radius:7px;background:var(--inset)}
+.comment-row>div{display:flex;justify-content:space-between;gap:12px}.comment-row small{color:var(--muted)}.comment-row p{margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}.comments-more{margin-top:12px}
+.comment-replies{margin-top:10px;border-top:1px solid var(--line);padding-top:9px}.comment-replies>summary{cursor:pointer;color:var(--accent);font-size:12px}.reply-list{display:grid;gap:8px;margin:9px 0 0 12px}.replies-status{margin:8px 0}.replies-more{margin:9px 0 0 12px}
 
 /* 热键：紧凑网格（需求 21），顶部是用户保存的热键提示（需求 19） */
 .hotkey-notes{padding:0 0 16px;border-bottom:1px solid var(--line);margin-bottom:16px}

@@ -182,11 +182,16 @@ async function main(){
   assert.equal(await evaluate('document.querySelector("#notification-center").matches(":popover-open")'),false,'最后一项通知结束后再离开顶层，不挡住页面点击');
   console.log('✓ 完成通知右下角弹出、8 秒后自动关闭，消息与未读角标保留');
 
-  // 2b. 手动关闭右下角通知：只是关掉弹窗，消息仍留在通知中心
-  await closePopups();
-  assert.ok((await historyTexts()).includes(done),'关闭提示卡不删除历史');
-  assert.equal(await itemUnread(done),'true','关闭提示卡不改变未读状态');
-  console.log('✓ 关闭提示卡后消息仍保留在历史里');
+  // 2b. 手动关闭右下角提示卡：只删除这条消息，自动收起的历史仍然保留。
+  const manuallyClosed='用户手动关闭的提示';
+  await evaluate(`window.hoyo.call("addNotification",{text:${quoted(manuallyClosed)}})`);
+  await waitFor(`[...document.querySelectorAll('.notification-popup')].some(box=>box.textContent.includes(${quoted(manuallyClosed)}))`,'待手动关闭的提示卡');
+  await evaluate(`[...document.querySelectorAll('.notification-popup')].find(box=>box.textContent.includes(${quoted(manuallyClosed)})).querySelector('.notification-popup-close').click()`);
+  await waitFor(`window.hoyo.call("notifications").then(s=>!s.entries.some(entry=>entry.text===${quoted(manuallyClosed)}))`,'手动关闭后从历史删除');
+  assert.equal((await saved()).entries.some(entry=>entry.text===manuallyClosed),false,'手动关闭后不留在磁盘历史');
+  assert.ok((await historyTexts()).includes(done),'自动收起的消息仍在历史里');
+  assert.equal(await evaluate('window.hoyo.call("notifications").then(s=>s.unread)'),1,'只减少手动关闭消息的未读数');
+  console.log('✓ 手动关闭提示卡会删除该条历史，自动收起仍保留');
 
   // 3. 打开面板：全部已读、角标清零
   await evaluate('document.querySelector("#notification-button").click()');
@@ -211,7 +216,6 @@ async function main(){
   await evaluate('document.querySelector("#notification-button").click()');
   await waitItem(failed);
   assert.equal(await itemError(failed),true,'错误消息应有错误样式');
-  await closePopups();
   console.log('✓ 主进程消息更新角标，展开后可见且带错误样式');
 
   // 6. 单条删除只删这一条，并同步磁盘

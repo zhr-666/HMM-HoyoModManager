@@ -86,8 +86,8 @@ test('keeps toasts out of the unread count',async()=>{
   assert.deepEqual(center.snapshot().entries.map(e=>e.text),['全部任务下载完成']);
 });
 
-// 完成通知是常驻通知：必须手动关闭，关闭只是关掉屏幕上的卡片，消息留在历史里。
-test('keeps a completion notice in the history so closing the card never loses it',async()=>{
+// 完成通知默认保留在历史；界面上的手动叉号另行调用 remove() 删除。
+test('keeps a completion notice in history until it is explicitly removed',async()=>{
   const {file}=await workspace();
   const popups=[];
   const center=new NotificationCenter(file,{onPopup:entry=>popups.push(entry)});
@@ -97,7 +97,7 @@ test('keeps a completion notice in the history so closing the card never loses i
   assert.equal(popups[0].target,'downloads');
   await center.flush();
   const reopened=new NotificationCenter(file);await reopened.init();
-  assert.deepEqual(reopened.snapshot().entries.map(e=>e.text),['全部任务下载完成'],'关闭卡片后历史里仍然找得到');
+  assert.deepEqual(reopened.snapshot().entries.map(e=>e.text),['全部任务下载完成'],'自动收起后历史里仍然找得到');
 });
 
 // 三种通知状态之外没有第四条路：add() 不再接受 ephemeral，瞬时反馈只能走 toast()。
