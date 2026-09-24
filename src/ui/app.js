@@ -172,7 +172,16 @@ function renderTasks(){
 function applyTasks(list){taskList=Array.isArray(list)?list:[];renderTasks()}
 // 成功反馈与按钮校验提示统一走右下角 3 秒即时通知：自动消失、不进通知中心、不可点击。
 // 真实错误才写通知历史（可查详细信息），右下角弹出 8 秒后自动关闭，也可以提前手动关掉。
-function notifyError(error,fallback='操作失败，请重试。'){const message=error?.message||String(error||fallback);call('addNotification',{text:message,tone:'error'},{silent:true,foreground:false}).then(applyNotifications).catch(()=>{});return message}
+const reportedErrors=new WeakSet();
+function notifyError(error,fallback='操作失败，请重试。'){
+  const message=error?.message||String(error||fallback);
+  if(error&&typeof error==='object'){
+    if(reportedErrors.has(error))return message;
+    reportedErrors.add(error);
+  }
+  call('addNotification',{text:message,tone:'error'},{silent:true,foreground:false}).then(applyNotifications).catch(()=>{});
+  return message;
+}
 function notify(message,error=false){return showToast(message,error?'error':'info')}
 let toastTimer,toastHideTimer;
 function showToast(message,tone='info'){

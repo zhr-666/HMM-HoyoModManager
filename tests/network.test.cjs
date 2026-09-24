@@ -36,6 +36,19 @@ test('setFetch injects the transport used by JSON requests', async (t) => {
   assert.equal(called, true);
 });
 
+test('JSON requests can accept gzip while downloads keep identity encoding', async (t) => {
+  t.after(() => network.setFetch(globalThis.fetch));
+  const destination = await temp(t);
+  const encodings = [];
+  network.setFetch(async (_url, options) => {
+    encodings.push(options.headers['Accept-Encoding']);
+    return new Response(encodings.length === 1 ? '{"ok":true}' : 'image');
+  });
+  assert.deepEqual(await network.json('https://prod-alicdn-gamestarter.kurogame.com/config.json', { 'Accept-Encoding': 'gzip' }), { ok: true });
+  await network.download('https://hw-pcdownload-aws.aki-game.net/image.webp', destination);
+  assert.deepEqual(encodings, ['gzip', 'identity']);
+});
+
 test('download resumes a transient disconnect only with byte ranges and a validator', async (t) => {
   t.after(() => network.setFetch(globalThis.fetch));
   const destination = await temp(t);

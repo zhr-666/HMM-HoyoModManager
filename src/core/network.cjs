@@ -61,8 +61,8 @@ async function request(url, timeout = 30000, headers = {}, signal) {
   throw new Error('下载重定向次数过多。');
 }
 
-async function json(url) {
-  const response = await request(url);
+async function json(url, headers = {}) {
+  const response = await request(url, 30000, headers);
   const text = await response.text();
   if (text.length > 16 * 1024 ** 2) throw new Error('接口响应过大。');
   const data = JSON.parse(text);

@@ -21,6 +21,17 @@ test('Kuro launcher uses its configured official CDN mirror',async()=>{
  assert.equal(entry.backgrounds[0].background.url,'https://hw-pcdownload-aws.aki-game.net/launcher/clientUpload/bg.webp');
 });
 
+test('Kuro launcher requests compressed JSON accepted by the official CDN',async()=>{
+ const calls=[];
+ await kuroBackgroundEntry(async(url,headers)=>{
+  calls.push({url,headers});
+  return calls.length===1?{functionCode:{background:'A'.repeat(32)}}:
+   {functionSwitch:1,firstFrameImage:'https://hw-pcdownload-qcloud.aki-game.net/launcher/clientUpload/bg.webp'};
+ });
+ assert.equal(calls.length,2);
+ for(const call of calls)assert.equal(call.headers?.['Accept-Encoding'],'gzip');
+});
+
 test('Kuro launcher background rejects invalid or untrusted metadata',async()=>{
  await assert.rejects(kuroBackgroundEntry(async()=>({functionCode:{background:'../outside'}})),/官方背景/);
  let calls=0;

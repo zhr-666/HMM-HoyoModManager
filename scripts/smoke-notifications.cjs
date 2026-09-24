@@ -85,6 +85,7 @@ async function main(){
   const saved=async()=>JSON.parse(await fs.readFile(path.join(data,'notifications.json'),'utf8'));
   // 固定设置与分类缓存：离线启动、不自动检查更新，尽量避免与断言无关的消息。
   const store=await new (require('../src/core/workspaces.cjs'))(data).init();
+  await store.select('genshin');
   await store.setSettings('genshin',{proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false});
   await fs.writeFile(path.join(data,'games','genshin','state.json'),JSON.stringify({
     settings:{modsPath:'',proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false},
@@ -118,6 +119,13 @@ async function main(){
   await evaluate('window.hoyo.call("clearNotifications").then(s=>applyNotifications(s))');
   await waitFor('document.querySelector("#notification-list").children.length===0','空历史');
   assert.equal(await evaluate('document.querySelector("#notification-badge").hidden'),true,'没有未读时不显示角标');
+
+  // 同一失败由 call() 和按钮的 catch 共同处理时，只能留下一个错误通知。
+  await evaluate('call("missingActionForNotificationTest").catch(error=>notifyError(error))');
+  const duplicateErrors=await evaluate('window.hoyo.call("notifications").then(s=>s.entries.filter(e=>e.text.includes("不支持的操作")).length)');
+  assert.equal(duplicateErrors,1,'同一次调用失败只应产生一条错误通知');
+  await closePopups();
+  await evaluate('window.hoyo.call("clearNotifications").then(s=>applyNotifications(s))');
 
   // 新消息排在底部；超过四条时只显示四条，其余通过消息区滚轮查看。
   await evaluate('document.querySelector("#notification-button").click()');
