@@ -143,6 +143,14 @@ async function main(){
  await ws.select('genshin');
  if(process.env.HOYO_TEST_VIDEO){const {Backgrounds}=require('../src/core/backgrounds.cjs');await new Backgrounds(data).update('hsr',{backgrounds:[{background:{url:'poster'},video:{url:'video'}}]},(url,dest)=>fs.copyFile(url==='video'?process.env.HOYO_TEST_VIDEO:path.join(root,'src/ui/hsr-background.jpg'),dest));}
  let session=await launch(data);
+ const hoverHint=async(selector,message,shotName)=>{
+  const target=JSON.stringify(selector);
+  const center=await session.evaluate(`(()=>{const el=document.querySelector(${target});el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  await session.client.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:center.x,y:center.y});
+  await session.waitFor(`getComputedStyle(document.querySelector(${target}),'::after').visibility==='visible'`,'悬浮问号提示');
+  assert.match(await session.evaluate(`getComputedStyle(document.querySelector(${target}),'::after').content`),new RegExp(message));
+  if(process.env.HOYO_SCREENSHOT_DIR&&shotName){await sleep(300);const shot=await session.client.send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(process.env.HOYO_SCREENSHOT_DIR,shotName),Buffer.from(shot.data,'base64'));}
+ };
  try{
   const {evaluate,waitFor}=session;await waitFor('initialStateLoaded&&GAMES.length===4','四游戏清单');
   assert.equal(await evaluate(`document.querySelectorAll('#game-list [data-game]').length`),4);
@@ -234,10 +242,18 @@ async function main(){
   assert.equal(all.find(s=>s.activeGame==='hsr').settings.launchExe,'');
   await evaluate(`api.call('settings',{gameId:'hsr',blurNsfw:false})`);
   await evaluate(`openGameSettings()`);
+  await hoverHint('#modal .hint-mark','选择HMM要启动的程序','hint-program-dialog.png');
   assert.equal(await evaluate(`document.querySelector('#modal [data-auto-background]').checked`),false);
   await evaluate(`document.querySelector('#modal [data-auto-background]').click()`);
   await waitFor(`state.settings.autoBackground===true&&busyCount===0`,'自动背景开关保存');
   await evaluate(`closeModal()`);
+  await evaluate(`showPage('settings')`);
+  await hoverHint('#game-settings-panel .hint-mark','选择HMM要启动的程序','hint-program-settings.png');
+  await hoverHint('.setting-row:has(#use-links) .hint-mark','用快捷方式的形式启用模组','hint-links.png');
+  await evaluate(`showPage('library')`);
+  assert.equal(await evaluate(`document.querySelector('#import-button .hint-mark').closest('button').id`),'import-button');
+  await hoverHint('#import-button .hint-mark','选择压缩包后选择安装位置','hint-import.png');
+  assert.equal(await evaluate(`(async()=>{const old=api.call;let calls=0;api.call=async(action,payload)=>{if(action==='import'){calls++;return {cancelled:true}}return old(action,payload)};document.querySelector('#import-button .hint-mark').click();await new Promise(resolve=>setTimeout(resolve,0));api.call=old;return calls})()`),1,'点击按钮内的问号仍触发导入');
   assert.equal((await evaluate(`api.call('state',{gameId:'zzz'})`)).settings.autoBackground===true,false);
   assert.deepEqual(await evaluate(`Promise.all(GAMES.map(async g=>(await api.call('state',{gameId:g.id})).settings.blurNsfw))`),[false,false,false,false]);
   await evaluate(`selectGame('zzz')`);

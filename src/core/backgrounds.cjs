@@ -6,14 +6,15 @@ const {gameRoot}=require('./game-data.cjs');
 class Backgrounds{
   constructor(root){this.root=root;this.queues=new Map();}
   folder(game){return path.join(gameRoot(this.root,game),'backgrounds');}
-  read(game){try{const m=JSON.parse(sync.readFileSync(path.join(this.folder(game),'current.json'),'utf8'));if(!/^[0-9a-f-]{36}$/.test(m.version)||!['image','video'].includes(m.kind))return null;return m;}catch{return null;}}
-  file(game,video=false){const m=this.read(game);return m?path.join(this.folder(game),m.version,video?'video.webm':'poster'):null;}
+  read(game){try{const m=JSON.parse(sync.readFileSync(path.join(this.folder(game),'current.json'),'utf8'));if(!/^[0-9a-f-]{36}$/.test(m.version)||!['image','video'].includes(m.kind)||(m.videoFormat&&!['webm','mp4'].includes(m.videoFormat)))return null;return m;}catch{return null;}}
+  file(game,video=false){const m=this.read(game);return m?path.join(this.folder(game),m.version,video?`video.${m.videoFormat||'webm'}`:'poster'):null;}
   run(game,fn){const next=(this.queues.get(game)||Promise.resolve()).then(fn);this.queues.set(game,next.catch(()=>{}));return next;}
   update(game,entry,download){return this.run(game,async()=>{
     const row=entry?.backgrounds?.find(r=>r?.background?.url);if(!row)throw Error('官方暂未提供可用背景');
     const poster=row.background.url,video=row.video?.url||'',source=JSON.stringify([poster,video]),old=this.read(game);
+    const videoFormat=video&&/\.mp4(?:\?|$)/i.test(video)?'mp4':'webm';
     if(old?.source===source&&sync.existsSync(this.file(game))&&(!video||sync.existsSync(this.file(game,true))))return old;
-    return this.publish(game,{source,kind:video?'video':'image'},async dir=>{await download(poster,path.join(dir,'poster'));if(video)await download(video,path.join(dir,'video.webm'));});
+    return this.publish(game,{source,kind:video?'video':'image',...(video?{videoFormat}:{})},async dir=>{await download(poster,path.join(dir,'poster'));if(video)await download(video,path.join(dir,`video.${videoFormat}`));});
   });}
   custom(game,bytes){return this.run(game,()=>this.publish(game,{kind:'image',source:''},dir=>fs.writeFile(path.join(dir,'poster'),bytes)));}
   async publish(game,metadata,write){
