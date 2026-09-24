@@ -12,4 +12,7 @@ test('local video responses honor full, bounded, open, suffix and invalid byte r
  const head=await mediaResponse(file,new Request('https://local/video',{method:'HEAD'}));
  assert.equal(head.headers.get('content-length'),'10');assert.equal(await head.text(),'');
  assert.equal((await mediaResponse(file+'missing',new Request('https://local/video'))).status,404);
+ const mp4=path.join(root,'video.mp4');await fs.writeFile(mp4,'mp4');
+ const mp4Result=await mediaResponse(mp4,new Request('https://local/video'));
+ assert.equal(mp4Result.headers.get('content-type'),'video/mp4');assert.equal(await mp4Result.text(),'mp4');
 });

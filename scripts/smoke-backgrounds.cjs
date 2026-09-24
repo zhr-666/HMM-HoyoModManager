@@ -1,4 +1,5 @@
-// 主页真实视频循环回归。HOYO_BACKGROUND_FIXTURES 指向含 hsr/zzz/current.json 及素材的只读目录。
+// 主页真实视频循环回归。HOYO_BACKGROUND_FIXTURES 指向含所测游戏 current.json 及素材的只读目录。
+// HOYO_BACKGROUND_GAMES 可指定游戏 ID（逗号分隔），缺省为 hsr,zzz。
 // 通过 Electron 的远程调试端口（CDP）驱动真实界面，因此不依赖 Playwright；
 // 需要可用的图形会话。使用系统临时目录，不触碰用户 data、GIMI 或模组文件。
 // 离线运行时界面自己会报网络错误，所以断言只按消息文本定位，不用全局计数。
@@ -82,14 +83,16 @@ async function stop(){
 
 async function main(){
  const fixtures=process.env.HOYO_BACKGROUND_FIXTURES;
- if(!fixtures)throw Error('请设置 HOYO_BACKGROUND_FIXTURES，包含 hsr/zzz 的 current.json 与完整视频素材');
+ const games=(process.env.HOYO_BACKGROUND_GAMES||'hsr,zzz').split(',');
+ const loops=process.env.HOYO_BACKGROUND_GAMES?1:6;
+ if(!fixtures)throw Error('请设置 HOYO_BACKGROUND_FIXTURES，包含所测游戏的 current.json 与完整视频素材');
  dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-background-smoke-'));
  const {Backgrounds}=require('../src/core/backgrounds.cjs'),backgrounds=new Backgrounds(dataDir);
- for(const game of ['hsr','zzz'])await fs.cp(path.join(fixtures,game),backgrounds.folder(game),{recursive:true});
+ for(const game of games)await fs.cp(path.join(fixtures,game),backgrounds.folder(game),{recursive:true});
  const session=await launch(dataDir);
  try{
   await session.waitFor('initialStateLoaded','初始化');
-  for(const game of ['hsr','zzz']){
+  for(const game of games){
    await session.evaluate(`selectGame('${game}')`);
    await session.waitFor(`document.querySelector('#background-video').currentTime>0`,'视频开始播放');
    const range=await session.evaluate(`(async()=>{const v=document.querySelector('#background-video'),r=await fetch(v.src,{headers:{Range:'bytes=0-99'}});return {status:r.status,range:r.headers.get('content-range'),size:(await r.arrayBuffer()).byteLength}})()`);
@@ -102,18 +105,18 @@ async function main(){
     const refresh=setInterval(()=>renderBackground(),700);
     const finish=()=>{if(finished)return;finished=true;clearInterval(refresh);clearTimeout(timeout);v.removeEventListener('error',error);resolve({loops,frames,loopGaps,errors,paused:v.paused,hidden:v.hidden,time:v.currentTime})};
     const timeout=setTimeout(finish,50000);
-    const frame=(now,metadata)=>{if(finished)return;frames++;if(metadata.mediaTime<previousTime){loops++;loopGaps.push(now-previousFrame)}previousTime=metadata.mediaTime;previousFrame=now;if(loops>=6)finish();else v.requestVideoFrameCallback(frame)};
+    const frame=(now,metadata)=>{if(finished)return;frames++;if(metadata.mediaTime<previousTime){loops++;loopGaps.push(now-previousFrame)}previousTime=metadata.mediaTime;previousFrame=now;if(loops>=${loops})finish();else v.requestVideoFrameCallback(frame)};
     v.requestVideoFrameCallback(frame);
    })`);
    console.log(game,JSON.stringify(playback));
-   assert.equal(playback.loops,6);assert.deepEqual(playback.errors,[]);assert.equal(playback.paused,false);assert.equal(playback.hidden,false);
+   assert.equal(playback.loops,loops);assert.deepEqual(playback.errors,[]);assert.equal(playback.paused,false);assert.equal(playback.hidden,false);
    assert.ok(Math.max(...playback.loopGaps)<150,'循环边界不能出现可见长停顿');
   }
   await session.evaluate(`selectGame('genshin')`);
   await session.waitFor(`!document.querySelector('#background-video').hasAttribute('src')`,'静态背景释放视频');
-  await session.evaluate(`selectGame('hsr')`);
+  await session.evaluate(`selectGame('${games[0]}')`);
   await session.waitFor(`document.querySelector('#background-video').currentTime>0&&!document.querySelector('#background-video').hidden`,'切回后播放');
-  console.log('✓ 两款实际视频各六轮循环、Range、刷新状态和切换游戏');
+  console.log(`✓ ${games.join('、')} 实际视频循环、Range、刷新状态和切换游戏`);
  }finally{session.client.close();await stop();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1}).finally(async()=>{await stop();if(dataDir)await fs.rm(dataDir,{recursive:true,force:true,maxRetries:5,retryDelay:200});});

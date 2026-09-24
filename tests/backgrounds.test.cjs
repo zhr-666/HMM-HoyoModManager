@@ -16,3 +16,14 @@ test('background replacement retains old files on failure, caches video offline 
 });
 
 test('background folders use the registered game root',()=>{const store=new Backgrounds('/data');for(const game of require('../src/core/games.cjs').GAMES)assert.equal(store.folder(game.id),path.join('/data','games',game.id,'backgrounds'));assert.throws(()=>store.folder('../escape'));});
+test('MP4 official background keeps its video type and existing WebM records remain readable',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-mp4-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));const store=new Backgrounds(root);
+ await store.update('wuwa',{backgrounds:[{background:{url:'poster'},video:{url:'https://example.com/launcher.mp4'}}]},async(url,dest)=>fs.writeFile(dest,url));
+ assert.equal(store.read('wuwa').videoFormat,'mp4');assert.equal(path.basename(store.file('wuwa',true)),'video.mp4');
+ assert.match(await fs.readFile(store.file('wuwa',true),'utf8'),/launcher\.mp4/);
+ const old=store.read('wuwa');delete old.videoFormat;
+ await fs.copyFile(store.file('wuwa',true),path.join(store.folder('wuwa'),old.version,'video.webm'));
+ await fs.writeFile(path.join(store.folder('wuwa'),'current.json'),JSON.stringify(old));
+ assert.equal(path.basename(store.file('wuwa',true)),'video.webm','旧背景记录继续按 WebM 路径读取');
+ assert.match(await fs.readFile(store.file('wuwa',true),'utf8'),/launcher\.mp4/);
+});

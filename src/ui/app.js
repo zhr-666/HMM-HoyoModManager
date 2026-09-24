@@ -38,8 +38,10 @@ function renderOnboardingTip(){
   const width=tip.offsetWidth,height=tip.offsetHeight,space=12;
   const x=config.side==='right'?rect.right+space:rect.left+(rect.width-width)/2;
   const y=config.side==='right'?rect.top+(rect.height-height)/2:rect.top-height-space;
-  tip.style.left=Math.round(Math.max(8,Math.min(x,innerWidth-width-8)))+'px';
-  tip.style.top=Math.round(Math.max(8,Math.min(y,innerHeight-height-8)))+'px';
+  const left=Math.round(Math.max(8,Math.min(x,innerWidth-width-8)));
+  const top=Math.round(Math.max(8,Math.min(y,innerHeight-height-8)));
+  tip.style.left=left+'px';tip.style.top=top+'px';
+  tip.style.setProperty('--arrow-offset',`${Math.round(Math.max(12,Math.min(config.side==='right'?rect.top+rect.height/2-top:rect.left+rect.width/2-left,(config.side==='right'?height:width)-12)))}px`);
 }
 function scheduleOnboardingTip(){requestAnimationFrame(renderOnboardingTip)}
 function setOnboardingStep(step){onboardingStep=step;onboardingDismissed=false;saveOnboarding(step<onboardingTips.length?String(step):'done');scheduleOnboardingTip()}
@@ -58,6 +60,7 @@ function onboardingLoaderChosen(){if(onboardingStep===2&&state.settings.modsPath
 function onboardingWorkspaceEntered(){if(onboardingStep===3)setOnboardingStep(4)}
 document.addEventListener('pointerdown',event=>{
   if(event.button!==0||onboardingStep<0||onboardingDismissed)return;
+  if(onboardingStep===3&&event.target.closest('#modal button[value="cancel"]'))return;
   hideOnboardingTip();onboardingDismissed=true;
   if(onboardingStep===4)setOnboardingStep(onboardingTips.length);
 },true);
