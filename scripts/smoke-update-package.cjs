@@ -24,5 +24,11 @@ const disk=require('original-fs').promises,fs=require('node:fs/promises');
   await disk.unlink(path.join(plan.staging,'resources','app.asar'));await disk.mkdir(path.join(plan.staging,'resources','app.asar'));
   await assert.rejects(replacementPlan(appDir,plan.staging,[data,gimi]),/缺少程序资源/);
   console.log('Real ZIP update preparation passed under Electron: physical ASAR, ready state, revalidation, bundled engine and fallback helper, unchanged configuration and mods; directory impostor rejected.');
- }finally{await disk.rm(root,{recursive:true,force:true});}
+ }finally{
+  // Electron keeps virtual ASAR handles open until process exit on Windows.
+  // The runner's disposable temp directory is removed after the process ends.
+  await disk.rm(root,{recursive:true,force:true,maxRetries:4,retryDelay:100}).catch(error=>{
+    if(process.platform!=='win32'||error.code!=='EBUSY')throw error;
+  });
+ }
 })().catch(e=>{console.error(e);process.exitCode=1});

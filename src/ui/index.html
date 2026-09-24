@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-empty-home="true">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -106,9 +106,7 @@
       <section id="page-games" class="page launcher-page" data-testid="games-page">
         <div class="launcher-panel">
           <h2>全部游戏</h2>
-          <div class="game-grid">
-            <button type="button" class="game-card active" data-game="genshin" data-testid="game-card" title="双击进入模组工作空间"><img src="genshin-icon.png" alt="" draggable="false"><strong>原神</strong></button>
-          </div>
+          <div class="game-grid"></div>
         </div>
       </section>
 
@@ -175,12 +173,14 @@
           <div class="setting-row"><p id="proxy-result" role="status"></p><button class="button secondary" id="test-proxy">测试连接</button></div>
         </div>
         <div class="settings-card compact"><div class="setting-row"><div><strong>维护与诊断</strong><p id="data-root">数据位置加载中…</p></div><div class="row-actions"><button class="button secondary" id="open-data">打开数据目录</button><button class="button secondary" id="check-updates">检查更新<span class="button-dot" aria-hidden="true" hidden></span></button></div></div></div>
+        <div class="settings-card compact"><div class="setting-row"><div><strong>使用指引</strong><p>按顺序了解添加游戏、设置启用目录和进入模组工作空间。</p></div><button class="button secondary" id="restart-onboarding" type="button">重新查看使用指引</button></div></div>
       </section>
     </main>
   </div>
 
   <dialog id="modal"><form method="dialog"><div class="dialog-head"><div><h2 id="modal-title"></h2></div><button class="icon-button" value="cancel" aria-label="关闭"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div id="modal-body" class="dialog-body"></div><p id="inline-progress" class="inline-progress" role="status" aria-live="polite" hidden></p><div id="modal-actions" class="dialog-actions"></div></form></dialog>
   <dialog id="dependency-modal" aria-labelledby="dependency-title"><div class="dialog-head"><div><h2 id="dependency-title">前置模组提醒</h2></div><button type="button" class="icon-button" id="dependency-close" aria-label="关闭"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div class="dialog-body"><p id="dependency-name"></p><p id="dependency-status"></p><div id="dependency-list"></div><p id="dependency-error" class="notice error" role="status" hidden></p></div><div class="dialog-actions"><button type="button" class="button secondary" id="dependency-cancel">取消</button><button type="button" class="button primary" id="dependency-continue">仍然继续</button></div></dialog>
+  <div id="onboarding-tip" class="onboarding-tip" popover="manual" role="status" aria-live="polite"></div>
   <script src="library-categories.js"></script>
   <script src="dialog-stack.js"></script>
   <script src="home-background.js"></script>

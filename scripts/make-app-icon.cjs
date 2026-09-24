@@ -37,8 +37,17 @@ function ico(entries) {
   return Buffer.concat([header, directory, ...entries.map((entry) => entry.data)]);
 }
 
-function main() {
+function validIcon(data){
+  return data.length>=6&&data.readUInt16LE(0)===0&&data.readUInt16LE(2)===1&&data.readUInt16LE(4)===SIZES.length;
+}
+
+function main(platform=process.platform) {
   if (!fs.existsSync(source)) throw new Error(`缺少图标源文件：${source}`);
+  if(platform!=='darwin'){
+    if(!fs.existsSync(target)||!validIcon(fs.readFileSync(target)))throw new Error('缺少有效的 build/icon.ico；请先在 macOS 上生成并提交图标。');
+    console.log('已校验随仓库提供的 build/icon.ico');
+    return;
+  }
   const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'hmm-icon-'));
   try {
     const entries = SIZES.map((size) => {
@@ -54,4 +63,5 @@ function main() {
   }
 }
 
-main();
+if(require.main===module)main();
+module.exports={main,validIcon};

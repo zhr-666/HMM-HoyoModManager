@@ -15,7 +15,7 @@
 
 ### 角色分类名维护
 
-三款游戏的 GameBanana 角色分类中文名保存在 `src/core/character-names.zh-CN.json`。每次加入新角色时，先从 GameBanana 分类链接确认分类 ID，再对照游戏官方简体中文角色页或更新公告核实名称，在对应游戏对象中添加 `"分类 ID": "官方中文名"`。无需修改模组标题或普通分类，也无需迁移用户 `data`；尚未核实的角色保持英文。补丁随用户指定的新版本发布，修改后运行 `node --test tests/character-names.test.cjs tests/gamebanana.test.cjs` 和 `pnpm check`。
+四款游戏的 GameBanana 角色及大分类中文名保存在 `src/core/character-names.zh-CN.json`。每次加入新角色时，先从 GameBanana 分类链接确认分类 ID，再对照游戏官方简体中文角色页或更新公告核实名称，在对应游戏对象中添加 `"分类 ID": "官方中文名"`。清楚可译的大分类也按 ID 收录；UI、缩写、专有名词和未核实的名称保留原文。无需修改模组标题或迁移用户 `data`。补丁随用户指定的新版本发布，修改后运行 `node --test tests/character-names.test.cjs tests/gamebanana.test.cjs` 和 `pnpm check`。
 
 ## 检查入口
 
@@ -84,9 +84,9 @@ try {
 
 ## 自动检查
 
-`.github/workflows/check.yml` 在 push、pull_request 或手动触发时，在 Windows 和 macOS 上安装锁定依赖并执行 `pnpm check`。只有工作流提交并推送到 GitHub 后才会触发远程运行；本地添加配置不代表 CI 已经通过。
+`.github/workflows/check.yml` 在 push、pull_request 或手动触发时，在 Windows 和 macOS 上安装锁定依赖并执行 `pnpm check`。Windows 任务还构建 x64 ZIP、校验包内容与更新准备，并在 Windows 桌面运行四游戏导航冒烟测试。只有工作流提交并推送到 GitHub 后才会触发远程运行；本地添加配置不代表 CI 已经通过。
 
-CI 不构建、不上传、不发布，不含桌面 UI 与 Windows 人工验收。仓库分支保护需要在 GitHub 设置中另外启用，当前文件不会自动设置保护规则。
+CI 不上传、不发布，不能代替 Windows 上使用真实游戏和 WWMI 的人工验收。仓库分支保护需要在 GitHub 设置中另外启用，当前文件不会自动设置保护规则。
 
 ## 发布清单
 

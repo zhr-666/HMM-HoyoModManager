@@ -152,7 +152,7 @@ test('三种状态之外没有第四条路：旧的 ephemeral 与页面提示都
   assert.ok(read('src/preload.cjs').includes("ipcRenderer.on('hoyo:toast'"),'preload 要暴露 onToast');
   const app=read('src/ui/app.js');
   assert.match(app,/function notify\(message,error=false\)\{return showToast\(message,error\?'error':'info'\)\}/,'成功与校验提示走 3 秒即时通知');
-  assert.match(app,/function notifyError\(error[\s\S]{0,200}tone:'error'/,'真实错误仍写常驻通知与历史');
+  assert.match(app,/function notifyError\(error[\s\S]{0,500}tone:'error'/,'真实错误仍写常驻通知与历史');
 });
 
 test('模组工坊翻页：换页时先回到页面最上方',()=>{

@@ -20,6 +20,7 @@ function fixture({admin=true,failAttach=false}={}){
 test('program settings stay game-scoped, preserve old primary path and survive restart',async t=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'program-tabs-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
  let work=await new Workspaces(dir).init();
+ await work.select('genshin');await work.select('zzz');
  await work.setSettings('genshin',{launchExe:primary,secondaryExe:secondary,programTabs:true});
  await work.setSettings('zzz',{launchExe:'C:\\ZZZ.exe',programTabs:false});
  work=await new Workspaces(dir).init();

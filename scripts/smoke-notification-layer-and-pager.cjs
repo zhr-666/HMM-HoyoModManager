@@ -49,6 +49,7 @@ async function main(){
   const data=dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-notification-layer-'));
   // 离线、不自动检查更新：尽量不产生与断言无关的通知。
   const store=await new (require('../src/core/workspaces.cjs'))(data).init();
+  await store.select('genshin');
   await store.setSettings('genshin',{proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false});
   await fs.writeFile(path.join(data,'games','genshin','state.json'),JSON.stringify({
     settings:{modsPath:'',proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false},
@@ -94,6 +95,10 @@ async function main(){
   assert.equal(corner.right,32,'悬浮按钮距右边 32px（右下角原位）：'+JSON.stringify(corner));
   assert.equal(corner.bottom,32,'悬浮按钮距底边 32px（右下角原位）：'+JSON.stringify(corner));
   console.log('✓ 通知提示卡与通知中心画在对话框与遮罩之上，画面保持清晰');
+
+  // 提示卡可见时，通知容器的透明区域不能截获首页设置齿轮的点击。
+  const gearHit=await evaluate(`(()=>{const b=document.querySelector('#home-game-settings').getBoundingClientRect();return document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.closest('#home-game-settings')?.id||''})()`);
+  assert.equal(gearHit,'home-game-settings','通知弹窗显示时仍应能点击当前游戏设置');
 
   // ——— 需求 5②：先量一次「带 / 不带 popover」的位置对照，再验证收起后离开顶层 ———
   // 位置必须逐像素一致：进入顶层只改图层顺序，不改位置（曾经因为重置成 inset:auto 掉到左上角）。

@@ -36,6 +36,19 @@ test('setFetch injects the transport used by JSON requests', async (t) => {
   assert.equal(called, true);
 });
 
+test('JSON requests can accept gzip while downloads keep identity encoding', async (t) => {
+  t.after(() => network.setFetch(globalThis.fetch));
+  const destination = await temp(t);
+  const encodings = [];
+  network.setFetch(async (_url, options) => {
+    encodings.push(options.headers['Accept-Encoding']);
+    return new Response(encodings.length === 1 ? '{"ok":true}' : 'image');
+  });
+  assert.deepEqual(await network.json('https://prod-alicdn-gamestarter.kurogame.com/config.json', { 'Accept-Encoding': 'gzip' }), { ok: true });
+  await network.download('https://hw-pcdownload-aws.aki-game.net/image.webp', destination);
+  assert.deepEqual(encodings, ['gzip', 'identity']);
+});
+
 test('download resumes a transient disconnect only with byte ranges and a validator', async (t) => {
   t.after(() => network.setFetch(globalThis.fetch));
   const destination = await temp(t);
@@ -116,10 +129,13 @@ test('unsolicited partial response never becomes a resumable prefix',async t=>{
 });
 
 test('official launcher background sources are trusted, lookalike and plaintext hosts are not', async (t) => {
-  // 启动器背景只从米哈游官方接口与静态站获取；其余主机仍按可信来源拒绝。
+  // 启动器背景只从米哈游和库洛官方接口与静态站获取；其余主机仍按可信来源拒绝。
   assert.equal(network.allowed('https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1'), 'https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1');
   assert.equal(network.allowed('https://launcher-webstatic.mihoyo.com/launcher-public/2026/07/22/bg.webp'), 'https://launcher-webstatic.mihoyo.com/launcher-public/2026/07/22/bg.webp');
-  for (const url of ['https://hyp-api.mihoyo.com.evil.example/bg.webp', 'https://evil.example/launcher-webstatic.mihoyo.com/bg.webp', 'http://launcher-webstatic.mihoyo.com/bg.webp', 'https://user:pass@launcher-webstatic.mihoyo.com/bg.webp']) {
+  assert.equal(network.allowed('https://prod-alicdn-gamestarter.kurogame.com/launcher/config.json'), 'https://prod-alicdn-gamestarter.kurogame.com/launcher/config.json');
+  assert.equal(network.allowed('https://hw-pcdownload-qcloud.aki-game.net/launcher/clientUpload/bg.webp'), 'https://hw-pcdownload-qcloud.aki-game.net/launcher/clientUpload/bg.webp');
+  assert.equal(network.allowed('https://hw-pcdownload-aws.aki-game.net/launcher/clientUpload/bg.webp'), 'https://hw-pcdownload-aws.aki-game.net/launcher/clientUpload/bg.webp');
+  for (const url of ['https://hyp-api.mihoyo.com.evil.example/bg.webp', 'https://evil.example/launcher-webstatic.mihoyo.com/bg.webp', 'http://launcher-webstatic.mihoyo.com/bg.webp', 'https://user:pass@launcher-webstatic.mihoyo.com/bg.webp', 'https://hw-pcdownload-qcloud.aki-game.net.evil.example/bg.webp']) {
     assert.throws(() => network.allowed(url), /可信来源/, url);
   }
   t.after(() => network.setFetch(globalThis.fetch));

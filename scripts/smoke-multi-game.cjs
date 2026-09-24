@@ -82,11 +82,56 @@ async function stop(){
 
 async function main(){
  dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-multi-ui-'));const data=path.join(dataDir,'data');
+ let fresh=await launch(data);
+ try{
+  const {evaluate,waitFor}=fresh;await waitFor('initialStateLoaded&&GAMES.length===4','首次启动四游戏清单');
+  await sleep(1200);
+  assert.equal(await evaluate(`document.querySelectorAll('#game-list .game-tile').length`),0);
+  assert.equal(await evaluate(`document.documentElement.dataset.emptyHome`),'true');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#page-home .launcher-stage')).display`),'none');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#app-background')).display`),'none');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.app-backdrop')).backgroundColor`),'rgb(64, 67, 72)');
+  if(process.env.HOYO_SCREENSHOT_DIR){await fs.mkdir(process.env.HOYO_SCREENSHOT_DIR,{recursive:true});const shot=await fresh.client.send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(process.env.HOYO_SCREENSHOT_DIR,'empty-home.png'),Buffer.from(shot.data,'base64'));}
+  await assert.rejects(fs.access(path.join(data,'games')),{code:'ENOENT'});
+  await evaluate(`showPage('games')`);
+  await evaluate(`document.querySelector('#page-games .game-card[data-game="wuwa"]').click()`);
+  await waitFor(`addedGameIds.includes('wuwa')&&activePage==='home'&&busyCount===0`,'添加鸣潮并进入主页');
+  assert.equal(await evaluate(`document.documentElement.dataset.emptyHome`),'false');
+  await fs.access(path.join(data,'games','wuwa','state.json'));
+  await assert.rejects(fs.access(path.join(data,'games','genshin')),{code:'ENOENT'});
+  await evaluate(`showPage('games')`);
+  await evaluate(`document.querySelector('#page-games .game-card[data-game="genshin"]').click()`);
+  await waitFor(`addedGameIds.length===2&&activePage==='home'&&busyCount===0`,'添加原神并进入主页');
+  await evaluate(`showPage('games');(()=>{const tile=document.querySelector('#page-games .game-card[data-game="genshin"]');tile.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1}));tile.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:2}));tile.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}))})()`);
+  await waitFor(`activePage==='workshop'`,'双击仍进入工作空间');
+  await evaluate(`showPage('home')`);
+  assert.deepEqual(await evaluate(`addedGameIds`),['wuwa','genshin']);
+  assert.equal(await evaluate(`document.querySelector('#game-list [data-game="genshin"]').getBoundingClientRect().top>document.querySelector('#game-list [data-game="wuwa"]').getBoundingClientRect().top`),true,'新游戏应在最下方');
+  await evaluate(`showPage('home');document.querySelector('#home-open-library').click()`);
+  await waitFor(`activePage==='library'`,'管理我的模组进入工作空间');
+  assert.equal(await evaluate(`!!document.querySelector('.game-icon-fly')`),true,'管理入口应播放图标过渡');
+  await sleep(900);
+  await evaluate(`showPage('home');document.querySelector('#home-open-presets').click()`);
+  await waitFor(`activePage==='presets'`,'管理搭配方案进入工作空间');
+  assert.equal(await evaluate(`!!document.querySelector('.game-icon-fly')`),true);
+  await evaluate(`showPage('home');document.querySelector('#game-list [data-game="wuwa"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}))`);
+  await waitFor(`!!document.querySelector('#remove-game-confirm')`,'移除游戏提示');
+  await evaluate(`document.querySelector('#modal button[value="cancel"]').click()`);
+  await fs.access(path.join(data,'games','wuwa','state.json'));
+  await evaluate(`document.querySelector('#game-list [data-game="wuwa"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));document.querySelector('#remove-game-confirm').click()`);
+  await waitFor(`!addedGameIds.includes('wuwa')&&busyCount===0`,'确认移除鸣潮').catch(async error=>{console.error(await evaluate(`({addedGameIds,busyCount,modalOpen:document.querySelector('#modal')?.open,notices:notificationEntries.slice(0,3)})`));throw error;});
+  assert.equal(await fs.access(path.join(data,'games','wuwa')).then(()=>true,()=>false),false,JSON.stringify({games:await fs.readdir(path.join(data,'games')).catch(()=>[]),membership:JSON.parse(await fs.readFile(path.join(data,'workspaces.json'),'utf8')).addedGameIds}));
+  await evaluate(`document.querySelector('#page-games .game-card[data-game="wuwa"]').click()`);
+  await waitFor(`addedGameIds.includes('wuwa')&&busyCount===0`,'重新添加鸣潮');
+  assert.deepEqual(await evaluate(`state.mods`),[]);
+ }finally{fresh.client.close();await stop();}
+ await fs.rm(data,{recursive:true,force:true});
  const {Workspaces}=require('../src/core/workspaces.cjs');const ws=await new Workspaces(data).init();
  await ws.setSettings('genshin',{autoCheckAppUpdates:false,autoCheckUpdates:false,proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',useLinks:false});
  const input=path.join(dataDir,'input');await fs.mkdir(input);await fs.writeFile(path.join(input,'mod.ini'),'[TextureOverrideTest]\nhash = 12345678');
  const installed={};
  for(const ctx of ws.contexts.values()){
+  await ws.select(ctx.game.id);
   const loader=path.join(dataDir,ctx.game.importer),modsPath=path.join(loader,'Mods');
   await fs.mkdir(modsPath,{recursive:true});await fs.writeFile(path.join(loader,'d3dx.ini'),'[Include]');
   await ws.setSettings(ctx.game.id,{modsPath});
@@ -95,33 +140,34 @@ async function main(){
   await fs.writeFile(path.join(ctx.root,'taxonomy.json'),JSON.stringify(tree));
   const mod=await ctx.lib.install(input,{name:ctx.game.name+'测试',characterId:'99001',characterName:'测试角色'});await ctx.lib.enable(mod.id);installed[ctx.game.id]=mod.id;
  }
+ await ws.select('genshin');
  if(process.env.HOYO_TEST_VIDEO){const {Backgrounds}=require('../src/core/backgrounds.cjs');await new Backgrounds(data).update('hsr',{backgrounds:[{background:{url:'poster'},video:{url:'video'}}]},(url,dest)=>fs.copyFile(url==='video'?process.env.HOYO_TEST_VIDEO:path.join(root,'src/ui/hsr-background.jpg'),dest));}
  let session=await launch(data);
  try{
-  const {evaluate,waitFor}=session;await waitFor('initialStateLoaded&&GAMES.length===3','三游戏清单');
-  assert.equal(await evaluate(`document.querySelectorAll('#game-list [data-game]').length`),3);
+  const {evaluate,waitFor}=session;await waitFor('initialStateLoaded&&GAMES.length===4','四游戏清单');
+  assert.equal(await evaluate(`document.querySelectorAll('#game-list [data-game]').length`),4);
   assert.match(await evaluate(`document.querySelector('#game-list [data-game]').title`),/长按拖动/,'侧栏提示应说明排序手势');
   // 长按侧栏图标可改变视觉顺序；松手后不会误触游戏切换，重载后仍保留顺序。
   const railOrder=()=>evaluate(`[...document.querySelectorAll('#game-list [data-game]')].map(tile=>({id:tile.dataset.game,y:tile.getBoundingClientRect().y})).sort((a,b)=>a.y-b.y).map(tile=>tile.id)`);
-  assert.deepEqual(await railOrder(),['hsr','zzz','genshin']);
-  const box=await evaluate(`(()=>{const r=document.querySelector('#game-list [data-game="hsr"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
-  const bottom=await evaluate(`(()=>{const r=document.querySelector('#game-list [data-game="genshin"]').getBoundingClientRect();return r.y+r.height/2})()`);
+  assert.deepEqual(await railOrder(),['genshin','zzz','hsr','wuwa']);
+  const box=await evaluate(`(()=>{const r=document.querySelector('#game-list [data-game="genshin"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  const bottom=await evaluate(`(()=>{const r=document.querySelector('#game-list [data-game="wuwa"]').getBoundingClientRect();return r.y+r.height/2})()`);
   await session.client.send('Input.dispatchMouseEvent',{type:'mousePressed',x:box.x,y:box.y,button:'left',clickCount:1});
   await sleep(450);
   await session.client.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:box.x,y:bottom,button:'left',buttons:1});
   await session.client.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:box.x,y:bottom,button:'left',clickCount:1});
-  assert.deepEqual(await railOrder(),['zzz','genshin','hsr']);
+  assert.deepEqual(await railOrder(),['zzz','hsr','wuwa','genshin']);
   assert.equal(await evaluate('activeGame'),'genshin','拖动结束不能误触切换游戏');
   await evaluate('location.reload()');
-  await waitFor('typeof initialStateLoaded!=="undefined"&&initialStateLoaded&&GAMES.length===3','重载后三游戏清单');
-  assert.deepEqual(await railOrder(),['zzz','genshin','hsr'],'拖动顺序要持久化');
+  await waitFor('typeof initialStateLoaded!=="undefined"&&initialStateLoaded&&GAMES.length===4','重载后四游戏清单');
+  assert.deepEqual(await railOrder(),['zzz','hsr','wuwa','genshin'],'拖动顺序要持久化');
   const cancelled=await evaluate(`(()=>{const r=document.querySelector('#game-list [data-game="zzz"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
   await session.client.send('Input.dispatchMouseEvent',{type:'mousePressed',x:cancelled.x,y:cancelled.y,button:'left',clickCount:1});
   await sleep(450);
   await session.client.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:cancelled.x,y:bottom,button:'left',buttons:1});
   await evaluate(`document.querySelector('#game-list [data-game="zzz"]').dispatchEvent(new PointerEvent('pointercancel',{pointerId:1,bubbles:true}))`);
   await session.client.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:cancelled.x,y:bottom,button:'left',clickCount:1});
-  assert.deepEqual(await railOrder(),['zzz','genshin','hsr'],'取消拖动应恢复原顺序');
+  assert.deepEqual(await railOrder(),['zzz','hsr','wuwa','genshin'],'取消拖动应恢复原顺序');
   await sleep(400);
   const clicked=await evaluate(`(()=>{const r=document.querySelector('#game-list [data-game="zzz"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
   await session.client.send('Input.dispatchMouseEvent',{type:'mousePressed',x:clicked.x,y:clicked.y,button:'left',clickCount:1});
@@ -131,17 +177,18 @@ async function main(){
    {game:'genshin',children:['IMG','STRONG'],name:'原神'},
    {game:'zzz',children:['IMG','STRONG'],name:'绝区零'},
    {game:'hsr',children:['IMG','STRONG'],name:'崩坏：星穹铁道'},
+   {game:'wuwa',children:['IMG','STRONG'],name:'鸣潮'},
   ],'全部游戏只显示图标和名称');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('#page-games .game-grid')).display`),'grid');
   assert.equal(await evaluate(`!!document.querySelector('#page-games #game-settings-panel')`),false,'游戏设置不显示在全部游戏中');
   assert.equal(await evaluate(`!!document.querySelector('#page-settings #game-settings-panel')`),true,'游戏设置保留在设置页');
   if(process.env.HOYO_SCREENSHOT_DIR){await evaluate(`showPage('games')`);const shot=await session.client.send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(process.env.HOYO_SCREENSHOT_DIR,'all-games.png'),Buffer.from(shot.data,'base64'));await evaluate(`showPage('home')`);}
-  const glass=await evaluate(`(()=>{const sidebar=getComputedStyle(document.querySelector('.sidebar')),backdrop=document.querySelector('.app-backdrop').getBoundingClientRect();return {backdropLeft:backdrop.left,filter:sidebar.backdropFilter||sidebar.webkitBackdropFilter,background:sidebar.backgroundImage};})()`);
+  const glass=await evaluate(`(()=>{const root=document.documentElement,old=root.dataset.material;root.dataset.material='mica';const sidebar=getComputedStyle(document.querySelector('.sidebar')),backdrop=document.querySelector('.app-backdrop').getBoundingClientRect(),result={backdropLeft:backdrop.left,filter:sidebar.backdropFilter||sidebar.webkitBackdropFilter,background:sidebar.backgroundImage};if(old===undefined)delete root.dataset.material;else root.dataset.material=old;return result;})()`);
   assert.equal(glass.backdropLeft,0);assert.match(glass.filter,/blur/);assert.match(glass.background,/linear-gradient/);
   await evaluate(`selectGame('zzz')`);
   const logoReloads=await evaluate(`(()=>{const logo=document.querySelector('#game-logo'),descriptor=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');let writes=0;Object.defineProperty(logo,'src',{configurable:true,get(){return descriptor.get.call(this)},set(value){writes++;descriptor.set.call(this,value)}});renderHome();renderHome();delete logo.src;return writes})()`);
   assert.equal(logoReloads,0,'unchanged state must not reload the game logo');
-  for(const gameId of ['zzz','hsr','genshin']){
+  for(const gameId of ['zzz','hsr','wuwa','genshin']){
    assert.equal(await evaluate(`selectGame('${gameId}')`),true);
    await waitFor(`activeGame==='${gameId}'&&state.activeGame==='${gameId}'`,'游戏切换');
    assert.deepEqual(await evaluate('state.mods.map(m=>m.id)'),[installed[gameId]]);
@@ -150,6 +197,7 @@ async function main(){
    assert.equal(await evaluate(`document.querySelector('#app-background').dataset.game`),gameId,'背景与选中游戏一致');
    assert.equal(await evaluate(`document.querySelector('#game-logo').dataset.game`),gameId,'Logo 与选中游戏一致');
    await waitFor(`document.querySelector('#game-logo').complete&&document.querySelector('#game-logo').naturalWidth>0`,'游戏 Logo');
+   if(gameId==='wuwa'&&process.env.HOYO_SCREENSHOT_DIR){await evaluate(`showPage('home')`);const shot=await session.client.send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(process.env.HOYO_SCREENSHOT_DIR,'wuwa-home.png'),Buffer.from(shot.data,'base64'));}
    assert.equal(await evaluate(`getComputedStyle(document.querySelector('#app-background')).transform`),'none');
    if(gameId==='zzz')await evaluate(`window.firstZzzBackground=document.querySelector('#app-background')`);
    if(gameId==='hsr'&&process.env.HOYO_TEST_VIDEO){await waitFor(`document.querySelector('#background-video').currentTime>0&&!document.querySelector('#background-video').hidden`,'实际本地视频播放');await evaluate(`window.firstHsrVideo=document.querySelector('#background-video')`);}
@@ -191,7 +239,7 @@ async function main(){
   await waitFor(`state.settings.autoBackground===true&&busyCount===0`,'自动背景开关保存');
   await evaluate(`closeModal()`);
   assert.equal((await evaluate(`api.call('state',{gameId:'zzz'})`)).settings.autoBackground===true,false);
-  assert.deepEqual(await evaluate(`Promise.all(GAMES.map(async g=>(await api.call('state',{gameId:g.id})).settings.blurNsfw))`),[false,false,false]);
+  assert.deepEqual(await evaluate(`Promise.all(GAMES.map(async g=>(await api.call('state',{gameId:g.id})).settings.blurNsfw))`),[false,false,false,false]);
   await evaluate(`selectGame('zzz')`);
   // A response begun before a switch must not overwrite the new workspace.
   await evaluate(`window.originalMultiCall=api.call;window.releaseMulti=null;api.call=function(action,payload){if(action==='downloads'&&activeGame==='zzz')return new Promise(r=>releaseMulti=r);return originalMultiCall(action,payload)};void loadDownloads();`);
@@ -210,7 +258,7 @@ async function main(){
   assert.deepEqual(await session.evaluate('state.mods.map(m=>m.id)'),[installed.hsr]);
   if(process.env.HOYO_TEST_VIDEO)await session.waitFor(`document.querySelector('#background-video').currentTime>0`,'重启后离线视频播放');
   for(const ctx of ws.contexts.values())assert.ok((await fs.stat(path.join(ctx.lib.effectiveSettings().modsPath,'HoYoModManaged',installed[ctx.game.id],'mod.ini'))).isFile());
-  console.log('✓ 三游戏资源、玻璃侧栏、独立模组/设置、共享偏好、异步结果隔离、通知跳转和重启恢复');
+  console.log('✓ 四游戏资源、玻璃侧栏、独立模组/设置、共享偏好、异步结果隔离、通知跳转和重启恢复');
  }finally{session.client.close();await stop();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1}).finally(async()=>{await stop();if(dataDir)await fs.rm(dataDir,{recursive:true,force:true,maxRetries:5,retryDelay:200});});

@@ -97,7 +97,7 @@ function notifyError(error,{title='操作失败',fallback}={}){
 }
 function flushNotifications(){if(win&&!win.isDestroyed()&&notifications)notifications.flushPending(entry=>win.webContents.send('hoyo:notification-popups',[entry]));}
 const dependencyPrompts=new (require('./core/dependency-prompts.cjs').DependencyPrompts)(detail=>send('dependency',detail));
-function snapshot(){return {...localizeLibraryState(workspace().game.id,lib.snapshot()),backgroundMedia:backgrounds.read(workspace().game.id),availableGames:GAMES,runtime:{version:app.getVersion(),platform:process.platform,dataRoot:root,materialSupported:nativeMaterial}};}
+function snapshot(){return {...localizeLibraryState(workspace().game.id,lib.snapshot()),backgroundMedia:backgrounds.read(workspace().game.id),availableGames:GAMES,addedGameIds:[...workspaces.addedGameIds],runtime:{version:app.getVersion(),platform:process.platform,dataRoot:root,materialSupported:nativeMaterial}};}
 // 旧版本只保存远程 preview URL。启动后后台补一次本地缓存，成功后「我的模组」就不再访问远程图片；
 // 图片缓存失败不影响启动，也保留原 URL 作为下次重试的来源。
 async function cacheExistingPreviews(){
@@ -128,7 +128,7 @@ async function validateExternalProgram(file){
   require('./core/external-launcher.cjs').externalSpec(file);
   const actual=await fs.realpath(file);
   if(!(await fs.stat(actual)).isFile())throw Error('指定程序不存在，请重新选择。');
-  await Promise.all([...workspaces.contexts.values()].map(ctx=>workspaces.ensure(ctx.game.id)));
+  await Promise.all(workspaces.addedGameIds.map(id=>workspaces.ensure(id)));
   for(const folder of [...workspaces.contexts.values()].flatMap(ctx=>[ctx.lib.libraryRoot,ctx.lib.snapshot().settings.modsPath]).filter(Boolean)){
     const canonical=await fs.realpath(folder).catch(()=>path.resolve(folder)),relative=path.relative(canonical,actual);
     if(relative===''||(!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative)))throw Error('请选择模组目录之外的外部程序。');
@@ -158,8 +158,14 @@ async function changed(work){await work();return snapshot();}
 // 设置按游戏分开存取：界面把当前游戏一起传上来，缺省就是当前选中的游戏。
 function gameScope(payload){return String(payload?.gameId||lib.snapshot().activeGame);}
 async function updateOfficialBackground(){
-  const info=await network.json(OFFICIAL_BACKGROUND_API),game=workspace().game;
-  const entry=info?.data?.game_info_list?.find(item=>item?.game?.biz===game.officialBackgroundId);
+  const game=workspace().game;
+  if(!game.officialBackgroundId&&!game.officialBackgroundProvider)throw Error('当前游戏暂无可获取的官方启动器背景。');
+  let entry;
+  if(game.officialBackgroundProvider==='kuro')entry=await require('./core/kuro-background.cjs').kuroBackgroundEntry(network.json);
+  else{
+    const info=await network.json(OFFICIAL_BACKGROUND_API);
+    entry=info?.data?.game_info_list?.find(item=>item?.game?.biz===game.officialBackgroundId);
+  }
   await backgrounds.update(game.id,entry,network.download);
   send('state',snapshot());return snapshot();
 }
@@ -429,6 +435,20 @@ const actions={
     return snapshot();
   }),
   setActiveGame:async p=>{await workspaces.select(p.gameId);hotkeyMonitor?.hide();await startWorkspace(workspaces.get(p.gameId)).catch(error=>notifyError(error,{title:'加载游戏任务'}));return snapshot();},
+  removeGame:async p=>{
+    const ctx=workspaces.get(p.gameId);
+    if(ctx.removing||ctx.busy||ctx.downloadQueue?.worker||ctx.downloadQueue?.snapshot().some(row=>['queued','downloading','installing'].includes(row.status)))throw Error('请等待当前游戏的下载和操作结束后再移除。');
+    ctx.removing=true;
+    try{
+      const deadline=Date.now()+30000;
+      while(ctx.pendingCalls>1){if(Date.now()>deadline)throw Error('当前游戏还有任务未完成，请稍后重试移除。');await new Promise(resolve=>setTimeout(resolve,100));}
+      if(ctx.previewTask){let timer;try{await Promise.race([ctx.previewTask,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('预览图缓存仍在处理，请稍后重试移除。')),30000);})]);}finally{clearTimeout(timer);}}
+      const next=await workspaces.remove(p.gameId);
+      ctx.downloadQueue.rows=[];ctx.downloadQueue.hiddenKeys=[];ctx.downloadQueueInitialized=false;ctx.downloadBatchIds=[];ctx.downloadReporter.active=0;ctx.downloadReporter.armed=false;
+      ctx.api.taxonomyCache=null;ctx.api.categoryRoots.clear();ctx.lastUpdateSummary=null;ctx.legacyDownloads=[];ctx.previewTask=null;
+      return workspaces.run(next,()=>snapshot());
+    }finally{ctx.removing=false;}
+  },
   proxyDiagnostics:async()=>{
     const route=await session.defaultSession.resolveProxy('https://files.gamebanana.com/'),apiRoute=await session.defaultSession.resolveProxy('https://gamebanana.com/apiv11/Mod/710045/ProfilePage');
     let message;try{const response=await network.request('https://gamebanana.com/apiv11/Mod/710045/ProfilePage');await response.body?.cancel();message='GameBanana 接口可连接。此检测不代表大文件传输稳定；DIRECT 也可能由 TUN 模式接管。';}catch(e){message='连接检测失败：'+e.message;}
@@ -567,8 +587,9 @@ async function startWorkspace(context){
   if(context.starting)return context.starting;
   context.starting=workspaces.run(context,async()=>{
     await workspaces.ensure(context.game.id);
+    if(!context.downloadQueueInitialized){await downloadQueue.init();context.downloadQueueInitialized=true;}
     await downloadQueue.change(()=>{for(const row of downloadQueue.rows){if(row.payload?.kind==='component'&&['queued','downloading','installing'].includes(row.status)){row.status='cancelled';row.message='已停止管理 XXMI 组件，请直接选择启用目录。';row.canCancel=false;}const mod=lib.snapshot().mods.find(m=>m.downloadQueueId===row.id);if(mod&&row.status==='failed'){row.status='installed';row.modId=mod.id;row.message='已从安装记录恢复完成状态。';row.error='';}}});
-    downloadReporter.arm();downloadQueue.start();cacheExistingPreviews().catch(()=>{});
+    downloadReporter.arm();downloadQueue.start();context.previewTask=cacheExistingPreviews().catch(()=>{});
     if(lib.effectiveSettings().autoBackground===true)exclusive(updateOfficialBackground).catch(error=>logError('自动更新背景',error.message));
     context.started=true;
   }).finally(()=>{context.starting=null});
@@ -607,9 +628,9 @@ if(lock)app.whenReady().then(async()=>{
       throw error;
     }finally{send('state',snapshot());}
   }});
-  await downloadQueue.init();
+  if(workspaces.isAdded(context.game.id)){await downloadQueue.init();context.downloadQueueInitialized=true;}
   });
-  appUpdater=new (require('./core/app-update.cjs').AppUpdate)({appDir:app.isPackaged?path.dirname(app.getPath('exe')):path.dirname(__dirname),version:app.getVersion(),protectedPaths:async()=>{await Promise.all([...workspaces.contexts.values()].map(ctx=>workspaces.ensure(ctx.game.id)));return [root,...[...workspaces.contexts.values()].flatMap(ctx=>[ctx.lib.snapshot().settings.modsPath,ctx.lib.snapshot().settings.launchExe,ctx.lib.snapshot().settings.secondaryExe])].filter(Boolean);},json:network.json,download:network.download,extract,onChange:s=>{send('appUpdate',s);syncAppUpdateTask(s);}});
+  appUpdater=new (require('./core/app-update.cjs').AppUpdate)({appDir:app.isPackaged?path.dirname(app.getPath('exe')):path.dirname(__dirname),version:app.getVersion(),protectedPaths:async()=>{await Promise.all(workspaces.addedGameIds.map(id=>workspaces.ensure(id)));return [root,...workspaces.addedGameIds.flatMap(id=>{const ctx=workspaces.get(id);return [ctx.lib.snapshot().settings.modsPath,ctx.lib.snapshot().settings.launchExe,ctx.lib.snapshot().settings.secondaryExe]})].filter(Boolean);},json:network.json,download:network.download,extract,onChange:s=>{send('appUpdate',s);syncAppUpdateTask(s);}});
   await appUpdater.init();
   session.defaultSession.setPermissionRequestHandler((wc,perm,cb)=>cb(false));
   protocol.handle('hoyo',async request=>{
@@ -653,7 +674,7 @@ if(lock)app.whenReady().then(async()=>{
       if(event.sender!==win.webContents||event.senderFrame!==win.webContents.mainFrame||!event.senderFrame.url.startsWith('hoyo://app/'))throw new Error('不允许的调用来源。');
       if(updateHandoff&&action!=='state'&&action!=='appUpdateState')throw Error('软件正在准备重启更新，请稍候。');
       if(!Object.hasOwn(actions,action)||!payload||typeof payload!=='object'||Array.isArray(payload))throw new Error('不支持的操作。');
-      pendingActions++;try{const context=workspaces.get(payload.gameId||workspaces.activeGameId);await workspaces.ensure(context.game.id);return {ok:true,value:await workspaces.run(context,()=>operationContext.run({action,payload:{...payload,gameId:workspace().game.id}},()=>actions[action](payload)))};}finally{pendingActions--;}
+      pendingActions++;try{const context=workspaces.get(payload.gameId||workspaces.activeGameId);if(context.removing&&action!=='removeGame')throw Error('游戏正在移除，请稍候。');context.pendingCalls=(context.pendingCalls||0)+1;try{if(workspaces.isAdded(context.game.id))await workspaces.ensure(context.game.id);return {ok:true,value:await workspaces.run(context,()=>operationContext.run({action,payload:{...payload,gameId:workspace().game.id}},()=>actions[action](payload)))};}finally{context.pendingCalls--;}}finally{pendingActions--;}
     }catch(e){
       // 给界面的是通俗中文；英文原文写进日志，需要时可在通知里看详细信息。
       const described=describeError(e);
@@ -662,7 +683,7 @@ if(lock)app.whenReady().then(async()=>{
     }
   });
   await win.loadURL('hoyo://app/index.html');flushNotifications();
-  await startWorkspace(workspaces.get(workspaces.activeGameId));
+  if(workspaces.addedGameIds.length)await startWorkspace(workspaces.get(workspaces.activeGameId));
   if(process.platform==='win32'){
     try{
       hotkeyOverlay=new GameHotkeyOverlay({BrowserWindow,ipcMain,screen,settingsStore:new OverlaySettings(workspaces.get('genshin').root),preload:path.join(__dirname,'hotkey-overlay-preload.cjs'),icon:appIcon(),onError:error=>notifyError(error,{title:'保存热键悬浮窗设置'})});

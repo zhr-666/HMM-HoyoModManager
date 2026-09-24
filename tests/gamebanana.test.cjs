@@ -156,7 +156,7 @@ test('taxonomy includes genuine game roots and recursively nested children, cach
   throw Error('unexpected URL '+url);
  });
  const tree=await api.taxonomy();
- assert.deepEqual(tree,[{id:17510,name:'Skins',icon:'',children:[{id:18140,name:'Characters',icon:'',children:[{id:19513,name:'行秋',icon:'',children:[]}]}]},{id:22474,name:'UI',icon:'',children:[]}]);
+ assert.deepEqual(tree,[{id:17510,name:'外观',icon:'',children:[{id:18140,name:'角色',icon:'',children:[{id:19513,name:'行秋',icon:'',children:[]}]}]},{id:22474,name:'UI',icon:'',children:[]}]);
  assert.deepEqual(await api.taxonomy(),tree);assert.equal(calls.length,3);
 });
 test('list hydrates missing counts through minimal property API with bounded concurrency and cache',async()=>{

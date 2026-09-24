@@ -27,3 +27,21 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Syntax and unit tests
         run: pnpm check
+      - name: Build Windows x64 package
+        if: runner.os == 'Windows'
+        run: pnpm pack:win
+      - name: Verify Windows package and update preparation
+        if: runner.os == 'Windows'
+        run: |
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          try {
+            pnpm exec electron scripts/verify-windows-package.cjs
+            if ($LASTEXITCODE -ne 0) { throw 'Windows package verification failed' }
+            pnpm exec electron scripts/smoke-update-package.cjs
+            if ($LASTEXITCODE -ne 0) { throw 'Update package verification failed' }
+          } finally {
+            Remove-Item Env:ELECTRON_RUN_AS_NODE
+          }
+      - name: Smoke test Windows desktop game navigation
+        if: runner.os == 'Windows'
+        run: node scripts/smoke-multi-game.cjs

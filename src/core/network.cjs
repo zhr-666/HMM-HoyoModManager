@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
-const ALLOWED = ['gamebanana.com', 'github.com', 'api.github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com', 'hyp-api.mihoyo.com', 'launcher-webstatic.mihoyo.com'];
+const ALLOWED = ['gamebanana.com', 'github.com', 'api.github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com', 'hyp-api.mihoyo.com', 'launcher-webstatic.mihoyo.com', 'prod-alicdn-gamestarter.kurogame.com', 'hw-pcdownload-qcloud.aki-game.net', 'hw-pcdownload-aws.aki-game.net'];
 const MAX_DOWNLOAD = 2 * 1024 ** 3;
 let fetchTransport = globalThis.fetch;
 
@@ -61,8 +61,8 @@ async function request(url, timeout = 30000, headers = {}, signal) {
   throw new Error('下载重定向次数过多。');
 }
 
-async function json(url) {
-  const response = await request(url);
+async function json(url, headers = {}) {
+  const response = await request(url, 30000, headers);
   const text = await response.text();
   if (text.length > 16 * 1024 ** 2) throw new Error('接口响应过大。');
   const data = JSON.parse(text);

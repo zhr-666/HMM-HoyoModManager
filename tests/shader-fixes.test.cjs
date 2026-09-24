@@ -90,6 +90,7 @@ test('ShaderFixes supports the validated bundled importer and isolates game hist
   const {root,source,add,meta}=await fixture(t);await add('a.txt');
   const data=path.join(root,'bundled-data');
   const store=await new (require('../src/core/workspaces.cjs'))(data).init();
+  await store.select('genshin');
   const loader=path.join(data,'components','xxmi-123456abcdef','GIMI');
   await fs.mkdir(loader,{recursive:true});await fs.writeFile(path.join(loader,'d3dx.ini'),'[loader]');
   await store.setSettings('genshin',{modsPath:path.join(loader,'Mods')});

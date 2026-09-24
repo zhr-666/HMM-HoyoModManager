@@ -9,13 +9,15 @@ async function setup(t){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-workspaces-'));
   t.after(()=>fs.rm(dir,{recursive:true,force:true}));
   const root=path.join(dir,'data'),store=await new Workspaces(root).init();
+  for(const game of require('../src/core/games.cjs').GAMES)await store.select(game.id);
+  await store.select('genshin');
   return {dir,root,store};
 }
 async function source(dir){const src=path.join(dir,'source');await fs.mkdir(src,{recursive:true});await fs.writeFile(path.join(src,'mod.ini'),'[Constants]\n');return src;}
 
-test('three games isolate identical role IDs, profiles, hotkeys and deployment; selection does not deploy',async t=>{
+test('four games isolate identical role IDs, profiles, hotkeys and deployment; selection does not deploy',async t=>{
   const {dir,root,store}=await setup(t),src=await source(dir);
-  for(const id of ['genshin','zzz','hsr']){
+  for(const id of ['genshin','zzz','hsr','wuwa']){
     await store.setSettings(id,{modsPath:path.join(dir,id,'Mods'),useLinks:false});
     const lib=store.get(id).lib,mod=await lib.install(src,{name:id,characterId:'same-role',characterName:'角色'});
     await lib.enable(mod.id);await lib.savePreset(id);await lib.addHotkeyNote(mod.id,id);
