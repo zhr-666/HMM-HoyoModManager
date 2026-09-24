@@ -36,6 +36,13 @@ test('setFetch injects the transport used by JSON requests', async (t) => {
   assert.equal(called, true);
 });
 
+test('GameBanana post responses may contain PHP warnings before JSON, while other responses stay strict', async (t) => {
+  t.after(() => network.setFetch(globalThis.fetch));
+  network.setFetch(async () => new Response('\nWarning: Undefined array key "images" in /gamebanana/cache.php on line 87\n{"_aRecords":[]}'));
+  assert.deepEqual(await network.json('https://gamebanana.com/apiv11/Mod/55/Posts?_nPage=1', {}, {allowLeadingWarnings:true}), {_aRecords:[]});
+  await assert.rejects(network.json('https://gamebanana.com/apiv11/Mod/55/Posts?_nPage=1'), SyntaxError);
+});
+
 test('JSON requests can accept gzip while downloads keep identity encoding', async (t) => {
   t.after(() => network.setFetch(globalThis.fetch));
   const destination = await temp(t);

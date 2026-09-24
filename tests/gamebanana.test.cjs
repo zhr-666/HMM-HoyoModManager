@@ -134,6 +134,39 @@ test('detail validates the game and exposes text, images and downloadable files'
   await assert.rejects(() => otherGame.detail(55), /原神/);
 });
 
+test('comments loads one page of mod posts as plain text without exposing HTML', async () => {
+  const api = new GameBanana(async url => {
+    assert.equal(url, 'https://gamebanana.com/apiv11/Mod/55/Posts?_nPage=2');
+    return {_aMetadata:{_nRecordCount:17,_nPerpage:15,_bIsComplete:true},_aRecords:[
+      {_idRow:10,_sText:'<p>Hello &amp; <b>friends</b></p>',_tsDateAdded:100,_aPoster:{_sName:'Alice'},_nReplyCount:2}
+    ]};
+  });
+  assert.deepEqual(await api.comments(55,2),{
+    comments:[{id:10,author:'Alice',text:'Hello & friends',postedAt:100,replyCount:2}],
+    page:2,total:17,hasMore:false
+  });
+});
+
+test('comments rejects invalid mod IDs and pages before requesting GameBanana', async () => {
+  const api = new GameBanana(async () => {throw Error('unexpected request');});
+  await assert.rejects(api.comments(0),/ID/);
+  await assert.rejects(api.comments(55,0),/页/);
+});
+
+test('replies loads a post thread without changing its author and text', async () => {
+  const api = new GameBanana(async url => {
+    assert.equal(url,'https://gamebanana.com/apiv11/Post/10/Posts?_nPage=1');
+    return {_aMetadata:{_nRecordCount:1,_nPerpage:15,_bIsComplete:true},_aRecords:[
+      {_idRow:11,_sText:'<p>Reply &amp; detail</p>',_tsDateAdded:200,_aPoster:{_sName:'Bob'},_nReplyCount:0}
+    ]};
+  });
+  assert.deepEqual(await api.replies(10),{
+    comments:[{id:11,author:'Bob',text:'Reply & detail',postedAt:200,replyCount:0}],
+    page:1,total:1,hasMore:false
+  });
+  await assert.rejects(api.replies(0),/ID/);
+});
+
 test('selectUpdateFile only selects one file whose name exactly matches', () => {
   const files = [{id: 1, name: 'mod-v2.zip'}, {id: 2, name: 'mod.zip'}];
   assert.deepEqual(selectUpdateFile(files, 'mod.zip'), files[1]);
