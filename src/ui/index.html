@@ -130,7 +130,7 @@
       </section>
 
       <section id="page-library" class="page" data-testid="library-page">
-        <div class="section-head"><div class="row-actions"><button class="button secondary" id="replace-hash" hidden>替换 Hash</button><button class="button secondary" id="shaderfixes-history" hidden>ShaderFixes 历史</button><button class="button secondary" id="check-updates-library">检查更新<span class="button-dot" aria-hidden="true" hidden></span></button><button class="button primary" id="import-button">导入本地模组</button></div></div>
+        <div class="section-head"><div class="row-actions"><button class="button secondary" id="replace-hash" hidden>替换 Hash</button><button class="button secondary" id="shaderfixes-history" hidden>ShaderFixes 历史</button><button class="button secondary" id="check-updates-library">检查更新<span class="button-dot" aria-hidden="true" hidden></span></button><button class="button primary" id="import-button" aria-label="导入本地模组：选择压缩包后选择安装位置">导入本地模组<span class="hint-mark" data-hint="选择压缩包后选择安装位置。" aria-hidden="true">?</span></button></div></div>
         <div class="library-navigation"><button type="button" id="library-back" class="button secondary library-back" aria-label="返回上一级分类" disabled><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg> 返回</button><nav id="library-breadcrumb" class="library-breadcrumb" aria-label="模组分类路径"></nav><div class="library-view-switch" role="group" aria-label="模组显示方式"><button type="button" id="library-view-list" aria-pressed="true" title="横向列表"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg> 列表</button><button type="button" id="library-view-grid" aria-pressed="false" title="大图网格"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg> 网格</button></div></div><div id="library-folders" class="folder-grid"></div>
         <div id="library-grid" class="list-grid"></div><div id="library-empty" class="empty" hidden></div>
       </section>
@@ -150,7 +150,7 @@
           <h2 id="game-settings-title">当前游戏设置 · <span data-game-name>原神</span></h2>
           <div class="settings-card">
             <div class="setting-row"><div><strong data-loader-label>GIMI 文件夹</strong><p data-game-value="modsPath">尚未选择</p></div><button class="button secondary" id="choose-mods">选择 GIMI 文件夹</button></div>
-            <div class="setting-row"><div><strong>一级程序</strong><p data-game-value="launchExe">尚未选择</p></div><button class="button secondary" id="choose-program">选择 EXE</button></div>
+            <div class="setting-row"><div><strong>一级程序<span class="hint-mark" data-hint="选择HMM要启动的程序。" role="img" aria-label="选择HMM要启动的程序。" tabindex="0">?</span></strong><p data-game-value="launchExe">尚未选择</p></div><button class="button secondary" id="choose-program">选择 EXE</button></div>
             <div class="setting-row"><div><strong>启动器背景</strong><p data-game-value="background">默认使用米哈游官方启动器《原神》背景图；可替换为本地图片</p></div><div class="row-actions"><button class="button secondary" id="fetch-background">获取官方最新背景</button><button class="button secondary" id="reset-background">恢复默认</button><button class="button secondary" id="choose-background">选择图片</button></div></div>
           </div>
         </div>
@@ -164,7 +164,7 @@
           <div class="setting-row"><div><strong>下载后自动启用</strong></div><label class="switch"><input id="auto-enable" type="checkbox" aria-label="下载后自动启用"><span></span></label></div>
           <div class="setting-row"><div><strong>自动检查更新</strong></div><label class="switch"><input id="auto-check-updates" type="checkbox" aria-label="自动检查更新"><span></span></label></div>
           <div class="setting-row"><div><strong>模糊 NSFW 预览</strong></div><label class="switch"><input id="blur-nsfw" type="checkbox" aria-label="模糊 NSFW 预览"><span></span></label></div>
-          <div class="setting-row"><div><strong>用快捷文件夹启用模组</strong></div><label class="switch"><input id="use-links" type="checkbox" aria-label="用快捷文件夹启用模组"><span></span></label></div>
+          <div class="setting-row"><div><strong>用快捷文件夹启用模组<span class="hint-mark" data-hint="用快捷方式的形式启用模组，能大幅减少空间占用。" role="img" aria-label="用快捷方式的形式启用模组，能大幅减少空间占用。" tabindex="0">?</span></strong></div><label class="switch"><input id="use-links" type="checkbox" aria-label="用快捷文件夹启用模组"><span></span></label></div>
         </div>
         <div class="settings-card">
           <div class="setting-row"><div><strong>窗口材质</strong></div><select id="material-select" aria-label="窗口材质"><option value="mica">云母 Mica</option><option value="acrylic">亚克力 Acrylic</option></select></div>

@@ -478,7 +478,7 @@ function openGameSettings(){
   const body=`<p class="meta">这一组设置只对「${esc(game.name)}」生效：换到别的游戏时显示并保存该游戏自己的值。</p>
     <div class="settings-card">
       <div class="setting-row"><div><strong data-loader-label>${esc(game.importer)} 文件夹</strong><p data-game-value="modsPath">尚未选择</p></div><button class="button secondary" id="game-choose-mods">选择 ${esc(game.importer)} 文件夹</button></div>
-      <div class="setting-row"><div><strong>一级程序</strong><p data-game-value="launchExe">尚未选择</p></div><button class="button secondary" id="game-choose-program">选择 EXE</button></div>
+      <div class="setting-row"><div><strong>一级程序<span class="hint-mark" data-hint="选择HMM要启动的程序。" role="img" aria-label="选择HMM要启动的程序。" tabindex="0">?</span></strong><p data-game-value="launchExe">尚未选择</p></div><button class="button secondary" id="game-choose-program">选择 EXE</button></div>
       <div class="setting-row"><div><strong>启动器背景</strong><p data-game-value="background">默认使用米哈游官方启动器《原神》背景图；可替换为本地图片</p></div><div class="row-actions"><button class="button secondary" id="game-fetch-background">获取官方最新背景</button><button class="button secondary" id="game-reset-background">恢复默认</button><button class="button secondary" id="game-choose-background">选择图片</button></div></div>
     </div>`;
   const dialog=modal(`${game.name} · 当前游戏设置`,'只影响这个游戏，其他游戏的设置不会被覆盖。',body,'<button class="button secondary" value="cancel">关闭</button>');
