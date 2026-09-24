@@ -8,6 +8,7 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const os=require('node:os');
 const assert=require('node:assert/strict');
+const {mainWindowTarget}=require('./cdp-target.cjs');
 
 const root=process.cwd();
 const port=9900+Math.floor(Math.random()*200);
@@ -19,7 +20,7 @@ async function waitForTarget(timeout=30000){
   while(Date.now()<deadline){
     try{
       const rows=await fetch(`http://127.0.0.1:${port}/json/list`).then(r=>r.json());
-      const page=rows.find(row=>row.type==='page'&&String(row.url).startsWith('hoyo://app/'));
+      const page=mainWindowTarget(rows);
       if(page?.webSocketDebuggerUrl)return page;
     }catch{}
     await sleep(300);
