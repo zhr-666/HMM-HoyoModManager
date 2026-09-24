@@ -10,7 +10,7 @@ if(process.type==='renderer'){
       if(action==='libraryStats')return {totalBytes:0,modCount:0,activeCount:0};
       if(action==='browse')return {records:[],page:1,hasMore:false};
       if(action==='hashHistory')return [{id:'batch-1',oldHash:'aaaa',newHash:'bbbb',createdAt:100,count:1,status:'applied',entries:[{name:'Local Mod'}]}];
-      if(action==='detail')return {id:55,name:'Test Mod',author:'Author',files:[{id:88,name:'safe.zip',size:1024,uploadedAt:100}],images:[]};
+      if(action==='detail')return {id:55,name:'Test Mod',author:'Author',files:[{id:88,name:'safe.zip',size:1024,uploadedAt:100}],images:['https://images.gamebanana.com/first.jpg','https://images.gamebanana.com/second.jpg'],nsfw:true};
       if(action==='comments'){
         if(++commentsAttempt===1)throw Error('Temporary failure');
         return {page:p.page,comments:[{id:1,author:'Alice',text:'Safe comment',postedAt:100,replyCount:1}],hasMore:false};
@@ -39,10 +39,22 @@ if(process.type==='renderer'){
     const win=new BrowserWindow({show:false,webPreferences:{preload:__filename,contextIsolation:true,nodeIntegration:false,sandbox:true}});
     try{
       await win.loadFile(path.join(__dirname,'../src/ui/index.html'));
+      assert.deepEqual(await win.webContents.executeJavaScript("[...document.querySelectorAll('#sort-select option')].map(option=>option.value)"),
+        ['downloads','uploaded','oldest','modified','newUpdated','updated','alphabetical','reverseAlphabetical','likes','views','comments','latestComment']);
+      await win.webContents.executeJavaScript("document.querySelector('#sort-select').value='likes';document.querySelector('#sort-select').dispatchEvent(new Event('change'))");
+      await wait(win,"hoyo.call('testCalls').then(rows=>rows.some(row=>row.action==='browse'&&row.p.sort==='likes'))");
       await win.webContents.executeJavaScript("openDetail({id:55,name:'Test Mod'})");
       await wait(win,"document.querySelector('.detail-comments')!==null");
       const initial=await win.webContents.executeJavaScript("({folded:!document.querySelector('.detail-comments').open,footer:document.querySelector('#modal-actions').textContent.trim(),labels:[...document.querySelectorAll('.file-direct-download')].map(x=>x.textContent.trim())})");
       assert.deepEqual(initial,{folded:true,footer:'下载并安装',labels:['下载此处']});
+      await win.webContents.executeJavaScript("document.querySelector('.detail-gallery-main').click()");
+      assert.equal(await win.webContents.executeJavaScript("document.querySelector('.image-preview-dialog')===null && !document.querySelector('.detail-gallery').classList.contains('nsfw-detail')"),true);
+      await win.webContents.executeJavaScript("document.querySelectorAll('.detail-gallery-thumbs button')[1].click()");
+      await win.webContents.executeJavaScript("document.querySelector('.detail-gallery-main').click()");
+      await wait(win,"document.querySelector('.image-preview-dialog')?.open===true");
+      assert.equal(await win.webContents.executeJavaScript("document.querySelector('.image-preview-dialog img')?.src"),'https://images.gamebanana.com/second.jpg');
+      await win.webContents.executeJavaScript("document.querySelector('.image-preview-dialog .dialog-back').click()");
+      assert.equal(await win.webContents.executeJavaScript("document.querySelector('.image-preview-dialog')===null && document.querySelector('#modal .detail-gallery-main img')?.src==='https://images.gamebanana.com/second.jpg'"),true);
       await win.webContents.executeJavaScript("document.querySelector('.detail-comments summary').click()");
       await wait(win,"document.querySelector('.comments-more')?.textContent==='重试' && !document.querySelector('.comments-more').hidden");
       await win.webContents.executeJavaScript("document.querySelector('.comments-more').click()");
@@ -75,5 +87,5 @@ if(process.type==='renderer'){
       assert.equal(await win.webContents.executeJavaScript("document.querySelector('#modal').open"),false);
       console.log('Workshop comments UI smoke passed.');
     }finally{win.destroy();app.quit();}
-  }).catch(error=>{console.error(error);process.exitCode=1;app.quit()});
+  }).catch(error=>{console.error(error);app.exit(1)});
 }

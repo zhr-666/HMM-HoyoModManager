@@ -145,15 +145,15 @@ function showNotificationPopup(entry){
   const host=$('#notification-popups'),box=document.createElement('article');
   box.className='notification-popup'+(entry.tone==='error'?' error':'');box.setAttribute('role','status');
   box.dataset.clickable=String(Boolean(entry.target));
-  box.innerHTML=`<span class="notification-popup-icon" aria-hidden="true">${notificationGlyph(entry)}</span><div class="notification-popup-body">${entry.title?`<strong>${esc(entry.title)}</strong>`:''}<p>${esc(entry.text)}</p></div><button type="button" class="notification-popup-close" aria-label="关闭这条提示" title="只关闭这条提示，消息保留在通知中心">×</button>`;
+  box.innerHTML=`<span class="notification-popup-icon" aria-hidden="true">${notificationGlyph(entry)}</span><div class="notification-popup-body">${entry.title?`<strong>${esc(entry.title)}</strong>`:''}<p>${esc(entry.text)}</p></div><button type="button" class="notification-popup-close" aria-label="关闭并删除这条消息" title="关闭并从通知中心删除">×</button>`;
   const remove=()=>{if(!box.isConnected)return;box.classList.add('leaving');setTimeout(()=>{box.remove();syncNotificationLayer()},180)};
-  // 「×」只关闭这个弹窗：不删除消息、不清空记录，之后在通知中心里仍然看得到（需求 6）。
-  $('.notification-popup-close',box).onclick=event=>{event.stopPropagation();remove()};
+  // 手动点「×」按 ID 删除；自动超时和点进对应页面只收起卡片，历史仍可查看。
+  $('.notification-popup-close',box).onclick=event=>{event.stopPropagation();remove();call('removeNotification',{id:entry.id},{silent:true,foreground:false}).then(applyNotifications).catch(()=>{refreshNotifications();notify('删除消息失败，请在通知中心重试。',true)})};
   // 有对应页面的完成通知可以直接点进去；没有页面的通知不绑点击，鼠标也不显示手型。
   if(entry.target)$('.notification-popup-body',box).onclick=()=>{remove();closeNotificationPanel();openNotificationTarget(entry.target)};
   host.append(box);
   while(host.children.length>3)host.firstElementChild.remove();
-  // 弹出后 8 秒自动关闭（需求 2）：这段时间里用户仍然可以点「×」立刻关掉；消息保留在通知中心。
+  // 弹出后 8 秒自动关闭；没有手动点叉时消息保留在通知中心。
   setTimeout(remove,POPUP_CLOSE_MS);
   syncNotificationLayer();
 }
@@ -863,6 +863,14 @@ function detailGallery(dialog,images){
     button.onclick=()=>show(index);thumbs.append(button);
   }
   show(0);
+  main.tabIndex=0;main.setAttribute('role','button');main.setAttribute('aria-label','放大查看当前图片');
+  const openPreview=()=>{
+    if(host.classList.contains('nsfw-detail')){host.classList.remove('nsfw-detail');return;}
+    const dialog=modal(`查看大图 ${current+1}/${list.length}`,'',`<img src="${esc(list[current])}" alt="模组预览大图">`,'');
+    dialog.classList.add('image-preview-dialog');
+  };
+  main.addEventListener('click',openPreview);
+  main.addEventListener('keydown',event=>{if(event.key!=='Enter'&&event.key!==' ')return;event.preventDefault();openPreview()});
   if(list.length<2)return;
   // 大图上的滚轮 = 轮播：160ms 冷却，一次滚动只走一张，不被高频 wheel 事件一次跳过好几张。
   main.addEventListener('wheel',event=>{

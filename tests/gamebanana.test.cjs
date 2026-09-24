@@ -86,6 +86,20 @@ test('list maps download and update sorts and sends the exact server SFW filter'
   assert.equal(calls[1].searchParams.get('_aFilters[Generic_ContentRatings]'),'-');
 });
 
+test('list supports every sort advertised by GameBanana Mod/ListFilterConfig',async()=>{
+  const expected={
+    uploaded:'Generic_Newest',oldest:'Generic_Oldest',modified:'Generic_LatestModified',
+    newUpdated:'Generic_NewAndUpdated',updated:'Generic_LatestUpdated',alphabetical:'Generic_Alphabetically',
+    reverseAlphabetical:'Generic_ReverseAlphabetically',likes:'Generic_MostLiked',views:'Generic_MostViewed',
+    comments:'Generic_MostCommented',latestComment:'Generic_LatestComment',downloads:'Generic_MostDownloaded'
+  };
+  const urls=[];
+  const api=new GameBanana(async url=>{urls.push(new URL(url));return {_aMetadata:{_nRecordCount:0},_aRecords:[]};});
+  for(const key of Object.keys(expected))await api.list({sort:key});
+  await api.list({sort:'unknown'});
+  assert.deepEqual(urls.map(url=>url.searchParams.get('_sSort')),[...Object.values(expected),'Generic_Newest']);
+});
+
 test('list marks warned or rated records NSFW and exposes rating labels', async () => {
   const api = new GameBanana(async () => ({_aMetadata:{_nRecordCount:1},_aRecords:[{
     _idRow:9,_sModelName:'Mod',_sName:'Rated',_aGame:{_idRow:8552},

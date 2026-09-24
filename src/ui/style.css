@@ -525,6 +525,8 @@ html[data-mode="launcher"] .launcher-actions .home-launch.button{min-width:174px
    比图片区还高（竖图尤其明显），object-fit:contain 也就没机会缩，图的下半部分就被切掉了。
    鼠标停在大图上滚动切上一张/下一张（滚轮绑定见 app.js 的 detailGallery）。 */
 .detail-gallery-main img{display:block;width:100%;height:100%;min-width:0;min-height:0;object-fit:contain}
+.detail-gallery-main[role="button"]{cursor:zoom-in}.detail-gallery-main[role="button"]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.image-preview-dialog{width:min(1120px,calc(100vw - 36px));max-width:none}.image-preview-dialog .dialog-body{display:grid;place-items:center;max-height:calc(100vh - 145px);padding:12px}.image-preview-dialog .dialog-body img{display:block;width:100%;height:min(75vh,800px);object-fit:contain}
 .detail-gallery-main .preview-placeholder{color:var(--muted);font-size:12px}
 .detail-gallery-thumbs{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
 .detail-gallery-thumbs button{flex:0 0 auto;width:100px;height:64px;padding:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface);cursor:pointer}

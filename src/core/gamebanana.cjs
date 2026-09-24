@@ -7,7 +7,16 @@ const {getGame}=require('./games.cjs');
 const SORTS = {
   downloads: 'Generic_MostDownloaded',
   uploaded: 'Generic_Newest',
-  updated: 'Generic_LatestUpdated'
+  oldest: 'Generic_Oldest',
+  modified: 'Generic_LatestModified',
+  newUpdated: 'Generic_NewAndUpdated',
+  updated: 'Generic_LatestUpdated',
+  alphabetical: 'Generic_Alphabetically',
+  reverseAlphabetical: 'Generic_ReverseAlphabetically',
+  likes: 'Generic_MostLiked',
+  views: 'Generic_MostViewed',
+  comments: 'Generic_MostCommented',
+  latestComment: 'Generic_LatestComment'
 };
 
 function rowId(value) {
