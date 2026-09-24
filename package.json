@@ -20,7 +20,8 @@
   },
   "dependencies": {
     "7zip-bin": "^5.2.0",
-    "node-unrar-js": "^2.0.2"
+    "node-unrar-js": "^2.0.2",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "electron": "^44.3.0",
@@ -58,6 +59,9 @@
     "asarUnpack": [
       "src/core/program-window-host.ps1",
       "src/core/program-window-host.cs",
+      "src/core/ocr-data/**/*",
+      "node_modules/tesseract.js/src/worker-script/**/*",
+      "node_modules/tesseract.js-core/**/*",
       "node_modules/7zip-bin/**/*",
       "node_modules/node-unrar-js/**/*.wasm"
     ],

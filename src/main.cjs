@@ -1,4 +1,4 @@
-const {app,BrowserWindow,ipcMain,dialog,shell,clipboard,nativeImage,protocol,net,session,nativeTheme}=require('electron');
+const {app,BrowserWindow,ipcMain,dialog,shell,clipboard,nativeImage,protocol,net,session,nativeTheme,desktopCapturer,screen}=require('electron');
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const {NotificationCenter}=require('./core/notification-center.cjs');
@@ -12,6 +12,11 @@ const {proxyConfig,materialSupported,requireMods:validateMods}=require('./core/p
 const {UI_ASSETS,noStoreResponse,clearAssetCache}=require('./core/ui-assets.cjs');
 const {TaskReporter}=require('./core/task-reporter.cjs');
 const {describeError,userMessage}=require('./core/error-message.cjs');
+const {GameHotkeyMonitor}=require('./core/game-hotkey-monitor.cjs');
+const {GameScreenCapture}=require('./core/game-screen-capture.cjs');
+const {GameHotkeyOverlay}=require('./core/game-hotkey-overlay.cjs');
+const {OverlaySettings}=require('./core/game-hotkey-overlay-settings.cjs');
+const {createGameOcr}=require('./core/game-ocr.cjs');
 const ignoredUpdates=require('./core/ignored-updates.cjs');
 const {GameBanana}=require('./core/gamebanana.cjs');
 const {translateCategory,localizeTaxonomy,localizeLibraryState}=require('./core/character-names.cjs');
@@ -25,6 +30,7 @@ protocol.registerSchemesAsPrivileged([{scheme:'hoyo',privileges:{standard:true,s
 // 米哈游官方启动器的公开接口；按游戏标识取对应背景图地址。
 const OFFICIAL_BACKGROUND_API='https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1';
 const root=process.env.HOYOMOD_DATA || path.join(app.isPackaged?path.dirname(app.getPath('exe')):path.dirname(__dirname),'data');
+const showWithoutFocus=process.platform==='darwin'&&!app.isPackaged;
 const backgrounds=new (require('./core/backgrounds.cjs').Backgrounds)(root);
 // 窗口与任务栏图标：优先用随包的多尺寸 build/icon.ico（打包后在 app.asar 里），
 // 读不出来或没有时退回界面用的 PNG。
@@ -42,6 +48,7 @@ const lock=app.requestSingleInstanceLock();
 if(!lock)app.quit();
 let appUpdater,updateHandoff=false,pendingActions=0;
 let programTabs,programHost,programTimer,programClosing=false,programExitAllowed=false;
+let hotkeyOverlay,hotkeyMonitor,hotkeyOcr;
 const externalLaunches=new Set();
 let win,updateTimer,notifications,tasks;let nativeMaterial=materialSupported();
 const workspaces=new Workspaces(root);
@@ -421,7 +428,7 @@ const actions={
     if('proxyMode' in patch||'proxyUrl' in patch)await session.defaultSession.setProxy(proxyConfig(lib.snapshot().settings));
     return snapshot();
   }),
-  setActiveGame:async p=>{await workspaces.select(p.gameId);await startWorkspace(workspaces.get(p.gameId)).catch(error=>notifyError(error,{title:'加载游戏任务'}));return snapshot();},
+  setActiveGame:async p=>{await workspaces.select(p.gameId);hotkeyMonitor?.hide();await startWorkspace(workspaces.get(p.gameId)).catch(error=>notifyError(error,{title:'加载游戏任务'}));return snapshot();},
   proxyDiagnostics:async()=>{
     const route=await session.defaultSession.resolveProxy('https://files.gamebanana.com/'),apiRoute=await session.defaultSession.resolveProxy('https://gamebanana.com/apiv11/Mod/710045/ProfilePage');
     let message;try{const response=await network.request('https://gamebanana.com/apiv11/Mod/710045/ProfilePage');await response.body?.cancel();message='GameBanana 接口可连接。此检测不代表大文件传输稳定；DIRECT 也可能由 TUN 模式接管。';}catch(e){message='连接检测失败：'+e.message;}
@@ -622,7 +629,8 @@ if(lock)app.whenReady().then(async()=>{
     if(url.hostname!=='app'||!UI_ASSETS.includes(name))return new Response('Not found',{status:404});
     return noStoreResponse(await net.fetch(pathToFileURL(path.join(__dirname,'ui',name)).href));
   });
-  win=new BrowserWindow({icon:appIcon(),width:1260,height:860,minWidth:980,minHeight:650,title:'HMM · HoYo 模组管理',backgroundColor:'#171a21',autoHideMenuBar:true,...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{color:'#00000000',symbolColor:'#edf0f5',height:40}}:{}),webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  win=new BrowserWindow({icon:appIcon(),width:1260,height:860,minWidth:980,minHeight:650,title:'HMM · HoYo 模组管理',backgroundColor:'#171a21',autoHideMenuBar:true,...(showWithoutFocus?{show:false}:{}),...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{color:'#00000000',symbolColor:'#edf0f5',height:40}}:{}),webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  if(showWithoutFocus)win.once('ready-to-show',()=>win.showInactive());
   programHost=new (require('./core/program-window-host.cjs').ProgramWindowHost)(win);
   programTabs=new (require('./core/program-tabs.cjs').ProgramTabs)({host:programHost,validate:validateExternalProgram,onChange:value=>send('programTabs',value),onError:error=>notifyError(error,{title:'程序窗口'})});
   let programTickPending=false,programError='';
@@ -637,7 +645,7 @@ if(lock)app.whenReady().then(async()=>{
   applyAppearance();
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',(event,url)=>{if(url!=='hoyo://app/index.html')event.preventDefault();});
-  win.on('closed',()=>dependencyPrompts.cancelAll());
+  win.on('closed',()=>{dependencyPrompts.cancelAll();hotkeyMonitor?.stop().catch(()=>{});hotkeyOverlay?.dispose().catch(()=>{});hotkeyOcr?.close().catch(()=>{});});
   win.webContents.on('render-process-gone',()=>dependencyPrompts.cancelAll());
   win.webContents.on('did-start-loading',()=>dependencyPrompts.cancelAll());
   ipcMain.handle('hoyo:call',async(event,action,payload)=>{
@@ -655,6 +663,16 @@ if(lock)app.whenReady().then(async()=>{
   });
   await win.loadURL('hoyo://app/index.html');flushNotifications();
   await startWorkspace(workspaces.get(workspaces.activeGameId));
+  if(process.platform==='win32'){
+    try{
+      hotkeyOverlay=new GameHotkeyOverlay({BrowserWindow,ipcMain,screen,settingsStore:new OverlaySettings(workspaces.get('genshin').root),preload:path.join(__dirname,'hotkey-overlay-preload.cjs'),icon:appIcon(),onError:error=>notifyError(error,{title:'保存热键悬浮窗设置'})});
+      await hotkeyOverlay.init();
+      const capture=new GameScreenCapture({host:programHost,desktopCapturer,screen,overlayFocused:()=>hotkeyOverlay.isFocused()});
+      hotkeyOcr=createGameOcr();
+      hotkeyMonitor=new GameHotkeyMonitor({capture:()=>workspaces.activeGameId==='genshin'?capture.capture():null,ocr:(image,rect)=>hotkeyOcr.recognize(image,rect),getMods:()=>workspaces.activeGameId==='genshin'?localizeLibraryState('genshin',workspaces.get('genshin').lib.snapshot()).mods:[],getNotes:()=>workspaces.get('genshin').lib.snapshot().hotkeyNotes,onChange:value=>hotkeyOverlay.show(workspaces.activeGameId==='genshin'?value:null),onError:error=>notifyError(error,{title:'原神热键悬浮窗'})});
+      hotkeyMonitor.start();
+    }catch(error){notifyError(error,{title:'原神热键悬浮窗'});hotkeyOverlay?.dispose().catch(()=>{});hotkeyOverlay=null;}
+  }
   // 自动检查的新版本通知由 syncAppUpdateTask 在状态落到 available 时统一发出，这里不再重复发。
   setTimeout(()=>{if(lib.snapshot().settings.autoCheckAppUpdates&&!updateHandoff)appUpdater.check({automatic:true}).catch(()=>{});},8000).unref();
   const periodic=()=>{for(const context of workspaces.contexts.values())if(context.started)workspaces.run(context,()=>{if(!workspace().busy&&lib.snapshot().settings.autoCheckUpdates&&lib.snapshot().mods.some(m=>m.sourceId))exclusive(()=>checkUpdates(true)).catch(e=>notifyError(e,{title:'检查更新'}));});};
@@ -662,7 +680,7 @@ if(lock)app.whenReady().then(async()=>{
 }).catch(e=>{dialog.showErrorBox('HMM 无法启动','请将便携版放在可写入的文件夹。\n'+e.message);app.quit();});
 process.on('uncaughtException',e=>notify('程序发生未预期的错误：'+describeError(e).message,'error'));
 process.on('unhandledRejection',reason=>notify('后台任务失败：'+describeError(reason).message,'error'));
-app.on('second-instance',()=>{if(win){if(win.isMinimized())win.restore();win.focus();}});
+app.on('second-instance',()=>{if(win){if(showWithoutFocus){win.showInactive();return;}if(win.isMinimized())win.restore();win.focus();}});
 app.on('before-quit',event=>{if((programTabs?.hasWork||externalLaunches.size)&&!programExitAllowed){event.preventDefault();win?.close();}});
-app.on('will-quit',()=>{clearInterval(programTimer);programHost?.dispose();});
+app.on('will-quit',()=>{clearInterval(programTimer);hotkeyMonitor?.stop().catch(()=>{});hotkeyOcr?.close().catch(()=>{});hotkeyOverlay?.dispose().catch(()=>{});programHost?.dispose();});
 app.on('window-all-closed',()=>app.quit());

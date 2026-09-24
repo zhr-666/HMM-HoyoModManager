@@ -5,6 +5,8 @@ HoYoMod application code is MIT licensed. Bundled third-party components retain 
 - Electron / Chromium / Node.js: see the LICENSE and LICENSES.chromium.html shipped with the runtime. [Electron source](https://github.com/electron/electron).
 - 7zip-bin: [project source](https://github.com/develar/7zip-bin); binaries are based on [7-Zip](https://www.7-zip.org/), GNU LGPL and applicable component licenses.
 - node-unrar-js: MIT, copyright Yu Jianrong. [Source and license](https://github.com/YuJianrong/node-unrar.js). The bundled decoder derives from [RARLAB UnRAR source](https://www.rarlab.com/rar_add.htm), whose license prohibits using it to re-create the RAR compression algorithm. This application uses it for extraction only.
+- Tesseract.js and tesseract.js-core: Apache-2.0. Used locally to recognize Chinese character names in the Genshin hotkey overlay. [Source and license](https://github.com/naptha/tesseract.js).
+- `chi_sim.traineddata.gz`: the simplified Chinese model from [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast), Apache-2.0; its license is shipped at `src/core/ocr-data/LICENSE`. Recognition is offline and game screenshots are not uploaded.
 - GameBanana images, descriptions and Mod files belong to their respective creators and are fetched at the user's request. They are not included in the distributed application.
 - XXMI Launcher is not bundled, downloaded, configured or launched by this application. Users select an existing GIMI, ZZMI or SRMI folder. [XXMI source and GPLv3 license](https://github.com/SpectrumQT/XXMI-Launcher).
 

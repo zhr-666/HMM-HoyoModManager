@@ -29,6 +29,7 @@ public static class ProgramWindowHost {
     [DllImport("kernel32.dll")] static extern void SetLastError(uint error);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback,IntPtr data);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window,out uint pid);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr window,uint command);
@@ -85,7 +86,8 @@ public static class ProgramWindowHost {
         Action<IntPtr> add=h=>{uint pid;GetWindowThreadProcessId(h,out pid);ProcessInfo p;if(!byPid.TryGetValue(pid,out p)||!seen.Add(h.ToInt64()))return;windows.Add(new {handle=h.ToInt64().ToString(),pid=pid,start=p.start});};
         EnumWindows((h,d)=>{if(MainWindow(h))add(h);return true;},IntPtr.Zero);
         foreach(var w in Windows.Values)if(Valid(w))add(w.Window);
-        return new {admin=new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator),processes=processes,windows=windows};
+        uint foregroundPid;IntPtr foregroundWindow=GetForegroundWindow();GetWindowThreadProcessId(foregroundWindow,out foregroundPid);
+        return new {admin=new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator),processes=processes,windows=windows,foreground=new {pid=foregroundPid,handle=foregroundWindow.ToInt64().ToString()}};
     }
     static void SetStyle(IntPtr h,int index,IntPtr style) {
         SetLastError(0);var previous=SetWindowLongPtr(h,index,style);

@@ -29,6 +29,13 @@ test('协议白名单覆盖 src/ui 下全部会被下发的界面文件',async()
  assert.ok(UI_ASSETS.includes('app-icon.png'),'应用图标必须能下发');
 });
 
+test('热键悬浮窗和它引用的样式、脚本都在白名单内',async()=>{
+ const html=await fs.readFile(path.join(__dirname,'..','src','ui','hotkey-overlay.html'),'utf8');
+ for(const file of ['hotkey-overlay.html',...Array.from(html.matchAll(/(?:src|href)="([^":]+\.(?:js|css))"/g),match=>match[1])]){
+  assert.ok(UI_ASSETS.includes(file),`${file} 未进入界面资源白名单`);
+ }
+});
+
 test('启动时清掉 Chromium 缓存目录，但不碰同一目录下的其他数据',async t=>{
  const session=await fs.mkdtemp(path.join(os.tmpdir(),'hmm-session-'));t.after(()=>fs.rm(session,{recursive:true,force:true}));
  for(const name of [...ASSET_CACHE_DIRS,'Local Storage']){await fs.mkdir(path.join(session,name),{recursive:true});await fs.writeFile(path.join(session,name,'x.bin'),'x');}
