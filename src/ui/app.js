@@ -409,7 +409,7 @@ function bindLibraryPreview(element,mod){
 function editModProfile(mod,{importing=false,previewsOnly=false,onSave}={}){
  let images=modPreviews(mod),working=false,settled=false;
  const body=`${previewsOnly?'':`<div class="field"><label for="profile-author">作者（选填）</label><input id="profile-author" maxlength="200" value="${esc(mod.author||'')}" placeholder="填写作者名称"></div><div class="field"><label for="profile-source">来源网址（选填）</label><input id="profile-source" maxlength="2048" value="${esc(mod.sourceUrl||'')}" placeholder="https://"></div>`}<p class="meta">预览图（选填） · 可从文件或剪贴板添加，保存前可随时取消。</p><div class="profile-gallery"></div><p class="profile-error" role="alert" hidden></p>`;
- const dialog=modal(importing?'补充模组资料':previewsOnly?'添加 / 修改预览图':'编辑模组资料','',body,`<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary profile-save">${importing?'开始安装':'保存'}</button>`);
+ const dialog=modal(importing?'补充模组资料':previewsOnly?'添加 / 修改预览图':'编辑模组资料','',body,`<button type="button" class="button primary profile-save">${importing?'开始安装':'保存'}</button>`);
  const q=selector=>$(selector,dialog),error=message=>{q('.profile-error').textContent=message;q('.profile-error').hidden=!message};
  const revision=dialog.dataset.layerRevision,events=new AbortController();
  const alive=()=>dialog.open&&dialog.isConnected&&dialog.dataset.layerRevision===revision;
@@ -478,7 +478,7 @@ function openGameSettings(){
       <div class="setting-row"><div><strong>一级程序</strong><p data-game-value="launchExe">尚未选择</p></div><button class="button secondary" id="game-choose-program">选择 EXE</button></div>
       <div class="setting-row"><div><strong>启动器背景</strong><p data-game-value="background">默认使用米哈游官方启动器《原神》背景图；可替换为本地图片</p></div><div class="row-actions"><button class="button secondary" id="game-fetch-background">获取官方最新背景</button><button class="button secondary" id="game-reset-background">恢复默认</button><button class="button secondary" id="game-choose-background">选择图片</button></div></div>
     </div>`;
-  const dialog=modal(`${game.name} · 当前游戏设置`,'只影响这个游戏，其他游戏的设置不会被覆盖。',body,'<button class="button secondary" value="cancel">关闭</button>');
+  const dialog=modal(`${game.name} · 当前游戏设置`,'只影响这个游戏，其他游戏的设置不会被覆盖。',body,'');
   window.hoyoProgramSettings?.(dialog);
   renderGameValues(dialog);
   addBackgroundSwitch(dialog);
@@ -719,7 +719,7 @@ async function loadCategories(){
 async function pickImportCategory(subtitle){
   if(!taxonomy.length){try{taxonomy=await call('taxonomy',{}, {foreground:false})}catch{}}
   const body='<nav id="location-breadcrumb" class="category-breadcrumb" aria-label="分类路径"></nav><div class="character-head"><strong id="location-heading">选择大分类</strong><label class="mini-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="location-search" type="search" placeholder="查找当前层级分类" aria-label="查找当前层级分类"></label></div><div id="location-folders" class="folder-grid"></div><p id="location-empty" class="meta" hidden>当前层级没有匹配的分类。</p><p id="location-selection" class="meta"></p>';
-  const dialog=modal('选择分类',subtitle,body,'<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary" id="location-confirm" disabled>导入</button>');
+  const dialog=modal('选择分类',subtitle,body,'<button type="button" class="button primary" id="location-confirm" disabled>导入</button>');
   const q=selector=>$(selector,dialog),confirm=q('#location-confirm');
   let trail=[],selection=null,settled=false;
   function render(){
@@ -811,9 +811,9 @@ function renderDependency(){
  $('#dependency-error',dialog).hidden=true;
  $('#dependency-continue',dialog).textContent='仍然继续';$$('button',dialog).forEach(b=>b.disabled=false);
  $$('.dependency-link',dialog).forEach(b=>b.onclick=()=>dependencyDecision(d,dialog,'open',Number(b.dataset.index)));
- $('#dependency-cancel',dialog).onclick=$('#dependency-close',dialog).onclick=()=>dependencyDecision(d,dialog,'cancel');
+ $('#dependency-close',dialog).onclick=()=>dependencyDecision(d,dialog,'cancel');
  $('#dependency-continue',dialog).onclick=()=>dependencyDecision(d,dialog,'continue');
- $('#dependency-cancel',dialog).focus();
+ $('.dialog-back',dialog).focus();
 }
 async function dependencyDecision(d,dialog,decision,index){
  if(dependencyActing)return;dependencyActing=true;$$('button',dialog).forEach(b=>b.disabled=true);
@@ -878,25 +878,45 @@ function detailGallery(dialog,images){
   },{passive:false});
 }
 async function openDetail(record){
- const dialog=modal(record.name||'加载详情','',skeletonMarkup(2),'<button class="button secondary" value="cancel">关闭</button>');
+ const dialog=modal(record.name||'加载详情','',skeletonMarkup(2),'');
  const revision=dialog.dataset.layerRevision;
  try{
   const d=await call('detail',{id:record.id},{foreground:false});if(!dialog.open||dialog.dataset.layerRevision!==revision)return;
   const q=sel=>$(sel,dialog),files=d.files||[];
-  q('[id$="modal-body"]').innerHTML=`<p class="meta detail-meta">${esc(d.author||'未知作者')} · ${esc([d.rootCategoryName,d.characterName].filter(Boolean).join(' / ')||'模组')}</p><div class="detail-gallery"><div class="detail-gallery-main"><div class="preview-placeholder">图片加载中…</div></div><div class="detail-gallery-thumbs"></div></div><p class="description">${esc(d.description||'作者没有填写说明。')}</p><fieldset class="file-picker"><legend>选择要安装的文件</legend><div class="file-options">${files.length?files.map(f=>`<label class="file-option"><input type="radio" name="file" value="${esc(f.id)}" ${files.length===1?'checked':''}><span><strong>${esc(f.name)}</strong><small>${esc(formatSize(f.size))} · 上传 ${esc(formatDate(f.uploadedAt)||'日期未知')}</small></span></label>`).join(''):'没有可下载的文件'}</div></fieldset>${!state.settings.modsPath?'<p class="setup-required">请先选择当前游戏的启用目录。<button type="button" class="link-button detail-settings">前往设置</button></p>':''}`;
-  q('[id$="modal-actions"]').innerHTML=`<button class="button secondary" value="cancel">返回</button><button type="button" class="button primary" data-install-confirm data-layer-id="install-confirm" id="${dialog.id==='modal'?'install-confirm':dialog.id+'-install-confirm'}" ${files.length&&state.settings.modsPath?'':'disabled'}>下载并安装</button>`;
+  q('[id$="modal-body"]').innerHTML=`<p class="meta detail-meta">${esc(d.author||'未知作者')} · ${esc([d.rootCategoryName,d.characterName].filter(Boolean).join(' / ')||'模组')}</p><div class="detail-gallery"><div class="detail-gallery-main"><div class="preview-placeholder">图片加载中…</div></div><div class="detail-gallery-thumbs"></div></div><p class="description">${esc(d.description||'作者没有填写说明。')}</p><details class="detail-comments"><summary>查看评论</summary><div class="detail-comments-content"><p class="meta comments-status">展开后加载评论…</p><div class="comments-list"></div><button type="button" class="button secondary comments-more" hidden>加载更多</button></div></details><fieldset class="file-picker"><legend>选择要安装的文件</legend><div class="file-options">${files.length?files.map(f=>`<div class="file-row"><label class="file-option"><input type="radio" name="file" value="${esc(f.id)}" ${files.length===1?'checked':''}><span><strong>${esc(f.name)}</strong><small>${esc(formatSize(f.size))} · 上传 ${esc(formatDate(f.uploadedAt)||'日期未知')}</small></span></label><button type="button" class="button secondary file-direct-download" data-file-id="${esc(f.id)}">下载此处</button></div>`).join(''):'没有可下载的文件'}</div></fieldset>${!state.settings.modsPath?'<p class="setup-required">请先选择当前游戏的启用目录。<button type="button" class="link-button detail-settings">前往设置</button></p>':''}`;
+  q('[id$="modal-actions"]').innerHTML=`<button type="button" class="button primary" data-install-confirm data-layer-id="install-confirm" id="${dialog.id==='modal'?'install-confirm':dialog.id+'-install-confirm'}" ${files.length&&state.settings.modsPath?'':'disabled'}>下载并安装</button>`;
   const install=q('[data-install-confirm]');install.dataset.hasFiles=String(files.length>0);
   q('.detail-settings')?.addEventListener('click',()=>{dialogStack.back(dialog);showPage('settings')});
+  $$('.file-direct-download',dialog).forEach(button=>button.onclick=()=>call('openGameBananaDownload',{id:button.dataset.fileId},{foreground:false}).catch(()=>{}));
+  const comments=q('.detail-comments'),status=q('.comments-status'),list=q('.comments-list'),more=q('.comments-more');
+  let commentPage=0,loadingComments=false;
+  const loadComments=async()=>{
+    if(loadingComments)return;
+    loadingComments=true;more.hidden=true;status.hidden=false;status.textContent='正在加载评论…';
+    try{
+      const result=await call('comments',{id:d.id,page:commentPage+1},{foreground:false,silent:true});
+      if(!dialog.open||dialog.dataset.layerRevision!==revision)return;
+      commentPage=result.page;
+      list.insertAdjacentHTML('beforeend',result.comments.map(row=>`<article class="comment-row"><div><strong>${esc(row.author)}</strong><small>${esc(row.postedAt?formatDate(row.postedAt):'日期未知')}</small></div><p>${esc(row.text||'（空评论）')}</p>${row.replyCount?`<small>${esc(row.replyCount)} 条回复</small>`:''}</article>`).join(''));
+      status.textContent=commentPage===1&&!result.comments.length?'暂无评论':'';
+      status.hidden=!status.textContent;
+      more.hidden=!result.hasMore;
+    }catch(error){
+      if(dialog.open&&dialog.dataset.layerRevision===revision){status.textContent='评论加载失败，请重试。';more.textContent='重试';more.hidden=false;}
+    }finally{loadingComments=false;}
+  };
+  comments.addEventListener('toggle',()=>{if(comments.open&&commentPage===0)loadComments()});
+  more.onclick=()=>{more.textContent='加载更多';loadComments()};
   detailGallery(dialog,d.images||[]);
   dialog.dataset.modId=d.id;
   if(d.nsfw&&state.settings.blurNsfw!==false){const gallery=q('.detail-gallery');if(gallery){gallery.classList.add('nsfw-detail');gallery.title='NSFW · 点击查看';gallery.onclick=()=>gallery.classList.remove('nsfw-detail');}}
   install.onclick=async()=>{const fileId=q('input[type=radio]:checked')?.value;if(!fileId)return notify('请选择一个安装文件。',true);install.disabled=true;try{await enqueue('install',{sourceId:d.id,fileId,rootCategoryId:d.rootCategoryId||record.rootCategoryId,rootCategoryName:d.rootCategoryName||record.rootCategoryName,characterId:d.characterId||record.characterId,characterName:d.characterName||record.characterName})}finally{install.disabled=!state.settings.modsPath;}};
  }catch(e){if(dialog.open&&dialog.dataset.layerRevision===revision)notifyError(e);}
 }
-function confirmRemove(m){modal('移除模组','此操作会删除本机保存的模组文件。',`<p>确定移除“${esc(m.name)}”吗？相关搭配方案也会更新。</p>`,`<button class="button secondary" value="cancel">取消</button><button type="button" class="button danger" id="remove-confirm">确认移除</button>`);$('#remove-confirm').onclick=()=>{closeModal();mutate('remove',{id:m.id})}}
+function confirmRemove(m){modal('移除模组','此操作会删除本机保存的模组文件。',`<p>确定移除“${esc(m.name)}”吗？相关搭配方案也会更新。</p>`,`<button type="button" class="button danger" id="remove-confirm">确认移除</button>`);$('#remove-confirm').onclick=()=>{closeModal();mutate('remove',{id:m.id})}}
 function confirmRemoveGame(id){
   const game=gameById(id);
-  modal('移除'+game.name,'此操作会永久删除该游戏的本机数据和已启用模组。',`<p>将删除安装库、搭配方案、游戏设置，以及 ${esc(game.importer)} Mods 中由本程序管理的 HoYoModManaged 文件夹。确定继续吗？</p>`,`<button class="button secondary" value="cancel">取消</button><button type="button" class="button danger" id="remove-game-confirm">确认移除</button>`);
+  modal('移除'+game.name,'此操作会永久删除该游戏的本机数据和已启用模组。',`<p>将删除安装库、搭配方案、游戏设置，以及 ${esc(game.importer)} Mods 中由本程序管理的 HoYoModManaged 文件夹。确定继续吗？</p>`,`<button type="button" class="button danger" id="remove-game-confirm">确认移除</button>`);
   $('#remove-game-confirm').onclick=async()=>{
     closeModal();
     try{
@@ -907,8 +927,8 @@ function confirmRemoveGame(id){
     }catch(error){notifyError(error)}
   };
 }
-function confirmDeletePreset(p){modal('删除搭配方案','不会删除其中的模组。',`<p>确定删除“${esc(p.name)}”吗？</p>`,`<button class="button secondary" value="cancel">取消</button><button type="button" class="button danger" id="delete-confirm">确认删除</button>`);$('#delete-confirm').onclick=()=>{closeModal();mutate('deletePreset',{id:p.id})}}
-function savePreset(){modal('保存当前搭配','记录现在启用的所有角色模组。',`<div class="field"><label for="preset-name">方案名称</label><input id="preset-name" maxlength="50" autofocus placeholder="例如：日常探索"></div>`,`<button class="button secondary" value="cancel">取消</button><button type="button" class="button primary" id="preset-confirm">保存</button>`);$('#preset-confirm').onclick=()=>{const name=$('#preset-name').value.trim();if(!name)return notify('请输入方案名称。',true);closeModal();mutate('savePreset',{name})}}
+function confirmDeletePreset(p){modal('删除搭配方案','不会删除其中的模组。',`<p>确定删除“${esc(p.name)}”吗？</p>`,`<button type="button" class="button danger" id="delete-confirm">确认删除</button>`);$('#delete-confirm').onclick=()=>{closeModal();mutate('deletePreset',{id:p.id})}}
+function savePreset(){modal('保存当前搭配','记录现在启用的所有角色模组。',`<div class="field"><label for="preset-name">方案名称</label><input id="preset-name" maxlength="50" autofocus placeholder="例如：日常探索"></div>`,`<button type="button" class="button primary" id="preset-confirm">保存</button>`);$('#preset-confirm').onclick=()=>{const name=$('#preset-name').value.trim();if(!name)return notify('请输入方案名称。',true);closeModal();mutate('savePreset',{name})}}
 function updateSummaryBody(result){const updates=result.updates||[],failures=result.failures||[],unknown=result.unknown||[];const updateRows=updates.map((u,i)=>`<div class="update-result"><div class="update-title"><div><strong>${esc(u.name)}</strong><small>当前 ${esc(formatDate(u.baselineAt)||'日期未知')} → 最新 ${esc(formatDate(u.latestAt)||'日期未知')}</small></div><div class="row-actions"><button class="link-button update-source" type="button" data-source="${esc(u.sourceId||'')}">打开来源</button><button class="link-button update-ignore" type="button" data-ignore-mod="${esc(u.id)}" data-ignore-at="${esc(String(u.latestAt||''))}" data-ignore-name="${esc((u.files||[])[0]?.name||'')}">忽略这个版本</button></div></div><div class="update-files">${(u.files||[]).map(f=>`<label class="file-option"><input type="radio" name="update-${i}" value="${esc(f.id)}"><span><strong>${esc(f.name)}</strong><small>${esc(formatDate(f.uploadedAt)||'时间未知')} · ${esc(formatSize(f.size))}</small></span></label>`).join('')||'<p class="meta">未找到可安装文件</p>'}</div></div>`).join('');const issues=[...failures.map(x=>({...x,type:'检查失败'})),...unknown.map(x=>({...x,type:'无法判断'}))];const ignored=result.ignored||[];return `<p class="summary-status">已检查 ${result.checked??result.total??0} 个模组，${updates.length} 个有更新</p>`+(ignored.length?`<p class="meta">${ignored.length} 个模组的最新版本已忽略。</p>`:'')+`${updateRows||'<div class="summary-ok">没有发现明确可用的更新。</div>'}${issues.length?`<div class="update-issues"><strong>需要留意</strong>${issues.map(x=>`<p><b>${esc(x.name)}</b> · ${esc(x.type)}：${esc(x.error||x.reason||'原因未知')}</p>`).join('')}</div>`:''}`}
 // 后台检查更新的状态。检查只发右下角通知 + 点亮按钮红点，结果缓存在这里，
 // 等用户点那条通知或再点一次按钮，才打开结果窗口。
@@ -949,7 +969,7 @@ async function openUpdateSummary(){
   if(!result)return startUpdateCheck();
   updateSummaryUnviewed=false;renderUpdateDots();
   const updates=result.updates||[];
-  modal('更新检查结果',`已检查 ${result.checked??result.total??state.mods.length} 个模组 · ${updates.length} 个有更新`,updateSummaryBody(result),`<button class="button secondary" value="cancel">关闭</button>${updates.length?'<button type="button" class="button primary" id="update-confirm">安装所选更新</button>':''}`);
+  modal('更新检查结果',`已检查 ${result.checked??result.total??state.mods.length} 个模组 · ${updates.length} 个有更新`,updateSummaryBody(result),`${updates.length?'<button type="button" class="button primary" id="update-confirm">安装所选更新</button>':''}`);
   $$('.update-source').forEach(b=>b.onclick=()=>openSourceItem({sourceId:b.dataset.source}));
   // 忽略某个具体版本（需求 9）：记在模组上，之后同一版本不再提示。
   $$('.update-ignore').forEach(b=>b.onclick=async()=>{
@@ -970,7 +990,7 @@ function openIgnoredVersions(mod){
   const body=rows.length
     ?`<p class="meta">这些版本在检查更新时会被跳过。取消忽略后，下一次检查会重新提示该版本；作者发布更新的版本时不看这个列表，仍会正常提示。</p>${rows.map(row=>`<article class="update-result"><div class="update-title"><div><strong>${esc(row.name||'未命名文件')}</strong><small>上传时间 ${esc(formatDate(row.uploadedAt)||'未知')}</small></div><button type="button" class="button secondary ignore-restore" data-at="${esc(String(row.uploadedAt))}">取消忽略</button></div></article>`).join('')}`
     :'<p class="summary-ok">这个模组还没有被忽略的版本。</p>';
-  const dialog=modal(`${mod.name} · 已忽略的版本`,'忽略的是具体版本，不会关闭这个模组的更新检查。',body,'<button class="button secondary" value="cancel">关闭</button>');
+  const dialog=modal(`${mod.name} · 已忽略的版本`,'忽略的是具体版本，不会关闭这个模组的更新检查。',body,'');
   for(const button of $$('.ignore-restore',dialog))button.onclick=async()=>{
     button.disabled=true;
     try{
@@ -1075,7 +1095,7 @@ async function showHotkeys(mod){
     const notesBlock=`<section class="hotkey-notes"><h3>热键提示</h3>${notes.length?notes.map(note=>`<article class="hotkey-note"><pre>${esc(note.text)}</pre><button type="button" class="button secondary hotkey-note-remove" data-note="${esc(note.id)}">删除</button></article>`).join(''):'<p class="meta">还没有保存热键提示。</p>'}</section>`;
     const cards=result.bindings.map(row=>`<article class="hotkey-card">${row.keys.length?`<div class="hotkey-keys">${row.keys.map(key=>`<kbd>${esc(key)}</kbd>`).join('')}</div>`:''}<div class="hotkey-card-head"><h3>${esc(row.section)}</h3>${row.disabled?'<span class="update-badge muted">DISABLED</span>':''}</div><p>${esc(types[row.type]||row.type)}</p>${row.back.length?`<p>反向切换：${row.back.map(key=>`<kbd>${esc(key)}</kbd>`).join(' / ')}</p>`:''}<small title="${esc(row.file)}">${esc(row.file)} · 第 ${row.line} 行</small></article>`).join('');
     const body=`<p class="summary-status">已扫描 ${result.filesScanned} 个 .ini，${result.bindings.length} 组热键</p>${notesBlock}${cards?`<div class="hotkey-grid">${cards}</div>`:'<p class="summary-ok">未识别到有效的 [Key…] 热键配置。</p>'}${result.warnings.length?`<div class="update-issues">${result.warnings.map(w=>`<p>${esc(w)}</p>`).join('')}</div>`:''}`;
-    const dialog=modal(mod.name+' · 热键',`已扫描 ${result.filesScanned} 个 .ini · ${result.bindings.length} 组热键`,body,'<button class="button secondary" value="cancel">关闭</button>');
+    const dialog=modal(mod.name+' · 热键',`已扫描 ${result.filesScanned} 个 .ini · ${result.bindings.length} 组热键`,body,'');
     for(const button of $$('.hotkey-note-remove',dialog))button.onclick=async()=>{
       button.disabled=true;
       try{state=await call('removeHotkeyNote',{id:mod.id,noteId:button.dataset.note},{silent:true});renderState();closeModal();showHotkeys(mod)}
@@ -1091,13 +1111,15 @@ let hashTab='apply',hashInputs={old:'',new:''},hashPreview=null;
 function hashFileRows(files){return `<div class="hash-file-list">${files.map(f=>`<p><strong>${esc(f.modName)}</strong><br><small>${esc(f.file)} · ${f.count} 处</small></p>`).join('')}</div>`}
 function openHashReplace(){
   hashPreview=null;
-  const dialog=modal(hashTab==='shaderfixes'?'ShaderFixes 历史':'替换 Hash','安装库内全部已安装模组（含未启用）的 .ini','<nav id="hash-tabs" class="dialog-tabs" role="tablist" aria-label="模组工具分区"></nav><div id="hash-panel" class="hash-panel" role="tabpanel"></div>','<button class="button secondary" value="cancel">关闭</button>');
+  const dialog=modal(hashTab==='shaderfixes'?'ShaderFixes 历史':'替换 Hash','安装库内全部已安装模组（含未启用）的 .ini','<nav id="hash-tabs" class="dialog-tabs" role="tablist" aria-label="模组工具分区"></nav><div id="hash-panel" class="hash-panel" role="tabpanel"></div>','');
+  dialog.hashReturn=null;
   $('#hash-tabs',dialog).innerHTML=HASH_TABS.map(([id,name])=>`<button type="button" role="tab" class="dialog-tab" data-hash-tab="${id}">${name}</button>`).join('');
   for(const button of $$('[data-hash-tab]',dialog))button.onclick=()=>{hashTab=button.dataset.hashTab;renderHashPanel(dialog)};
   renderHashPanel(dialog);
 }
 function renderHashPanel(dialog){
   if(!dialog.open)return;
+  if(dialog.hashReturn){$('.dialog-back',dialog).onclick=dialog.hashReturn;dialog.hashReturn=null;}
   for(const button of $$('[data-hash-tab]',dialog))button.setAttribute('aria-selected',String(button.dataset.hashTab===hashTab));
   const panel=$('#hash-panel',dialog);if(!panel)return;
   panel.hashRequest=Symbol();panel.replaceChildren();
@@ -1169,8 +1191,10 @@ async function renderHashRollback(dialog,panel){
 function confirmHashRollback(dialog,panel,batch){
   const entry=$$('.hotkey-entry',panel).find(item=>$('.hash-rollback',item)?.dataset.batch===batch.id),box=$('.hash-actions',entry||panel);
   if(!box)return;
-  box.innerHTML=`<p class="meta">将恢复“${esc(batch.entries.map(item=>item.name).join('、'))}”在该批次替换前的文件。</p><button type="button" class="button secondary hash-rollback-cancel">取消</button><button type="button" class="button primary hash-rollback-confirm">确认回溯</button>`;
-  $('.hash-rollback-cancel',box).onclick=()=>renderHashPanel(dialog);
+  box.innerHTML=`<p class="meta">将恢复“${esc(batch.entries.map(item=>item.name).join('、'))}”在该批次替换前的文件。</p><button type="button" class="button primary hash-rollback-confirm">确认回溯</button>`;
+  const back=$('.dialog-back',dialog);
+  if(!dialog.hashReturn)dialog.hashReturn=back.onclick;
+  back.onclick=()=>renderHashPanel(dialog);
   $('.hash-rollback-confirm',box).onclick=async event=>{
     const button=event.currentTarget;button.disabled=true;
     try{await call('rollbackHash',{id:batch.id},{reload:true});notify('已回溯到该批次替换前的文件。');renderHashPanel(dialog)}
@@ -1181,7 +1205,7 @@ $('#replace-hash').onclick=()=>{hashTab='apply';openHashReplace()};
 $('#shaderfixes-history').onclick=()=>{hashTab='shaderfixes';openHashReplace()};
 
 function renameMod(mod){
- modal('修改模组名称','只修改显示名称，文件、分类、来源和启用状态保持不变。',`<div class="field"><label for="mod-name">模组名称</label><input id="mod-name" maxlength="200" value="${esc(mod.name)}" autofocus></div>`,'<button class="button secondary" value="cancel">取消</button><button class="button primary" type="button" id="rename-confirm">保存</button>');
+ modal('修改模组名称','只修改显示名称，文件、分类、来源和启用状态保持不变。',`<div class="field"><label for="mod-name">模组名称</label><input id="mod-name" maxlength="200" value="${esc(mod.name)}" autofocus></div>`,'<button class="button primary" type="button" id="rename-confirm">保存</button>');
  $('#rename-confirm').onclick=async()=>{const name=$('#mod-name').value.trim();if(!name)return notify('请输入模组名称。',true);const result=await mutate('rename',{id:mod.id,name});if(result)closeModal();};
 }
 // 「设置为热键提示」菜单必须挂进当前对话框里：<dialog> 用 showModal 打开后整块在浏览器顶层，

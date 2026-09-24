@@ -61,10 +61,11 @@ async function request(url, timeout = 30000, headers = {}, signal) {
   throw new Error('下载重定向次数过多。');
 }
 
-async function json(url, headers = {}) {
+async function json(url, headers = {}, options = {}) {
   const response = await request(url, 30000, headers);
-  const text = await response.text();
+  let text = await response.text();
   if (text.length > 16 * 1024 ** 2) throw new Error('接口响应过大。');
+  if (options.allowLeadingWarnings) text = text.replace(/^(?:\s*Warning: [^\r\n]+\r?\n)+\s*/, '');
   const data = JSON.parse(text);
   if (data._sErrorCode || data._sError) throw new Error(data._sErrorMessage || data._sError || data._sErrorCode);
   return data;
