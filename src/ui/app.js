@@ -10,6 +10,7 @@ let GAMES=[{id:'genshin',name:'原神',icon:'genshin-icon.png',logo:'genshin-log
 const gameById=id=>GAMES.find(game=>game.id===id)||GAMES[0];
 // 所有游戏统一用同一句悬浮提示（需求 12）。
 const GAME_HINT='双击进入模组工作空间';
+const RAIL_GAME_HINT='双击进入模组工作空间；长按拖动调整顺序';
 const pageScroll={}, busyButtons=new Map();
 const titles={home:'首页',games:'全部游戏',downloads:'下载列表',workshop:'模组工坊',library:'我的模组',presets:'搭配方案',settings:'设置'};
 const launcherPages=new Set(['home','games']);
@@ -458,19 +459,66 @@ function renderGamesPage(){
   if(panel)panel.dataset.game=activeGame;
 }
 function setMode(mode){if(document.documentElement.dataset.mode!==mode)document.documentElement.dataset.mode=mode}
+const GAME_ORDER_KEY='hoyomod:rail-game-order';
+function orderedRailGames(){
+  let saved=[];
+  try{saved=JSON.parse(localStorage.getItem(GAME_ORDER_KEY)||'[]')}catch{}
+  if(!Array.isArray(saved))saved=[];
+  const positions=new Map(saved.map((id,index)=>[id,index]));
+  return GAMES.toSorted((a,b)=>(positions.get(a.id)??Infinity)-(positions.get(b.id)??Infinity));
+}
+let railDrag=null,suppressRailClickUntil=0;
+function beginRailDrag(event){
+  if(event.button!==0||railDrag||!launcherPages.has(activePage))return;
+  const source=event.currentTarget,list=$('#game-list'),origin={x:event.clientX,y:event.clientY};
+  const initial=[...list.children];let active=false,preview=null;
+  const place=point=>{if(preview){preview.style.left=`${point.x}px`;preview.style.top=`${point.y}px`}};
+  const move=e=>{
+    if(e.pointerId!==event.pointerId)return;
+    if(!active){if(Math.hypot(e.clientX-origin.x,e.clientY-origin.y)>7)finish(false);return}
+    e.preventDefault();place({x:e.clientX,y:e.clientY});
+    const visual=[...list.children].filter(tile=>tile!==source).sort((a,b)=>a.getBoundingClientRect().y-b.getBoundingClientRect().y);
+    const index=visual.findIndex(tile=>e.clientY<tile.getBoundingClientRect().top+tile.getBoundingClientRect().height/2);
+    visual.splice(index<0?visual.length:index,0,source);
+    list.replaceChildren(...visual.toReversed());
+  };
+  const finish=commit=>{
+    if(railDrag?.source!==source)return;
+    clearTimeout(railDrag.timer);document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',cancel);window.removeEventListener('blur',cancel);
+    if(active){
+      source.classList.remove('drag-source');preview.remove();suppressRailClickUntil=Date.now()+350;
+      if(!commit)list.replaceChildren(...initial);
+      else if(initial.some((tile,index)=>tile!==list.children[index])){
+        try{localStorage.setItem(GAME_ORDER_KEY,JSON.stringify([...list.children].map(tile=>tile.dataset.game)))}catch{notify('游戏顺序未能保存，请重试。',true)}
+      }
+    }
+    railDrag=null;
+  };
+  const up=e=>{if(e.pointerId===event.pointerId)finish(true)};
+  const cancel=()=>finish(false);
+  const timer=setTimeout(()=>{
+    active=true;const rect=source.getBoundingClientRect();preview=source.cloneNode(true);
+    preview.classList.add('game-tile-drag-preview');preview.style.width=`${rect.width}px`;preview.style.height=`${rect.height}px`;
+    document.body.append(preview);source.classList.add('drag-source');place(origin);
+  },350);
+  railDrag={source,timer};document.addEventListener('pointermove',move);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',cancel);window.addEventListener('blur',cancel);
+}
 function renderGameRails(){
   const list=$('#game-list'),back=$('#rail-back');if(!list||!back)return;
   const image=game=>`<img src="${game.icon}" alt="" draggable="false">`;
-  list.innerHTML=GAMES.map(game=>`<button type="button" class="game-tile${game.id===activeGame?' active':''}" data-game="${game.id}" data-testid="game-tile" title="${esc(GAME_HINT)}" aria-label="${esc(GAME_HINT)}">${image(game)}</button>`).join('');
+  list.innerHTML=orderedRailGames().map(game=>`<button type="button" class="game-tile${game.id===activeGame?' active':''}" data-game="${game.id}" data-testid="game-tile" title="${esc(RAIL_GAME_HINT)}" aria-label="${esc(RAIL_GAME_HINT)}">${image(game)}</button>`).join('');
   back.innerHTML=image(gameById(activeGame));
   const grid=$('#page-games .game-grid');if(grid){grid.innerHTML=GAMES.map(game=>`<button type="button" class="game-card" data-game="${game.id}" data-testid="game-card" title="${esc(GAME_HINT)}">${image(game)}<strong>${esc(game.name)}</strong></button>`).join('');for(const tile of $$('[data-game]',grid)){tile.onclick=()=>selectGame(tile.dataset.game);tile.ondblclick=()=>enterWorkspace(tile.dataset.game,tile);tile.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();enterWorkspace(tile.dataset.game,tile)}}}}
 
   for(const tile of $$('.game-tile[data-game]',list)){
+    tile.addEventListener('pointerdown',beginRailDrag);
     tile.onclick=async()=>{if(await selectGame(tile.dataset.game))showPage('home')};
     tile.ondblclick=()=>enterWorkspace(tile.dataset.game,tile);
     tile.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();enterWorkspace(tile.dataset.game,tile)}};
   }
 }
+$('#game-list').addEventListener('click',event=>{if(Date.now()<suppressRailClickUntil){event.preventDefault();event.stopImmediatePropagation()}},true);
+$('#game-list').addEventListener('dblclick',event=>{if(Date.now()<suppressRailClickUntil){event.preventDefault();event.stopImmediatePropagation()}},true);
 function syncGameTiles(){for(const el of $$('.game-tile[data-game],.game-card[data-game]'))el.classList.toggle('active',el.dataset.game===activeGame)}
 // 进入工作区：游戏图标从原位飞向左栏顶端；返回首页时沿同一条路径反向飞回（需求 2/3）。
 // 时长与缓动只在这里定义：前段加速、后段减速，整段都在走，落点自然收住

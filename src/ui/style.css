@@ -374,6 +374,8 @@ html[data-mode="workspace"] .rail-separator{display:none}
 /* 游戏图标：官方《原神》方形彩色图标，来自米哈游官方 App 图标（512×512） */
 .game-tile{position:relative;display:grid;place-items:center;width:55px;height:52px;padding:0;border:0;border-radius:10px;background:transparent;cursor:pointer;-webkit-app-region:no-drag}
 .game-tile img{width:44px;height:44px;border-radius:11px;object-fit:cover;pointer-events:none;box-shadow:0 2px 8px #00000059,0 0 0 1px #ffffff1f}
+.game-tile.drag-source{opacity:.28}
+.game-tile-drag-preview{position:fixed;z-index:100;pointer-events:none;transform:translate(-50%,-50%) scale(1.08);background:#263849;box-shadow:0 10px 24px #0008;cursor:grabbing}
 .game-tile:hover{background:#ffffff1c}
 .game-tile.active{background:#040c15b8;box-shadow:inset 0 0 0 1px #ffffff3d}
 .game-tile.active:before{content:"";position:absolute;left:-8px;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:#ffd76a}

@@ -100,6 +100,33 @@ async function main(){
  try{
   const {evaluate,waitFor}=session;await waitFor('initialStateLoaded&&GAMES.length===3','三游戏清单');
   assert.equal(await evaluate(`document.querySelectorAll('#game-list [data-game]').length`),3);
+  assert.match(await evaluate(`document.querySelector('#game-list [data-game]').title`),/长按拖动/,'侧栏提示应说明排序手势');
+  // 长按侧栏图标可改变视觉顺序；松手后不会误触游戏切换，重载后仍保留顺序。
+  const railOrder=()=>evaluate(`[...document.querySelectorAll('#game-list [data-game]')].map(tile=>({id:tile.dataset.game,y:tile.getBoundingClientRect().y})).sort((a,b)=>a.y-b.y).map(tile=>tile.id)`);
+  assert.deepEqual(await railOrder(),['hsr','zzz','genshin']);
+  const box=await evaluate(`(()=>{const r=document.querySelector('#game-list [data-game="hsr"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  const bottom=await evaluate(`(()=>{const r=document.querySelector('#game-list [data-game="genshin"]').getBoundingClientRect();return r.y+r.height/2})()`);
+  await session.client.send('Input.dispatchMouseEvent',{type:'mousePressed',x:box.x,y:box.y,button:'left',clickCount:1});
+  await sleep(450);
+  await session.client.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:box.x,y:bottom,button:'left',buttons:1});
+  await session.client.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:box.x,y:bottom,button:'left',clickCount:1});
+  assert.deepEqual(await railOrder(),['zzz','genshin','hsr']);
+  assert.equal(await evaluate('activeGame'),'genshin','拖动结束不能误触切换游戏');
+  await evaluate('location.reload()');
+  await waitFor('typeof initialStateLoaded!=="undefined"&&initialStateLoaded&&GAMES.length===3','重载后三游戏清单');
+  assert.deepEqual(await railOrder(),['zzz','genshin','hsr'],'拖动顺序要持久化');
+  const cancelled=await evaluate(`(()=>{const r=document.querySelector('#game-list [data-game="zzz"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  await session.client.send('Input.dispatchMouseEvent',{type:'mousePressed',x:cancelled.x,y:cancelled.y,button:'left',clickCount:1});
+  await sleep(450);
+  await session.client.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:cancelled.x,y:bottom,button:'left',buttons:1});
+  await evaluate(`document.querySelector('#game-list [data-game="zzz"]').dispatchEvent(new PointerEvent('pointercancel',{pointerId:1,bubbles:true}))`);
+  await session.client.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:cancelled.x,y:bottom,button:'left',clickCount:1});
+  assert.deepEqual(await railOrder(),['zzz','genshin','hsr'],'取消拖动应恢复原顺序');
+  await sleep(400);
+  const clicked=await evaluate(`(()=>{const r=document.querySelector('#game-list [data-game="zzz"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  await session.client.send('Input.dispatchMouseEvent',{type:'mousePressed',x:clicked.x,y:clicked.y,button:'left',clickCount:1});
+  await session.client.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:clicked.x,y:clicked.y,button:'left',clickCount:1});
+  await waitFor('activeGame==="zzz"','普通点击仍切换游戏');
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('#page-games .game-card')].map(card=>({game:card.dataset.game,children:[...card.children].map(child=>child.tagName),name:card.querySelector('strong')?.textContent}))`),[
    {game:'genshin',children:['IMG','STRONG'],name:'原神'},
    {game:'zzz',children:['IMG','STRONG'],name:'绝区零'},
