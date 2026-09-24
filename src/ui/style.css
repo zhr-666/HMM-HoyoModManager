@@ -32,13 +32,13 @@ main{grid-column:2;padding:0 38px 48px;max-width:1480px;width:100%}
 .button.secondary{background:var(--surface);border-color:var(--control-line);color:var(--text)}
 .button.secondary:hover:not(:disabled){border-color:#aeb6c2;background:var(--hover)}
 .button.danger{color:var(--danger);background:var(--surface);border-color:var(--danger-line)}
-.hint-mark{position:relative;display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:7px;border:1px solid currentColor;border-radius:50%;color:var(--muted);font-size:10px;font-weight:700;line-height:1;vertical-align:1px;cursor:help;-webkit-app-region:no-drag}
+.hint-mark{position:relative;display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:7px;border:1px solid currentColor;border-radius:50%;color:var(--muted);font-size:10px;font-weight:700;line-height:1;vertical-align:1px;cursor:default;-webkit-app-region:no-drag}
 .hint-mark:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .hint-mark::before,.hint-mark::after{position:absolute;z-index:120;visibility:hidden;opacity:0;pointer-events:none;transition:opacity .12s ease}
 .hint-mark::before{content:"";top:calc(100% + 3px);left:calc(50% - 5px);width:9px;height:9px;background:#202834;border-left:1px solid #8190a2;border-top:1px solid #8190a2;transform:rotate(45deg)}
 .hint-mark::after{content:attr(data-hint);top:calc(100% + 7px);left:50%;transform:translateX(-50%);width:max-content;max-width:min(250px,calc(100vw - 32px));padding:8px 11px;border:1px solid #8190a2;border-radius:6px;background:#202834;color:#eef4fa;box-shadow:0 7px 20px #0007;font-size:12px;font-weight:400;line-height:1.5;text-align:left;white-space:normal}
 .hint-mark:hover::before,.hint-mark:hover::after,.hint-mark:focus-visible::before,.hint-mark:focus-visible::after,.button:focus-visible .hint-mark::before,.button:focus-visible .hint-mark::after{visibility:visible;opacity:1}
-#import-button .hint-mark{color:#fff}
+#import-button .hint-mark{color:var(--muted)}
 #import-button .hint-mark::after{left:auto;right:-10px;transform:none}
 /* 后台任务的「有新结果待查看」标记：挂在按钮右上角，和通知角标同一套红色语言。 */
 .button-dot{position:absolute;top:-3px;right:-3px;width:10px;height:10px;border-radius:50%;background:var(--danger);border:1px solid var(--surface)}
@@ -519,14 +519,13 @@ html[data-mode="launcher"] .launcher-actions .home-launch.button{min-width:174px
 
 /* 详情页：顶部固定图片区，图片未到时也占好位置（需求 15/16） */
 .detail-gallery{display:grid;grid-template-rows:minmax(0,1fr) 68px;gap:10px;height:320px;margin:0 0 18px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--inset)}
-.detail-gallery-main{position:relative;display:grid;place-items:center;overflow:hidden;border-radius:8px;background:color-mix(in srgb,var(--surface) 70%,transparent)}
+.detail-gallery-main{position:relative;display:grid;place-items:center;overflow:hidden;border-radius:8px;background:color-mix(in srgb,var(--surface) 70%,transparent);cursor:pointer}
+.detail-gallery-main:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
 /* 大图整张放进图片区：不裁切、不被压住。
    min-width/min-height:0 不能省：图片是网格子项，自动最小尺寸会按图片的宽高比把它撑到
    比图片区还高（竖图尤其明显），object-fit:contain 也就没机会缩，图的下半部分就被切掉了。
    鼠标停在大图上滚动切上一张/下一张（滚轮绑定见 app.js 的 detailGallery）。 */
 .detail-gallery-main img{display:block;width:100%;height:100%;min-width:0;min-height:0;object-fit:contain}
-.detail-gallery-main[role="button"]{cursor:zoom-in}.detail-gallery-main[role="button"]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-.image-preview-dialog{width:min(1120px,calc(100vw - 36px));max-width:none}.image-preview-dialog .dialog-body{display:grid;place-items:center;max-height:calc(100vh - 145px);padding:12px}.image-preview-dialog .dialog-body img{display:block;width:100%;height:min(75vh,800px);object-fit:contain}
 .detail-gallery-main .preview-placeholder{color:var(--muted);font-size:12px}
 .detail-gallery-thumbs{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
 .detail-gallery-thumbs button{flex:0 0 auto;width:100px;height:64px;padding:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface);cursor:pointer}
@@ -534,6 +533,12 @@ html[data-mode="launcher"] .launcher-actions .home-launch.button{min-width:174px
 .detail-gallery-thumbs img{width:100%;height:100%;object-fit:cover;display:block}
 .detail-gallery.nsfw-detail .detail-gallery-main img,.detail-gallery.nsfw-detail .detail-gallery-thumbs img{filter:blur(18px)}
 .detail-gallery.nsfw-detail{cursor:pointer}
+#image-modal{width:min(1100px,calc(100vw - 60px));max-height:calc(100vh - 60px)}
+#image-modal .image-preview{position:relative;display:grid;grid-template-columns:48px minmax(0,1fr) 48px;align-items:center;gap:10px;height:min(72vh,760px);padding:12px;background:var(--inset)}
+#image-modal .image-preview img{display:block;width:100%;height:100%;min-width:0;min-height:0;object-fit:contain}
+#image-modal .image-preview button{width:40px;height:48px;border:1px solid var(--control-line);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:28px;cursor:pointer}
+#image-modal .image-preview button:hover,#image-modal .image-preview button:focus-visible{background:var(--blue-soft);outline:2px solid var(--blue)}
+#image-modal .image-count{text-align:center;margin:8px;color:var(--muted)}
 
 /* 详情页文件条目更紧凑（需求 17） */
 .file-options,.update-files{gap:6px}

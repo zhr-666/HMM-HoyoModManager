@@ -133,7 +133,7 @@ test('detail validates the game and exposes text, images and downloadable files'
     _aGame: {_idRow: 8552, _sName: 'Genshin Impact'},
     _aCategory: {_idRow: 20101, _sName: 'Raiden Shogun'},
     _aPreviewMedia: {_aImages: [{_sBaseUrl: 'https://images.gamebanana.com/img/ss/mods', _sFile: 'one.jpg'}]},
-    _aFiles: [{_idRow: 88, _sFile: 'raiden.zip', _nFilesize: 1234, _tsDateAdded:180, _sDownloadUrl: 'https://gamebanana.com/dl/88', _sMd5Checksum:'abc'}]
+    _aFiles: [{_idRow: 88, _sFile: 'raiden.zip', _nFilesize: 1234, _nDownloadCount:321, _tsDateAdded:180, _sDownloadUrl: 'https://gamebanana.com/dl/88', _sMd5Checksum:'abc'}]
   };
   const api = new GameBanana(async () => fixture);
 
@@ -142,7 +142,7 @@ test('detail validates the game and exposes text, images and downloadable files'
   assert.equal(result.characterId, 20101);
   assert.deepEqual(result.images, ['https://images.gamebanana.com/img/ss/mods/one.jpg']);
   assert.equal(result.uploadedAt,90);
-  assert.deepEqual(result.files, [{id: 88, name: 'raiden.zip', size: 1234, uploadedAt:180, url: 'https://gamebanana.com/dl/88', checksum:'abc'}]);
+  assert.deepEqual(result.files, [{id: 88, name: 'raiden.zip', size: 1234, downloadCount:321, uploadedAt:180, url: 'https://gamebanana.com/dl/88', checksum:'abc'}]);
 
   const otherGame = new GameBanana(async () => ({...fixture, _aGame: {_idRow: 6498}}));
   await assert.rejects(() => otherGame.detail(55), /原神/);
