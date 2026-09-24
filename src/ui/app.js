@@ -572,7 +572,7 @@ function beginRailDrag(event){
 function renderGameRails(){
   const list=$('#game-list'),back=$('#rail-back');if(!list||!back)return;
   const image=game=>`<img src="${game.icon}" alt="" draggable="false">`;
-  list.innerHTML=orderedRailGames().map(game=>`<button type="button" class="game-tile${game.id===activeGame?' active':''}" data-game="${game.id}" data-testid="game-tile" title="${esc(RAIL_GAME_HINT)}；右键移除游戏" aria-label="${esc(game.name)}：${esc(RAIL_GAME_HINT)}">${image(game)}</button>`).join('');
+  list.innerHTML=orderedRailGames().map(game=>`<button type="button" class="game-tile${game.id===activeGame?' active':''}" data-game="${game.id}" data-testid="game-tile" title="${esc(RAIL_GAME_HINT)}；右键打开游戏菜单" aria-label="${esc(game.name)}：${esc(RAIL_GAME_HINT)}">${image(game)}</button>`).join('');
   back.innerHTML=image(gameById(activeGame));
   const grid=$('#page-games .game-grid');if(grid){grid.innerHTML=GAMES.map(game=>`<button type="button" class="game-card${addedGameIds.includes(game.id)?' added':''}" data-game="${game.id}" data-testid="game-card" title="单击进入游戏首页；${esc(GAME_HINT)}">${image(game)}<strong>${esc(game.name)}</strong></button>`).join('');for(const tile of $$('[data-game]',grid)){let clickTimer;tile.onclick=event=>{if(event.detail>1)return;clearTimeout(clickTimer);clickTimer=setTimeout(async()=>{if(await selectGame(tile.dataset.game))showPage('home')},220)};tile.ondblclick=()=>{clearTimeout(clickTimer);enterWorkspace(tile.dataset.game,tile)};tile.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();enterWorkspace(tile.dataset.game,tile)}}}}
 
@@ -581,7 +581,7 @@ function renderGameRails(){
     tile.onclick=async()=>{if(await selectGame(tile.dataset.game))showPage('home')};
     tile.ondblclick=()=>enterWorkspace(tile.dataset.game,tile);
     tile.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();enterWorkspace(tile.dataset.game,tile)}};
-    tile.oncontextmenu=event=>{event.preventDefault();confirmRemoveGame(tile.dataset.game)};
+    tile.oncontextmenu=event=>showGameContext(event,tile.dataset.game);
   }
 }
 $('#game-list').addEventListener('click',event=>{if(Date.now()<suppressRailClickUntil){event.preventDefault();event.stopImmediatePropagation()}},true);
@@ -795,7 +795,7 @@ function workshopCard(m){const el=document.createElement('article');el.className
  $('.preview',el).onclick=event=>{if(!$('.nsfw-cover',el))return;event.stopPropagation();revealNsfw(el)};
  $('.source',el).onclick=event=>{event.stopPropagation();openSourceItem(m)};
  return el}
-const dialogStack=new DialogStack(['modal','dependency-modal']);
+const dialogStack=new DialogStack(['modal','dependency-modal','image-modal']);
 function modal(title,_subtitle,body,actions){
  const dialog=dialogStack.open('modal');
  $('#modal-title',dialog).textContent=title;$('#modal-body',dialog).innerHTML=body;$('#modal-actions',dialog).innerHTML=actions;
@@ -843,6 +843,26 @@ api?.onDependency?.(async d=>{if(d.gameId&&d.gameId!==activeGame){if(!await sele
 // 多张图片时上面是大图、下面是可横向滚动的缩略图条，点缩略图切大图（需求 16）。
 // 大图按比例整张放进图片区（object-fit:contain，不裁切、不被遮挡）；鼠标停在大图上滚轮切
 // 上一张/下一张，停在缩略图条上滚轮改为横向滚动缩略图。
+function openImagePreview(images,index){
+  const dialog=dialogStack.open('image-modal');
+  let current=index;
+  const show=position=>{
+    current=(position+images.length)%images.length;
+    $('#image-preview-photo',dialog).src=images[current];
+    $('.image-count',dialog).textContent=`${current+1} / ${images.length}`;
+  };
+  $('#image-prev',dialog).onclick=()=>show(current-1);
+  $('#image-next',dialog).onclick=()=>show(current+1);
+  $('.image-close',dialog).onclick=()=>dialogStack.back(dialog);
+  $('#image-prev',dialog).hidden=images.length<2;
+  $('#image-next',dialog).hidden=images.length<2;
+  dialog.addEventListener('keydown',event=>{
+    if(event.key==='ArrowLeft'||event.key==='ArrowRight'){
+      event.preventDefault();show(current+(event.key==='ArrowRight'?1:-1));
+    }
+  });
+  show(index);
+}
 function detailGallery(dialog,images){
   const host=$('.detail-gallery',dialog);if(!host)return;
   const main=$('.detail-gallery-main',host),thumbs=$('.detail-gallery-thumbs',host);
@@ -851,6 +871,9 @@ function detailGallery(dialog,images){
   if(!list.length){main.innerHTML='<div class="preview-placeholder">作者没有提供预览图</div>';thumbs.hidden=true;return}
   thumbs.hidden=list.length<2;
   let current=0,lastStep=0;
+  main.tabIndex=0;main.setAttribute('role','button');main.setAttribute('aria-label','放大预览图片');
+  main.addEventListener('click',()=>{if(host.classList.contains('nsfw-detail')){host.classList.remove('nsfw-detail');return}openImagePreview(list,current)});
+  main.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();if(host.classList.contains('nsfw-detail'))host.classList.remove('nsfw-detail');else openImagePreview(list,current)}});
   const show=index=>{
     current=(index+list.length)%list.length;
     main.innerHTML=`<img src="${esc(list[current])}" alt="模组预览">`;
@@ -863,14 +886,6 @@ function detailGallery(dialog,images){
     button.onclick=()=>show(index);thumbs.append(button);
   }
   show(0);
-  main.tabIndex=0;main.setAttribute('role','button');main.setAttribute('aria-label','放大查看当前图片');
-  const openPreview=()=>{
-    if(host.classList.contains('nsfw-detail')){host.classList.remove('nsfw-detail');return;}
-    const dialog=modal(`查看大图 ${current+1}/${list.length}`,'',`<img src="${esc(list[current])}" alt="模组预览大图">`,'');
-    dialog.classList.add('image-preview-dialog');
-  };
-  main.addEventListener('click',openPreview);
-  main.addEventListener('keydown',event=>{if(event.key!=='Enter'&&event.key!==' ')return;event.preventDefault();openPreview()});
   if(list.length<2)return;
   // 大图上的滚轮 = 轮播：160ms 冷却，一次滚动只走一张，不被高频 wheel 事件一次跳过好几张。
   main.addEventListener('wheel',event=>{
@@ -894,7 +909,7 @@ async function openDetail(record){
  try{
   const d=await call('detail',{id:record.id},{foreground:false});if(!dialog.open||dialog.dataset.layerRevision!==revision)return;
   const q=sel=>$(sel,dialog),files=d.files||[];
-  q('[id$="modal-body"]').innerHTML=`<p class="meta detail-meta">${esc(d.author||'未知作者')} · ${esc([d.rootCategoryName,d.characterName].filter(Boolean).join(' / ')||'模组')}</p><div class="detail-gallery"><div class="detail-gallery-main"><div class="preview-placeholder">图片加载中…</div></div><div class="detail-gallery-thumbs"></div></div><p class="description">${esc(d.description||'作者没有填写说明。')}</p><details class="detail-comments"><summary>查看评论</summary><div class="detail-comments-content"><p class="meta comments-status">展开后加载评论…</p><div class="comments-list"></div><button type="button" class="button secondary comments-more" hidden>加载更多</button></div></details><fieldset class="file-picker"><legend>选择要安装的文件</legend><div class="file-options">${files.length?files.map(f=>`<div class="file-row"><label class="file-option"><input type="radio" name="file" value="${esc(f.id)}" ${files.length===1?'checked':''}><span><strong>${esc(f.name)}</strong><small>${esc(formatSize(f.size))} · 上传 ${esc(formatDate(f.uploadedAt)||'日期未知')}</small></span></label><button type="button" class="button secondary file-direct-download" data-file-id="${esc(f.id)}">下载此处</button></div>`).join(''):'没有可下载的文件'}</div></fieldset>${!state.settings.modsPath?'<p class="setup-required">请先选择当前游戏的启用目录。<button type="button" class="link-button detail-settings">前往设置</button></p>':''}`;
+  q('[id$="modal-body"]').innerHTML=`<p class="meta detail-meta">${esc(d.author||'未知作者')} · ${esc([d.rootCategoryName,d.characterName].filter(Boolean).join(' / ')||'模组')}</p><div class="detail-gallery"><div class="detail-gallery-main"><div class="preview-placeholder">图片加载中…</div></div><div class="detail-gallery-thumbs"></div></div><p class="description">${esc(d.description||'作者没有填写说明。')}</p><details class="detail-comments"><summary>查看评论</summary><div class="detail-comments-content"><p class="meta comments-status">展开后加载评论…</p><div class="comments-list"></div><button type="button" class="button secondary comments-more" hidden>加载更多</button></div></details><fieldset class="file-picker"><legend>选择要安装的文件</legend><div class="file-options">${files.length?files.map(f=>`<div class="file-row"><label class="file-option"><input type="radio" name="file" value="${esc(f.id)}" ${files.length===1?'checked':''}><span><strong>${esc(f.name)}</strong><small>${esc(formatSize(f.size))} · 上传 ${esc(formatDate(f.uploadedAt)||'日期未知')} · ${f.downloadCount==null?'下载次数暂不可用':Number(f.downloadCount).toLocaleString('zh-CN')+' 次下载'}</small></span></label><button type="button" class="button secondary file-direct-download" data-file-id="${esc(f.id)}">下载此处</button></div>`).join(''):'没有可下载的文件'}</div></fieldset>${!state.settings.modsPath?'<p class="setup-required">请先选择当前游戏的启用目录。<button type="button" class="link-button detail-settings">前往设置</button></p>':''}`;
   q('[id$="modal-actions"]').innerHTML=`<button type="button" class="button primary" data-install-confirm data-layer-id="install-confirm" id="${dialog.id==='modal'?'install-confirm':dialog.id+'-install-confirm'}" ${files.length&&state.settings.modsPath?'':'disabled'}>下载并安装</button>`;
   const install=q('[data-install-confirm]');install.dataset.hasFiles=String(files.length>0);
   q('.detail-settings')?.addEventListener('click',()=>{dialogStack.back(dialog);showPage('settings')});
@@ -1253,6 +1268,16 @@ function renameMod(mod){
 // 右键后看起来就是「菜单没弹出来」。
 function showSelectionMenu(dialog){const menu=$('#selection-menu');if(!menu)return null;if(menu.parentElement!==dialog)dialog.append(menu);menu.hidden=false;return menu}
 function hideContextMenu(){$('#context-menu').hidden=true;$('#selection-menu').hidden=true;}
+function showGameContext(event,id){
+ event.preventDefault();event.stopPropagation();
+ const menu=$('#context-menu');$$('.mod-context-action',menu).forEach(b=>b.remove());$('#context-refresh').hidden=true;
+ const button=document.createElement('button');button.type='button';button.className='mod-context-action';button.setAttribute('role','menuitem');button.textContent='删除游戏';button.disabled=busyCount>0;
+ button.onclick=()=>{hideContextMenu();confirmRemoveGame(id)};
+ menu.append(button);menu.hidden=false;menu.dataset.scrollX=scrollX;menu.dataset.scrollY=scrollY;
+ menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-menu.offsetWidth-8))+'px';
+ menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-menu.offsetHeight-8))+'px';
+ button.focus({preventScroll:true});
+}
 function openModFolder(mod,kind){call('openModFolder',{id:mod.id,kind}).catch(()=>{});}
 function showFolderContext(event,node){
  event.preventDefault();event.stopPropagation();const menu=$('#context-menu');$$('.mod-context-action',menu).forEach(b=>b.remove());$('#context-refresh').hidden=true;

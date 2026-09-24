@@ -230,6 +230,7 @@ class GameBanana {
         id: Number(file._idRow),
         name: file._sFile || '',
         size: Number(file._nFilesize) || 0,
+        downloadCount: countValue(file._nDownloadCount),
         uploadedAt: Number(file._tsDateAdded) || 0,
         url: file._sDownloadUrl || '',
         checksum: file._sMd5Checksum || ''
