@@ -15,6 +15,54 @@ const pageScroll={}, busyButtons=new Map();
 const titles={home:'首页',games:'全部游戏',downloads:'下载列表',workshop:'模组工坊',library:'我的模组',presets:'搭配方案',settings:'设置'};
 const launcherPages=new Set(['home','games']);
 let activeGame='genshin';
+const ONBOARDING_KEY='hoyomod:onboarding-v1';
+let onboardingStep=-1,onboardingDismissed=false;
+const onboardingTips=[
+  {selector:'.rail-games',page:'home',side:'right',text:()=>addedGameIds.length?'点击“全部游戏”，选择一个游戏。':'点击“全部游戏”，添加第一个游戏。'},
+  {selector:'#home-game-settings',page:'home',side:'above',text:'点击这里，完成当前游戏设置。'},
+  {selector:'#game-choose-mods',page:'dialog',side:'above',text:()=>`选择模组启用目录。请选当前游戏的 ${gameById(activeGame).importer} 文件夹。`},
+  {selector:'#game-list .game-tile.active',page:'home',side:'right',text:'双击游戏图标，进入模组工作空间。'},
+  {selector:'#notification-button',page:'any',side:'above',text:'在通知中心查看所有游戏进行中的任务和消息。'}
+];
+function saveOnboarding(value){try{localStorage.setItem(ONBOARDING_KEY,value)}catch{}}
+function hideOnboardingTip(){const tip=$('#onboarding-tip');if(tip?.matches(':popover-open'))tip.hidePopover()}
+function renderOnboardingTip(){
+  const tip=$('#onboarding-tip'),config=onboardingTips[onboardingStep];
+  if(!tip||!config||onboardingDismissed){hideOnboardingTip();return}
+  const visible=config.page==='any'||(config.page==='dialog'?$('#modal').open:activePage===config.page&&!$('#modal').open);
+  const target=visible?$(config.selector):null,rect=target?.getBoundingClientRect();
+  if(!rect?.width||!rect.height){hideOnboardingTip();return}
+  tip.textContent=typeof config.text==='function'?config.text():config.text;tip.dataset.side=config.side;
+  if(!tip.matches(':popover-open'))tip.showPopover();
+  const width=tip.offsetWidth,height=tip.offsetHeight,space=12;
+  const x=config.side==='right'?rect.right+space:rect.left+(rect.width-width)/2;
+  const y=config.side==='right'?rect.top+(rect.height-height)/2:rect.top-height-space;
+  tip.style.left=Math.round(Math.max(8,Math.min(x,innerWidth-width-8)))+'px';
+  tip.style.top=Math.round(Math.max(8,Math.min(y,innerHeight-height-8)))+'px';
+}
+function scheduleOnboardingTip(){requestAnimationFrame(renderOnboardingTip)}
+function setOnboardingStep(step){onboardingStep=step;onboardingDismissed=false;saveOnboarding(step<onboardingTips.length?String(step):'done');scheduleOnboardingTip()}
+function startOnboarding(replay=false){
+  if(replay){showPage('home');setOnboardingStep(0);return}
+  let saved=null;try{saved=localStorage.getItem(ONBOARDING_KEY)}catch{}
+  if(saved==='done')return;
+  if(saved!==null&&/^[0-4]$/.test(saved)){onboardingStep=Number(saved);if(onboardingStep===2)onboardingStep=1;}
+  else if(!addedGameIds.length)onboardingStep=0;
+  else return;
+  onboardingDismissed=false;scheduleOnboardingTip();
+}
+function onboardingGameSelected(){if(onboardingStep===0)setOnboardingStep(1)}
+function onboardingSettingsOpened(){if(onboardingStep===1)setOnboardingStep(2)}
+function onboardingLoaderChosen(){if(onboardingStep===2&&state.settings.modsPath)setOnboardingStep(3)}
+function onboardingWorkspaceEntered(){if(onboardingStep===3)setOnboardingStep(4)}
+document.addEventListener('pointerdown',event=>{
+  if(event.button!==0||onboardingStep<0||onboardingDismissed)return;
+  hideOnboardingTip();onboardingDismissed=true;
+  if(onboardingStep===4)setOnboardingStep(onboardingTips.length);
+},true);
+window.addEventListener('resize',scheduleOnboardingTip);
+window.addEventListener('scroll',scheduleOnboardingTip,{capture:true,passive:true});
+$('#modal').addEventListener('close',scheduleOnboardingTip);
 // 当前游戏设置窗口（首页齿轮打开）是否已经绑定过按钮。
 let gameSettingsOpen=false;
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -288,7 +336,7 @@ async function call(action,payload,opts={}){if(!api?.call)throw new Error('本�
 // 下载入队失败不再插页面上方的横条，统一走右下角通知中心（需求 14）。
 async function enqueue(action,payload){try{const result=await call(action,payload,{foreground:false,silent:true});if(result?.queued)showToast('已加入下载列表');await loadDownloads()}catch(e){notifyError(e);showPage('downloads')}}
 let initialStateLoaded=false;
-async function loadState(){const requested=activeGame,next=await (initialStateLoaded?api:bridge).call('state');if(initialStateLoaded&&requested!==activeGame)return;if(!initialStateLoaded){activeGame=next.activeGame||'genshin';initialStateLoaded=true;}state=next;if(next.availableGames)GAMES=next.availableGames;addedGameIds=next.addedGameIds||[activeGame];renderGameRails();renderState();}
+async function loadState(){const requested=activeGame,next=await (initialStateLoaded?api:bridge).call('state');if(initialStateLoaded&&requested!==activeGame)return;if(!initialStateLoaded){activeGame=next.activeGame||'genshin';initialStateLoaded=true;}state=next;if(next.availableGames)GAMES=next.availableGames;addedGameIds=next.addedGameIds||[activeGame];renderGameRails();renderState();scheduleOnboardingTip();}
 // 当前游戏设置的三项（GIMI / ZZMI / SRMI 文件夹、外部程序、启动器背景）：首页弹出的设置窗口与
 // 「设置」页里的同一组设置都读这里，切游戏后两边一起变。
 function renderGameValues(root=document){
@@ -434,18 +482,19 @@ function openGameSettings(){
   renderGameValues(dialog);
   addBackgroundSwitch(dialog);
   const q=selector=>$(selector,dialog);
-  q('#game-choose-mods').onclick=()=>call('chooseMods',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
+  q('#game-choose-mods').onclick=()=>call('chooseMods',{gameId:activeGame},{reload:true}).then(onboardingLoaderChosen).catch(error=>notifyError(error));
   q('#game-choose-program').onclick=()=>call('chooseProgram',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
   q('#game-choose-background').onclick=()=>call('chooseBackground',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
   q('#game-reset-background').onclick=()=>call('resetBackground',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
   q('#game-fetch-background').onclick=async()=>{try{await call('fetchOfficialBackground',{gameId:activeGame},{reload:true});notify('已更新为官方最新背景。')}catch(error){notifyError(error)}};
+  onboardingSettingsOpened();
 }
 // 切换当前游戏：先让主进程记住，再用返回的快照重渲染（背景、加载器路径等都跟着变）。
 const gameViews=new Map();let gameSwitch=null;
 async function selectGame(gameId){
   if(!gameId)return false;
-  if(gameSwitch){await gameSwitch;if(gameId===activeGame&&addedGameIds.includes(gameId))return true;}
-  if(gameId===activeGame&&addedGameIds.includes(gameId))return true;
+  if(gameSwitch){await gameSwitch;if(gameId===activeGame&&addedGameIds.includes(gameId)){onboardingGameSelected();return true;}}
+  if(gameId===activeGame&&addedGameIds.includes(gameId)){onboardingGameSelected();return true;}
   if(dialogStack.layers.length||busyCount){notify('请先完成或关闭当前操作，再切换游戏。');return false;}
   const previous=activeGame;
   gameViews.set(previous,{taxonomy,categories,category,page,query,libraryNavigation,sort:$('#sort-select').value,sfw:$('#sfw-filter').checked,nsfw:$('#nsfw-filter').checked});
@@ -460,7 +509,7 @@ async function selectGame(gameId){
       for(const key of Object.keys(pageScroll))delete pageScroll[key];
       renderGameRails();renderState();renderDownloads();renderCategories();renderUpdateDots();
       void Promise.all([loadDownloads(),loadCategories(),call('updateSummary',{},{foreground:false,silent:true}).then(value=>{if(activeGame===gameId)updateSummary=value}).catch(()=>{})]);
-      return true;
+      onboardingGameSelected();return true;
     }catch(error){notifyError(error);return false;}
   })();
   try{return await gameSwitch}finally{gameSwitch=null;}
@@ -512,6 +561,7 @@ async function enterWorkspace(game,origin,destination='workshop'){
   showPage(destination);
   // 目标位置要在切换页面之后量：工作区左栏在启动器模式下是隐藏的，提前量会得到 0 宽。
   const to=target?.getBoundingClientRect();
+  onboardingWorkspaceEntered();
   // 飞行期间隐藏目标位置的 Logo：整段动画里只看得见正在飞的那一个（需求 2）。
   const release=fromLauncher&&to?.width?startIconFlight():()=>{};
   if(!fromLauncher||!from?.width||!to?.width){release();return}
@@ -570,7 +620,7 @@ function showPage(name){
   $$('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+name));
   $('#page-title').textContent=titles[name];
   window.scrollTo(0,launcherPages.has(name)?0:(pageScroll[name]||0));
-  syncGameTiles();if(name==='home')renderHome();if(name==='games')renderGamesPage();
+  syncGameTiles();if(name==='home')renderHome();if(name==='games')renderGamesPage();scheduleOnboardingTip();
 }
 function flattenCategories(nodes,path=[]){return nodes.flatMap(n=>[{...n,path:[...path,n.name]},...flattenCategories(n.children||[],[...path,n.name])])}
 function categoryPath(nodes,id){
@@ -956,6 +1006,7 @@ api?.onToast?.(entry=>showToast(entry?.text,entry?.tone));
 api?.onTasks?.(list=>applyTasks(list));
 call('tasks',{}, {silent:true,foreground:false}).then(applyTasks).catch(()=>{});
 $('#notification-button').onclick=event=>{event.stopPropagation();toggleNotificationPanel()};
+$('#restart-onboarding').onclick=()=>startOnboarding(true);
 // 双勾＝清空消息：展开面板已经标过已读，这里把消息历史一并清空（不动进行中的任务）；× ＝ 只关掉面板，不删消息。
 $('#notification-clear-all').onclick=()=>call('clearNotifications',{}, {silent:true}).then(applyNotifications).catch(()=>{});
 $('#notification-close').onclick=()=>closeNotificationPanel();
@@ -965,7 +1016,7 @@ window.addEventListener('scroll',()=>closeNotificationPanel());
 call('notifications',{}, {silent:true,foreground:false}).then(applyNotifications).catch(()=>{});
 
 renderUpdateDots();
-(async()=>{try{await loadState();if(!addedGameIds.length)return;const game=activeGame;await Promise.all([loadDownloads(),loadCategories(),call('updateSummary',{},{silent:true,foreground:false}).then(value=>{if(activeGame===game)updateSummary=value})])}catch(error){notifyError(error,'初始化失败，请重新启动应用。')}})();
+(async()=>{try{await loadState();startOnboarding();if(!addedGameIds.length)return;const game=activeGame;await Promise.all([loadDownloads(),loadCategories(),call('updateSummary',{},{silent:true,foreground:false}).then(value=>{if(activeGame===game)updateSummary=value})])}catch(error){notifyError(error,'初始化失败，请重新启动应用。')}})();
 
 // 查看热键（需求 19–22）：顶部只显示用户自己保存的热键提示；下面用紧凑卡片网格列出
 // 每个热键真正的信息（按键、反切键、类型、来源、DISABLED 标记），不再显示生效条件与 0/1 指令。

@@ -281,6 +281,10 @@ html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex
 .notification-center[popover]{top:auto;left:auto;right:32px;bottom:32px;margin:0;border:0;padding:0;width:auto;max-width:none;max-height:none;overflow:visible;background:transparent;color:inherit;box-shadow:none}
 .notification-center{position:fixed;right:32px;bottom:32px;z-index:95;display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none;-webkit-app-region:no-drag}
 .notification-center .notification-panel,.notification-center .notification-button{pointer-events:auto}
+.onboarding-tip[popover]{position:fixed;inset:auto;margin:0;width:max-content;max-width:min(260px,calc(100vw - 24px));padding:11px 14px;border:1px solid #ffdd81;border-radius:10px;background:#fff7df;color:#273343;box-shadow:0 12px 32px #0006;font-size:13px;font-weight:600;line-height:1.55;pointer-events:none;-webkit-app-region:no-drag}
+.onboarding-tip:after{content:"";position:absolute;width:9px;height:9px;background:#fff7df;border-left:1px solid #ffdd81;border-bottom:1px solid #ffdd81;transform:rotate(45deg)}
+.onboarding-tip[data-side="right"]:after{left:-6px;top:calc(50% - 5px)}
+.onboarding-tip[data-side="above"]:after{left:calc(50% - 5px);bottom:-6px;transform:rotate(-45deg)}
 .notification-popups{display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}
 .notification-popup{pointer-events:auto;width:min(344px,calc(100vw - 56px));display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(14px);box-shadow:0 10px 28px #0003;animation:notification-enter .2s cubic-bezier(.2,.8,.2,1) both}
 .notification-popup.leaving{animation:notification-leave .18s ease-in both}
