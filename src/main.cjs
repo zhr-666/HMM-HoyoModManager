@@ -432,7 +432,7 @@ const actions={
     // 左下角设置页写全局设置；游戏设置（加载器 Mods 路径、外部程序、启动器背景）带 gameId，
     // 只改当前游戏那一份（需求 27）。
     const globalKeys=['autoEnable','autoCheckUpdates','blurNsfw','material','proxyMode','proxyUrl','libraryView','autoCheckAppUpdates','useLinks'];
-    const gameKeys=['modsPath','launchExe','secondaryExe','programTabs','backgroundVersion','autoBackground'];
+    const gameKeys=['modsPath','launchExe','secondaryExe','targetExe','programTabs','backgroundVersion','autoBackground'];
     const patch={},gamePatch={};for(const k of globalKeys)if(k in p)patch[k]=p[k];
     for(const k of gameKeys)if(k in p)gamePatch[k]=p[k];
     if(Object.keys(patch).length||Object.keys(gamePatch).length)await workspaces.setSettings(workspace().game.id,{...patch,...gamePatch});
@@ -474,6 +474,17 @@ const actions={
   chooseProgram:p=>exclusive(async()=>{
     const r=await dialog.showOpenDialog(win,{title:p.level===2?'选择二级程序':'选择一级程序',properties:['openFile'],filters:[{name:'程序',extensions:['exe']}]});
     if(!r.canceled){const file=r.filePaths[0];await validateExternalProgram(file);await lib.settings({[p.level===2?'secondaryExe':'launchExe']:file},{gameId:gameScope(p)});}
+    return snapshot();
+  }),
+  chooseTargetExe:p=>exclusive(async()=>{
+    const game=gameScope(p);
+    const r=await dialog.showOpenDialog(win,{title:'选择目标游戏 EXE',properties:['openFile'],filters:[{name:'Windows 程序',extensions:['exe']}]});
+    if(!r.canceled){
+      const file=r.filePaths[0];
+      if(path.extname(file).toLowerCase()!=='.exe'||!(await fs.stat(file)).isFile())throw Error('请选择目标游戏的 EXE 文件。');
+      await workspaces.setSettings(game,{targetExe:file});
+      hotkeyMonitor?.hide();
+    }
     return snapshot();
   }),
   chooseBackground:p=>exclusive(async()=>{
@@ -700,7 +711,7 @@ if(lock)app.whenReady().then(async()=>{
       await hotkeyOverlay.init();
       const capture=new GameScreenCapture({host:programHost,desktopCapturer,screen,overlayFocused:()=>hotkeyOverlay.isFocused()});
       hotkeyOcr=createGameOcr();
-      hotkeyMonitor=new GameHotkeyMonitor({capture:()=>workspaces.activeGameId==='genshin'?capture.capture():null,ocr:(image,rect)=>hotkeyOcr.recognize(image,rect),getMods:()=>workspaces.activeGameId==='genshin'?localizeLibraryState('genshin',workspaces.get('genshin').lib.snapshot()).mods:[],getNotes:()=>workspaces.get('genshin').lib.snapshot().hotkeyNotes,onChange:value=>hotkeyOverlay.show(workspaces.activeGameId==='genshin'?value:null),onError:error=>notifyError(error,{title:'原神热键悬浮窗'})});
+      hotkeyMonitor=new GameHotkeyMonitor({capture:()=>workspaces.activeGameId==='genshin'?capture.capture(workspaces.get('genshin').lib.effectiveSettings().targetExe):null,ocr:(image,rect)=>hotkeyOcr.recognize(image,rect),getMods:()=>workspaces.activeGameId==='genshin'?localizeLibraryState('genshin',workspaces.get('genshin').lib.snapshot()).mods:[],getNotes:()=>workspaces.get('genshin').lib.snapshot().hotkeyNotes,onChange:value=>hotkeyOverlay.show(workspaces.activeGameId==='genshin'?value:null),onError:error=>notifyError(error,{title:'原神热键悬浮窗'})});
       hotkeyMonitor.start();
     }catch(error){notifyError(error,{title:'原神热键悬浮窗'});hotkeyOverlay?.dispose().catch(()=>{});hotkeyOverlay=null;}
   }

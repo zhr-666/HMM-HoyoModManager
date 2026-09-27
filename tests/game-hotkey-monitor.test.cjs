@@ -26,3 +26,12 @@ test('an unsupported display hides and does not invoke OCR',async()=>{
  const monitor=new GameHotkeyMonitor({capture:async()=>({...frame,displayWidth:2560,displayHeight:1440}),ocr:async()=>{calls++;return '/薇斯纳';},getMods:()=>enabled,getNotes:()=>({})});
  await monitor.sample();assert.equal(calls,0);
 });
+
+test('changing the target while OCR is pending does not restore a stale overlay',async()=>{
+ let finishOcr;const shown=[];
+ const monitor=new GameHotkeyMonitor({capture:async()=>frame,ocr:()=>new Promise(resolve=>{finishOcr=resolve;}),getMods:()=>enabled,getNotes:()=>({}),onChange:value=>shown.push(value)});
+ const pending=monitor.sample();
+ await new Promise(resolve=>setImmediate(resolve));
+ monitor.hide();finishOcr('/薇斯纳');await pending;
+ assert.deepEqual(shown,[]);
+});
