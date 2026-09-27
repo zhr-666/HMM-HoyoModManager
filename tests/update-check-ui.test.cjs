@@ -20,9 +20,10 @@ test('页面上方的全局进度条已彻底移除',()=>{
   assert.ok(/^\.inline-progress\{/m.test(css),'弹窗内进度行应保留自己的样式');
 });
 
-test('三个「检查更新」入口都带红点标记',()=>{
+test('模组与软件更新入口带红点，维护与诊断不再重复放检查更新',()=>{
   const html=read('src/ui/index.html');
-  for(const id of ['check-updates','check-updates-library','software-check']){
+  assert.equal(html.includes('id="check-updates"'),false,'维护与诊断不再放模组检查更新');
+  for(const id of ['check-updates-library','software-check']){
     const button=new RegExp(`<button[^>]*id="${id}"[^>]*>(.*?)</button>`,'s').exec(html);
     assert.ok(button,`找不到按钮 #${id}`);
     assert.ok(button[1].includes('button-dot'),`#${id} 缺少 .button-dot 红点标记`);

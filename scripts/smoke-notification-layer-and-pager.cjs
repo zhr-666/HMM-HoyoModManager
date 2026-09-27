@@ -53,7 +53,7 @@ async function main(){
   await store.setSettings('genshin',{proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false});
   await fs.writeFile(path.join(data,'games','genshin','state.json'),JSON.stringify({
     settings:{modsPath:'',proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false},
-    mods:[],folders:[],presets:[],
+    mods:[],folders:[],presets:[{id:'quick-a',name:'日常探索',modIds:[]},{id:'quick-b',name:'探索二',modIds:[]}],
   }));
   await fs.writeFile(path.join(data,'games','genshin','taxonomy.json'),JSON.stringify([{id:17510,name:'Skins',icon:'',children:[]}]));
   const env={...process.env,HOYOMOD_DATA:data};
@@ -81,6 +81,24 @@ async function main(){
   await client.send('Page.enable');
   await waitFor('!!window.hoyo && !!window.hoyo.call','桥接就绪');
   await waitFor('typeof syncNotificationLayer==="function" && typeof showNotificationPopup==="function"','界面脚本加载');
+  await waitFor('initialStateLoaded','初始游戏状态');
+
+  // 主页只列出方案名称；点击名称立即应用，设置页三个配置入口仍可使用。
+  await waitFor(`document.querySelectorAll('#home-preset-options .home-preset-button').length===2`,'主页方案快捷按钮');
+  assert.equal(await evaluate(`!!document.querySelector('#home-preset-detail,#home-active-mods')`),false,'主页方案卡不显示启用统计和模组清单');
+  await fs.mkdir(path.join(root,'test-results'),{recursive:true});
+  await fs.writeFile(path.join(root,'test-results','home-preset-shortcuts.png'),await screenshot());
+  await evaluate(`document.querySelectorAll('#home-preset-options .home-preset-button')[1].click()`);
+  await waitFor(`document.querySelector('#home-preset-name').textContent==='探索二'`,'快捷切换方案');
+  assert.equal(await evaluate(`document.querySelector('#home-preset-options .home-preset-button[aria-pressed="true"]')?.textContent`),'探索二');
+  await evaluate(`showPage('settings')`);
+  const settingsLayout=await evaluate(`(()=>{const panel=document.querySelector('#game-settings-panel');return {cards:panel.querySelectorAll('.game-setting-item').length,columns:getComputedStyle(panel.querySelector('.game-settings-grid')).gridTemplateColumns,maintenance:!!document.querySelector('#check-updates'),library:!!document.querySelector('#check-updates-library')}})()`);
+  assert.equal(settingsLayout.cards,3,'当前游戏设置应分成三个配置项');
+  assert.equal(settingsLayout.maintenance,false,'维护与诊断不再重复放检查更新');
+  assert.equal(settingsLayout.library,true,'我的模组保留检查更新入口');
+  await fs.writeFile(path.join(root,'test-results','game-settings-card.png'),await screenshot());
+  await evaluate(`showPage('home')`);
+  console.log('✓ 主页方案名称可快捷切换，设置页配置项与更新入口符合要求');
 
   // ——— 需求 5①：完成 / 错误提示卡在对话框与遮罩之上，且不被 dialog::backdrop 的模糊影响 ———
   await evaluate(`window.hoyo.call('addNotification',{text:'冒泡测试：提示卡在最上层',target:'downloads'})`);
@@ -217,6 +235,17 @@ async function main(){
   await fs.writeFile(path.join(root,'test-results','workshop-sidebar-collapsed.png'),await screenshot());
   await evaluate('document.querySelector("#workshop-menu-toggle").click()');
   assert.equal(await evaluate('document.querySelector("#workshop-menu-body").hidden'),false,'菜单可重新展开');
+  await evaluate('document.querySelector("#workshop-menu-toggle").click()');
+  await evaluate('document.querySelector("#workshop-menu-status .workshop-status-item").click()');
+  assert.equal(await evaluate('document.querySelector("#workshop-menu-body").hidden'),false,'点击收起菜单的状态区域可展开');
+  await evaluate('document.querySelector("#workshop-menu-toggle").click()');
+  await evaluate(`document.documentElement.dataset.platform='win32'`);
+  const collapsedTopHit=await evaluate(`(()=>{const menu=document.querySelector('#workshop-menu'),point=document.elementFromPoint(108,20);return {left:getComputedStyle(document.querySelector('.window-titlebar')).left,hit:point?.closest('#workshop-menu')===menu}})()`);
+  assert.equal(collapsedTopHit.left,'144px','Windows 收起状态标题栏应让出窄栏顶端');
+  assert.equal(collapsedTopHit.hit,true,'窄栏最上方应可点到菜单');
+  await evaluate(`document.elementFromPoint(108,20).click()`);
+  assert.equal(await evaluate('document.querySelector("#workshop-menu-body").hidden'),false,'点击收起菜单最上方可展开');
+  await evaluate(`document.documentElement.dataset.platform='darwin'`);
   console.log('✓ 工坊筛选菜单位于游戏栏与卡片之间，收起后卡片区域扩展，展开可恢复');
   await evaluate("(()=>{const s=document.createElement('div');s.id='pager-probe';s.style.height='1600px';document.body.append(s)})()");
   // 注意：离线时下一页会被置灰（没有可翻的页），这里先手动恢复可用再点，验证的是翻页动作本身。

@@ -327,7 +327,7 @@ const actions={
     await lib.updateMetadata(mod.id,{ignoredUpdates:ignoredUpdates.restoreVersion(mod,p.uploadedAt)});
     return snapshot();
   },
-  addHotkeyNote:async p=>lib.addHotkeyNote(String(p?.id||''),p?.text),
+  addHotkeyNote:async p=>lib.addHotkeyNote(String(p?.id||''),p?.text,p?.sourceId),
   removeHotkeyNote:async p=>lib.removeHotkeyNote(String(p?.id||''),p?.noteId),
   addNotification:p=>{
     const text=typeof p?.text==='string'?p.text.slice(0,600):'';if(!text.trim())return notifications.snapshot();

@@ -48,3 +48,10 @@ test('Windows 工坊菜单贴齐窗口上下边缘，顶部空白可拖动且展
   assert.match(top,/-webkit-app-region:drag/,'菜单顶块应能拖动窗口');
   assert.match(toggle,/-webkit-app-region:no-drag/,'展开按钮应保持可点击');
 });
+
+test('工坊菜单收起后整条窄栏可点开，顶端不被标题栏遮挡',()=>{
+  const app=read('src/ui/app.js'),css=read('src/ui/style.css');
+  assert.match(app,/#workshop-menu'\)\.addEventListener\('click'/);
+  assert.match(css,/html\[data-page="workshop"\]\[data-workshop-menu="collapsed"\] \.window-titlebar:has\(#program-tabs\[hidden\]\)\{left:calc\(var\(--rail-width\) \+ var\(--workshop-menu-width\)\)\}/);
+  assert.match(css,/#page-workshop\.menu-collapsed \.workshop-menu-top\{[^}]*-webkit-app-region:no-drag/);
+});
