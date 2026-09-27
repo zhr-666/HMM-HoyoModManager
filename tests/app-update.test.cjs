@@ -4,6 +4,12 @@ test('updater accepts only newer stable releases from this repository with SHA25
  const {selectRelease}=require('../src/core/app-update.cjs');assert.equal(selectRelease('0.8.0',release()).version,'0.9.0');assert.equal(selectRelease('0.9.0',release()),null);assert.equal(selectRelease('1.0.0',release()),null);assert.equal(selectRelease('0.8.0',{...release(),prerelease:true}),null);
  for(const mutate of [r=>r.assets[0].digest='',r=>r.assets[0].browser_download_url=r.assets[0].browser_download_url.replace('zhr-666','another'),r=>r.assets[0].size=0]){const r=release();mutate(r);assert.throws(()=>selectRelease('0.8.0',r));}
 });
+test('beta builds can check stable releases without offering a prerelease build',()=>{
+ const {selectRelease}=require('../src/core/app-update.cjs');
+ assert.equal(selectRelease('1.1.2-beta',release('1.1.1')),null,'the older stable release is not offered to a beta build');
+ assert.equal(selectRelease('1.1.2-beta',release('1.1.2')).version,'1.1.2','a later stable release remains available');
+ assert.equal(selectRelease('1.1.1',release('1.1.2-beta')) ,null,'prereleases are never offered to stable builds');
+});
 async function fixture(t){const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-app-update-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));const appDir=path.join(root,'app'),staging=path.join(appDir,'.hoyo-updates','job','staging');await fs.mkdir(path.join(staging,'resources'),{recursive:true});await fs.mkdir(path.join(appDir,'data'),{recursive:true});const pe=Buffer.alloc(128);pe.write('MZ');pe.writeUInt32LE(64,60);pe.write('PE\0\0',64);pe.writeUInt16LE(0x8664,68);await fs.writeFile(path.join(staging,'HoYoMod.exe'),pe);await fs.writeFile(path.join(staging,'resources','app.asar'),'test-package');await fs.writeFile(path.join(appDir,'data','state.json'),'keep-exact');return {root,appDir,staging};}
 test('update plans replace only program entries and never data or unrelated folders',async t=>{
  const {replacementPlan}=require('../src/core/app-update.cjs');const {appDir,staging}=await fixture(t);await fs.mkdir(path.join(appDir,'GIMI'));const plan=await replacementPlan(appDir,staging,[path.join(appDir,'data'),path.join(appDir,'GIMI')]);assert.deepEqual(plan.entries.map(x=>x.name).sort(),['HoYoMod.exe','resources']);assert.equal(await fs.readFile(path.join(appDir,'data','state.json'),'utf8'),'keep-exact');

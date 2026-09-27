@@ -6,11 +6,12 @@ const disk=process.versions.electron?require('original-fs').promises:fs;
 const REPO='zhr-666/HMM-HoyoModManager',API=`https://api.github.com/repos/${REPO}/releases/latest`;
 const ROOT_FILES=new Set(['HoYoMod.exe','LICENSE.electron.txt','LICENSES.chromium.html','LICENSE-HoYoMod.txt','THIRD-PARTY-NOTICES.md','使用说明.md','Windows验收说明.md','vk_swiftshader_icd.json']);
 const rootAllowed=name=>ROOT_FILES.has(name)||['resources','locales'].includes(name)||/^[a-z0-9_-]+\.(dll|pak|bin|dat)$/i.test(name);
-function version(value){const m=String(value).match(/^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);if(!m)throw Error('无效的软件版本号');return m.slice(1).map(Number);}
-function notNewer(next,current){const a=version(next),b=version(current),difference=a.findIndex((n,i)=>n!==b[i]);return difference<0||a[difference]<b[difference];}
+function version(value){const m=String(value).match(/^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?$/);if(!m)throw Error('无效的软件版本号');return {core:m.slice(1,4).map(Number),prerelease:m[4]?.split('.')||[],text:m.slice(1,4).join('.')+(m[4]?`-${m[4]}`:'')};}
+function compareVersion(left,right){const a=version(left),b=version(right);for(let i=0;i<3;i++)if(a.core[i]!==b.core[i])return Math.sign(a.core[i]-b.core[i]);if(!a.prerelease.length||!b.prerelease.length)return a.prerelease.length===b.prerelease.length?0:a.prerelease.length?-1:1;for(let i=0;i<Math.max(a.prerelease.length,b.prerelease.length);i++){const x=a.prerelease[i],y=b.prerelease[i];if(x===undefined)return -1;if(y===undefined)return 1;if(x===y)continue;const xn=/^\d+$/.test(x),yn=/^\d+$/.test(y);if(xn&&yn)return Math.sign(Number(x)-Number(y));if(xn!==yn)return xn?-1:1;return x<y?-1:1;}return 0;}
+function notNewer(next,current){return compareVersion(next,current)<=0;}
 function selectRelease(current,row){
- if(row.draft||row.prerelease)return null;const next=version(row.tag_name),old=version(current),diff=next.findIndex((n,i)=>n!==old[i]);if(diff<0||next[diff]<old[diff])return null;
- const v=next.join('.'),name=`HoYoMod-${v}-Windows-x64.zip`,asset=row.assets?.find(a=>a.name===name),expected=`https://github.com/${REPO}/releases/download/${row.tag_name}/${name}`;
+ if(row.draft||row.prerelease)return null;const next=version(row.tag_name);if(next.prerelease.length||compareVersion(next.text,current)<=0)return null;
+ const v=next.text,name=`HoYoMod-${v}-Windows-x64.zip`,asset=row.assets?.find(a=>a.name===name),expected=`https://github.com/${REPO}/releases/download/${row.tag_name}/${name}`;
  if(!asset||asset.browser_download_url!==expected||!/^sha256:[a-f0-9]{64}$/i.test(asset.digest||'')||!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>2*1024**3)throw Error('GitHub 发布缺少有效的 Windows 更新包或 SHA256 校验信息。');
  return {version:v,name,url:expected,digest:asset.digest.toLowerCase(),size:asset.size,notes:String(row.body||'').slice(0,16000),publishedAt:row.published_at||'',releaseUrl:`https://github.com/${REPO}/releases/tag/${row.tag_name}`};
 }
