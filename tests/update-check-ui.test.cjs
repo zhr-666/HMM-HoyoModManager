@@ -38,11 +38,11 @@ test('检查结果通过专用通道推给界面，界面据此点亮红点',()=
   assert.ok(app.includes('function openUpdateSummary'),'缺少结果窗口入口');
 });
 
-test('点「检查更新」先看有没有没看过的结果，没有才去做后台检查',()=>{
+test('点「检查更新」立即打开窗口，由窗口按钮开始后台检查',()=>{
   const app=read('src/ui/app.js');
   const handler=/function checkUpdatesButton\(\)\{([^}]*)\}/.exec(app);
   assert.ok(handler,'缺少 checkUpdatesButton');
-  assert.ok(handler[1].includes('openUpdateSummary'),'有未查看结果时应直接打开结果窗口');
-  assert.ok(handler[1].includes('startUpdateCheck'),'没有结果时才发起后台检查');
+  assert.ok(handler[1].includes('openUpdateSummary'),'点击后应直接打开结果窗口');
+  assert.ok(app.includes("$('.update-start',dialog).onclick=startUpdateCheck"),'窗口中的开始检查按钮应启动检查');
   assert.ok(app.includes("call('checkUpdates',{},{foreground:false,silent:true})"),'后台检查不应阻塞界面');
 });

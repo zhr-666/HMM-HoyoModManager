@@ -100,7 +100,8 @@ test('通知系统整体在浏览器顶层：不被对话框、遮罩或背景�
   const app=read('src/ui/app.js');
   assert.match(app,/function syncNotificationLayer\(\)/,'缺少顶层显隐的同步函数');
   assert.match(app,/center\.showPopover\(\)/,'有通知时要打开顶层');
-  assert.match(app,/center\.hidePopover\(\)/,'最后一项通知结束后要关闭顶层');
+  assert.match(app,/window\.syncNotificationLayer=syncNotificationLayer/,'对话框重挂载后要能恢复顶层');
+  assert.doesNotMatch(app,/center\.hidePopover\(\)/,'通知按钮应始终停在可点击的顶层');
   // 顶层容器自己不能有模糊：通知与面板必须始终清晰。
   const reset=/\.notification-center\[popover\]\{([^}]*)\}/.exec(read('src/ui/style.css'));
   assert.ok(reset,'缺少 popover 默认样式重置');

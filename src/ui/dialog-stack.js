@@ -29,6 +29,7 @@ class DialogStack {
   const layer={dialog,suspended,onBack};this.layers.push(layer);
   const back=document.createElement('button');back.type='button';back.className='button secondary dialog-back';back.innerHTML='<svg class="icon" aria-hidden="true"><use href="#i-back"/></svg> 返回';back.onclick=()=>onBack?onBack():this.back(dialog);
   dialog.querySelector('.dialog-head').prepend(back);
+  if(id==='modal')dialog.querySelector('.dialog-close').onclick=()=>this.back(dialog);
   dialog.oncancel=e=>{e.preventDefault();onBack?onBack():this.back(dialog);};
   dialog.onsubmit=e=>{e.preventDefault();onBack?onBack():this.back(dialog);};
   dialog.showModal();moveNotificationCenter(dialog);return dialog;

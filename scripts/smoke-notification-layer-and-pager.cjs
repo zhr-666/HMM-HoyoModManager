@@ -99,6 +99,9 @@ async function main(){
   // 模组详情打开时，通知中心仍能展开和收起；关闭详情后也保持正常。
   await evaluate(`document.querySelectorAll('.notification-popup').forEach(el=>el.remove());syncNotificationLayer();window.originalDetailCall=api.call;api.call=async(action,p)=>action==='detail'?{id:p.id,name:'通知交互回归',images:[],files:[]}:window.originalDetailCall(action,p);openDetail({id:1,name:'通知交互回归'})`);
   await waitFor(`document.querySelector('#modal').open && document.querySelector('#modal-title').textContent==='通知交互回归'`,'模组详情');
+  await evaluate('setBusy(true)');
+  assert.equal(await evaluate('document.querySelector("#notification-button").disabled'),false,'忙碌时通知按钮仍可点击');
+  assert.equal(await evaluate('document.querySelector("#modal .dialog-close").disabled'),false,'忙碌时右上角关闭按钮仍可点击');
   await evaluate(`showNotificationPopup({text:'详情期间收到新通知'})`);
   const buttonPoint=await evaluate(`(()=>{const r=document.querySelector('#notification-button').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
   const clickNotification=async()=>{
@@ -109,7 +112,11 @@ async function main(){
   await waitFor(`!document.querySelector('#notification-panel').hidden`,'详情打开时通知中心可操作');
   await clickNotification();
   await waitFor(`document.querySelector('#notification-panel').hidden`,'详情打开时通知中心可收起');
-  await evaluate(`document.querySelector('#modal .dialog-back').click();api.call=window.originalDetailCall;delete window.originalDetailCall`);
+  const closePoint=await evaluate(`(()=>{const r=document.querySelector('#modal .dialog-close').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  await client.send('Input.dispatchMouseEvent',{type:'mousePressed',x:closePoint.x,y:closePoint.y,button:'left',clickCount:1});
+  await client.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:closePoint.x,y:closePoint.y,button:'left',clickCount:1});
+  await waitFor('!document.querySelector("#modal").open','忙碌期间右上角关闭弹窗');
+  await evaluate('setBusy(false);api.call=window.originalDetailCall;delete window.originalDetailCall');
   await clickNotification();
   await waitFor(`!document.querySelector('#notification-panel').hidden`,'关闭详情后通知中心恢复');
   await evaluate(`closeNotificationPanel()`);
@@ -136,12 +143,12 @@ async function main(){
   assert.equal(identical.withPopover,identical.without,'带与不带 popover 的位置必须逐像素一致：'+JSON.stringify(identical));
   console.log('  带/不带 popover 的按钮位置：'+identical.withPopover);
 
-  // ——— 需求 5②：通知中心收起后离开顶层，不再挡住页面点击 ———
+  // 通知按钮始终留在顶层；透明区域仍需让页面正常点击。
   await evaluate('closeNotificationPanel()');
   await waitFor('document.querySelector("#notification-panel").hidden','面板收起');
   await waitFor(`document.querySelectorAll('.notification-popup').length===0`,'提示卡清空',12000);
-  await waitFor('document.querySelector("#notification-center").matches(":popover-open")===false','通知中心离开顶层');
-  console.log('✓ 通知全部收完后通知中心离开顶层，不阻挡页面点击');
+  assert.equal(await evaluate('document.querySelector("#notification-center").matches(":popover-open")'),true,'通知按钮始终可点击');
+  console.log('✓ 通知全部收完后按钮仍可点击，透明区域不阻挡页面点击');
 
   // ——— 需求 3：翻页后回到页面最上方 ———
   // 这里没有可用的 GameBanana 连接，工坊会停在「加载失败」；但翻页本身（上一页 / 下一页 →

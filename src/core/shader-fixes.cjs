@@ -2,6 +2,8 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const {constants}=require('node:fs');
 const {randomUUID}=require('node:crypto');
+const {createHash}=require('node:crypto');
+const {createReadStream}=require('node:fs');
 
 // Scan without following links, and keep ShaderFixes out of the mod's ini check.
 async function scan(folder){
@@ -54,6 +56,54 @@ async function history(lib){
     return rows;
   }catch(error){if(error.code==='ENOENT')return [];throw error;}
 }
+async function digest(file){
+  const hash=createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest('hex');
+}
+function ownedPath(batch,row){
+  if(typeof batch.target!=='string'||!path.isAbsolute(batch.target)||typeof row.file!=='string')throw Error('ShaderFixes 历史路径无效。');
+  const parts=row.file.split('/');for(const part of parts)validateName(part);
+  const destination=path.join(batch.target,...parts),relative=path.relative(batch.target,destination);
+  if(!relative||relative.startsWith('..'+path.sep)||path.isAbsolute(relative)||row.destination&&path.normalize(row.destination)!==destination)throw Error('ShaderFixes 历史路径无效。');
+  return destination;
+}
+async function inspectPath(file){
+  const root=path.parse(file).root,parts=path.relative(root,file).split(path.sep);let current=root;
+  for(const [index,part] of parts.entries()){
+    current=path.join(current,part);const stat=await statOrNull(current);
+    if(!stat)return null;
+    if(stat.isSymbolicLink())throw Error('ShaderFixes 目标路径包含链接，已停止清理。');
+    if(index<parts.length-1&&!stat.isDirectory())throw Error('ShaderFixes 目标父路径不是文件夹，已停止清理。');
+    if(index===parts.length-1&&!stat.isFile())throw Error('ShaderFixes 目标不是普通文件，已停止清理。');
+  }
+  return fs.lstat(file);
+}
+async function cleanup(lib,id){
+  const rows=await history(lib),batch=rows.find(row=>row.id===id);
+  if(!batch)throw Error('找不到 ShaderFixes 历史记录。');
+  if(batch.files.some(row=>row.status==='written'&&!/^[0-9a-f]{64}$/.test(row.sha256||'')))throw Error('旧记录没有文件校验值，只能删除历史，不能自动删除文件。');
+  const summary={deleted:0,changed:0,missing:0,skipped:0,failed:0,changedFiles:[],missingFiles:[]};
+  for(const row of batch.files){
+    if(row.status!=='written'||row.cleanupStatus==='deleted'){summary.skipped++;continue;}
+    const file=ownedPath(batch,row),stat=await inspectPath(file);
+    if(!stat){row.cleanupStatus='missing';summary.missing++;summary.missingFiles.push(row.file);}
+    else if(await digest(file)!==row.sha256){row.cleanupStatus='changed';summary.changed++;summary.changedFiles.push(row.file);}
+    else{
+      const latest=await inspectPath(file);
+      if(!latest||latest.size!==stat.size||latest.mtimeMs!==stat.mtimeMs||latest.ino!==stat.ino){row.cleanupStatus='changed';summary.changed++;summary.changedFiles.push(row.file);}
+      else try{await fs.unlink(file);row.cleanupStatus='deleted';summary.deleted++;}
+      catch(error){row.cleanupStatus='failed';row.cleanupError=error.message;summary.failed++;}
+    }
+    await lib._atomicJson(historyFile(lib),rows);
+  }
+  return summary;
+}
+async function removeHistory(lib,id){
+  const rows=await history(lib),index=rows.findIndex(row=>row.id===id);
+  if(index<0)throw Error('找不到 ShaderFixes 历史记录。');
+  const batch=rows[index];
+  if(batch.files.some(row=>row.status==='pending'||row.status==='written'&&row.sha256&&!['deleted','missing'].includes(row.cleanupStatus)))throw Error('仍有本次添加或待核对的文件，请先清理或保留记录。');
+  rows.splice(index,1);await lib._atomicJson(historyFile(lib),rows);
+}
 
 async function install(lib,files,metadata,sourceRoot){
   if(!files.length)return;
@@ -78,7 +128,7 @@ async function install(lib,files,metadata,sourceRoot){
   // Intent is persisted BEFORE each write. A crash leaves a visible pending row,
   // never an unrecorded shared file. Retry preserves every existing destination.
   for(const file of files){
-    const row={file:file.relative,status:'pending'};batch.files.push(row);
+    const row={file:file.relative,status:'pending',sha256:await digest(file.source)};batch.files.push(row);
     await save();
     try{
       const parts=file.relative.split('/');let parent=target,blocked=false;
@@ -108,4 +158,4 @@ async function install(lib,files,metadata,sourceRoot){
     await save();
   }
 }
-module.exports={scan,install,history};
+module.exports={scan,install,history,cleanup,removeHistory};

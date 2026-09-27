@@ -4,6 +4,7 @@ const path=require('node:path');
 const {NotificationCenter}=require('./core/notification-center.cjs');
 const {DownloadBatchReporter}=require('./core/download-summary.cjs');
 const {downloadQueueTask,isActive}=require('./core/download-progress.cjs');
+const {newestFirst}=require('./core/download-order.cjs');
 const {pathToFileURL}=require('node:url');
 const {Workspaces}=require('./core/workspaces.cjs');
 const {GAMES,getGame}=require('./core/games.cjs');
@@ -26,10 +27,13 @@ const {cachePreview,cacheCategoryIcons,resolvePreview}=require('./core/preview-c
 const {findFileUpdate}=require('./core/updates.cjs');
 const {summarizeUpdateCheck,summarizeFromLibrary}=require('./core/update-summary.cjs');
 const {extract}=require('./core/archive.cjs');
+const {readClipboardImage}=require('./core/clipboard-preview.cjs');
+const {DiagnosticLog}=require('./core/diagnostic-log.cjs');
 protocol.registerSchemesAsPrivileged([{scheme:'hoyo',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
 // 米哈游官方启动器的公开接口；按游戏标识取对应背景图地址。
 const OFFICIAL_BACKGROUND_API='https://hyp-api.mihoyo.com/hyp/hyp-connect/api/getAllGameBasicInfo?launcher_id=jGHBHlcOq1';
 const root=process.env.HOYOMOD_DATA || path.join(app.isPackaged?path.dirname(app.getPath('exe')):path.dirname(__dirname),'data');
+const diagnosticLog=new DiagnosticLog(root);
 const showWithoutFocus=process.platform==='darwin'&&!app.isPackaged;
 const backgrounds=new (require('./core/backgrounds.cjs').Backgrounds)(root);
 // 窗口与任务栏图标：优先用随包的多尺寸 build/icon.ico（打包后在 app.asar 里），
@@ -76,7 +80,7 @@ function send(channel,data){
   if(channel==='downloads')data={gameId:workspace().game.id,rows:data};
   win.webContents.send('hoyo:'+channel,data);
 }
-// 通知中心：完成 / 错误这类通知进入这里，历史持久化在 data 目录；右下角提示卡由界面在 8 秒后自动收起。
+// 通知中心：完成 / 错误这类通知只保留在本次运行；右下角提示卡由界面在 8 秒后自动收起。
 function pushNotification(text,{title,tone='info',target,details}={}){if(!text)return null;
   if(target!=='appUpdate'&&title!=='软件更新'&&workspaces.contexts.size){const game=workspace().game;title=game.name+(title?' · '+title:'');if(['downloads','modUpdates'].includes(target))target+=':'+game.id;}
   return notifications?.add({text,title,tone,target,details})||null;
@@ -85,14 +89,10 @@ function pushNotification(text,{title,tone='info',target,details}={}){if(!text)r
 function pushToast(text,{title,tone='info'}={}){if(!text)return null;return notifications?.toast({text,title,tone})||null;}
 // 错误统一走这里：第一行给用户看的是通俗中文，英文原文进 details（界面可「查看详细信息」）
 // 并追加到 data/logs/errors.log，方便排查（需求 25）。
-function logError(scope,message){
-  if(!message)return;
-  const line=`[${new Date().toISOString()}] ${scope}: ${message}\n`;
-  fs.mkdir(path.join(root,'logs'),{recursive:true}).then(()=>fs.appendFile(path.join(root,'logs','errors.log'),line)).catch(()=>{});
-}
+function logError(scope,error){if(error)diagnosticLog.append(scope,error).catch(()=>{});}
 function notifyError(error,{title='操作失败',fallback}={}){
   const described=describeError(error,fallback);
-  logError(title,described.details||described.message);
+  logError(title,error);
   return pushNotification(described.message,{title,tone:'error',details:described.details});
 }
 function flushNotifications(){if(win&&!win.isDestroyed()&&notifications)notifications.flushPending(entry=>win.webContents.send('hoyo:notification-popups',[entry]));}
@@ -178,7 +178,7 @@ function applyAppearance(){
 async function downloadRows(){
   const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key).filter(Boolean),...downloadQueue.hiddenKeysSnapshot()]);
   const legacy=(await installer.history()).filter(r=>!keys.has(r.key)).map(r=>({...r,id:'legacy:'+r.key,createdAt:r.changedAt||0,progress:{label:r.status==='installed'?'已安装':r.error||r.status,received:0,total:0}}));
-  workspace().legacyDownloads=legacy;return [...rows,...legacy];
+  workspace().legacyDownloads=legacy;return newestFirst([...rows,...legacy]);
 }
 async function dependencyReminder(detail,active=false,mods=lib.snapshot().mods){
  if(!detail.requirements?.length&&detail.requirementsKnown!==false)return true;
@@ -260,7 +260,7 @@ async function checkUpdates(automatic=false){
       }catch(e){
         if(e?.cancelled)throw e;
         const described=describeError(e);
-        logError('检查更新',described.details||described.message);
+        logError('检查更新',e);
         result.failures.push({id:mod.id,name:mod.name,error:described.message});
         await lib.updateMetadata(mod.id,{updateStatus:{status:'error',reason:described.message,checkedAt:Date.now()}});
       }
@@ -277,7 +277,7 @@ async function checkUpdates(automatic=false){
   }catch(e){
     const described=describeError(e);
     tasks.finish(taskId,e?.cancelled?{status:'cancelled',message:'已取消检查更新。'}:{status:'failed',message:described.message,detail:described.details});
-    if(e?.cancelled)return result;
+    if(e?.cancelled)return {...result,cancelled:true};
     throw e;
   }finally{
     setTaskCancel(taskId,null);
@@ -334,16 +334,20 @@ const actions={
     notifications.add({text,title:typeof p.title==='string'?p.title.slice(0,80):'',tone:p.tone==='error'?'error':'info',target:typeof p.target==='string'?p.target:''});
     return notifications.snapshot();
   },
+  reportRendererError:p=>{if(typeof p?.message!=='string'||!p.message.trim())return {};logError('界面 · '+String(p.scope||'运行错误').slice(0,80),String(p.stack||p.message).slice(0,16000));return {};},
   readNotifications:()=>notifications.markAllRead(),
   clearNotifications:()=>notifications.clear(),
   removeNotification:p=>notifications.remove(String(p?.id||'')),
   libraryStats:()=>lib.statistics(),
-  previewHash:p=>exclusive(async()=>{const result=await withProgress(progress=>lib.previewHash(p.oldHash,p.newHash,progress),{label:'正在查找 Hash'});tasks.finish(TASK.hashReplace,{status:'success',message:`找到 ${result.count} 处匹配`});const token=require('node:crypto').randomUUID();workspace().hashPreview={token,result,at:Date.now()};return {...result,token};}),
-  applyHash:p=>exclusive(async()=>{if(!workspace().hashPreview||p.token!==workspace().hashPreview.token||Date.now()-workspace().hashPreview.at>15*60*1000)throw Error('预览已失效，请重新查找。');const expected=workspace().hashPreview.result;workspace().hashPreview=null;const result=await withProgress(progress=>lib.applyHash(expected,progress),{label:'正在替换 Hash'});tasks.finish(TASK.hashReplace,{status:'success',message:`已替换 ${result.count} 处`});return result;}),
+  previewHash:p=>exclusive(async()=>{const result=await withProgress(progress=>lib.previewHash(p.oldHash,p.newHash,p.modIds,progress),{label:'正在查找文本'});tasks.finish(TASK.hashReplace,{status:'success',message:`找到 ${result.count} 处匹配`});const token=require('node:crypto').randomUUID();workspace().hashPreview={token,result,at:Date.now()};return {...result,token};}),
+  applyHash:p=>exclusive(async()=>{if(!workspace().hashPreview||p.token!==workspace().hashPreview.token||Date.now()-workspace().hashPreview.at>15*60*1000)throw Error('预览已失效，请重新查找。');const expected=workspace().hashPreview.result;workspace().hashPreview=null;const result=await withProgress(progress=>lib.applyHash(expected,progress),{label:'正在替换文本'});tasks.finish(TASK.hashReplace,{status:'success',message:`已替换 ${result.count} 处`});return result;}),
   rollbackHash:p=>exclusive(async()=>{const result=await withProgress(progress=>lib.rollbackHash(p.id,progress),{label:'正在回溯替换'});tasks.finish(TASK.hashReplace,{status:'success',message:'已回溯到替换前'});return result;}),
   hashHistory:()=>lib.snapshot().hashBatches||[],
   shaderFixesHistory:()=>lib.shaderFixesHistory(),
+  cleanupShaderFixes:p=>exclusive(()=>lib.cleanupShaderFixes(String(p.id||''))),
+  removeShaderFixesHistory:p=>exclusive(()=>lib.removeShaderFixesHistory(String(p.id||''))),
   hotkeys:p=>exclusive(()=>lib.rescanHotkeys(p.id)),
+  openLogs:async()=>{await fs.mkdir(path.join(root,'logs'),{recursive:true});await diagnosticLog.pending;const error=await shell.openPath(path.join(root,'logs'));if(error)throw Error(error);return {};},
   categories:async()=>{
     const cache=path.join(workspace().root,'categories.json');
     try{const rows=await api.categories();await cacheCategoryIcons(workspace().root,rows,network.download);await fs.writeFile(cache,JSON.stringify(rows));return rows;}
@@ -416,7 +420,7 @@ const actions={
     for(const file of result.filePaths){const stat=await fs.stat(file);if(!stat.isFile()||stat.size>20*1024*1024)throw Error('请选择不超过 20 MB 的图片。');images.push(previewImageData(nativeImage.createFromBuffer(await fs.readFile(file))));}
     return {images};
   },
-  pastePreviewImage:()=>({images:[previewImageData(clipboard.readImage())]}),
+  pastePreviewImage:async()=>({images:[previewImageData(await readClipboardImage(clipboard,nativeImage))]}),
   enable:p=>exclusive(async()=>{const mod=lib.snapshot().mods.find(m=>m.id===p.id);if(!mod)throw Error('找不到模组');if(!await modDependencies(mod))return snapshot();return changed(()=>lib.enable(p.id));}),
   disable:p=>exclusive(()=>changed(()=>lib.disable(p.id))),
   disableAll:()=>exclusive(()=>changed(()=>lib.disableAll())),
@@ -527,7 +531,6 @@ const actions={
   },
   openDownloadFolder:async p=>{const error=await shell.openPath(installer.folder(p.key));if(error)throw new Error(error);},
   openSource:p=>shell.openExternal('https://gamebanana.com/mods/'+id(p.id)),
-  openGameBananaDownload:p=>shell.openExternal('https://gamebanana.com/dl/'+id(p.id)),
   openData:async()=>{const error=await shell.openPath(root);if(error)throw new Error(error);}
 };
 // 下载只挂一张队列任务卡：当前文件进度与整个队列进度都在同一张卡上，不拆成两个任务。
@@ -593,7 +596,7 @@ async function startWorkspace(context){
     if(!context.downloadQueueInitialized){await downloadQueue.init();context.downloadQueueInitialized=true;}
     await downloadQueue.change(()=>{for(const row of downloadQueue.rows){if(row.payload?.kind==='component'&&['queued','downloading','installing'].includes(row.status)){row.status='cancelled';row.message='已停止管理 XXMI 组件，请直接选择启用目录。';row.canCancel=false;}const mod=lib.snapshot().mods.find(m=>m.downloadQueueId===row.id);if(mod&&row.status==='failed'){row.status='installed';row.modId=mod.id;row.message='已从安装记录恢复完成状态。';row.error='';}}});
     downloadReporter.arm();downloadQueue.start();context.previewTask=cacheExistingPreviews().catch(()=>{});
-    if(lib.effectiveSettings().autoBackground===true)exclusive(updateOfficialBackground).catch(error=>logError('自动更新背景',error.message));
+    if(lib.effectiveSettings().autoBackground===true)exclusive(updateOfficialBackground).catch(error=>logError('自动更新背景',error));
     context.started=true;
   }).finally(()=>{context.starting=null});
   return context.starting;
@@ -615,7 +618,7 @@ if(lock)app.whenReady().then(async()=>{
   context.api=new GameBanana(network.json,context.game.id);
   context.downloadReporter=new DownloadBatchReporter(summary=>pushNotification(summary.text,{title:'下载',tone:summary.tone,target:summary.target}));
   context.installer=new InstallService(context.root,{lib:context.lib,api:context.api,previewRoot:context.root,download:network.download,extract,progress:v=>downloadQueue?.progress(v),validate:()=>requireMods(lib.snapshot().settings),refresh:async()=>{},confirmEnable:(mod,detail,retry)=>operationContext.run({...retry,action:retry?.action||'enable',payload:{...(retry?.payload||{id:mod.id}),gameId:workspace().game.id}},async()=>dependencyReminder(detail,true,await enableState(mod)))});
-  context.downloadQueue=new DownloadQueue(context.root,{validate:async p=>{if(p.kind==='component')throw Error('已停止管理 XXMI 组件，请直接选择启用目录。');await requireMods(lib.snapshot().settings);},onChange:()=>{const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key),...downloadQueue.hiddenKeysSnapshot()]);send('downloads',[...rows,...workspace().legacyDownloads.filter(r=>!keys.has(r.key))]);reportDownloadBatch(rows);syncDownloadTasks(rows);},run:async(row,progress,{signal}={})=>{
+  context.downloadQueue=new DownloadQueue(context.root,{validate:async p=>{if(p.kind==='component')throw Error('已停止管理 XXMI 组件，请直接选择启用目录。');await requireMods(lib.snapshot().settings);},onChange:()=>{const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key),...downloadQueue.hiddenKeysSnapshot()]);send('downloads',newestFirst([...rows,...workspace().legacyDownloads.filter(r=>!keys.has(r.key))]));reportDownloadBatch(rows);syncDownloadTasks(rows);},run:async(row,progress,{signal}={})=>{
     const p=row.payload;
     // 进度由 syncDownloadTasks 汇总到唯一那张队列任务卡上；这里只负责真正干活。
     try{
@@ -627,7 +630,7 @@ if(lock)app.whenReady().then(async()=>{
       })();
       return result;
     }catch(error){
-      if(!error?.cancelled&&!signal?.aborted){const described=describeError(error);logError('下载模组',described.details||described.message);}
+      if(!error?.cancelled&&!signal?.aborted)logError('下载模组',error);
       throw error;
     }finally{send('state',snapshot());}
   }});
@@ -659,7 +662,7 @@ if(lock)app.whenReady().then(async()=>{
   programTabs=new (require('./core/program-tabs.cjs').ProgramTabs)({host:programHost,validate:validateExternalProgram,onChange:value=>send('programTabs',value),onError:error=>notifyError(error,{title:'程序窗口'})});
   let programTickPending=false,programError='';
   programTimer=setInterval(()=>{if(programTickPending||!programTabs.sessions.size)return;programTickPending=true;programTabs.tick().then(()=>{programError='';}).catch(error=>{if(programError!==error.message){programError=error.message;notifyError(error,{title:'程序窗口'});}}).finally(()=>{programTickPending=false;});},1000);programTimer.unref();
-  win.on('resize',()=>{if(programTabs.sessions.size)programTabs.resize(40).catch(error=>logError('程序窗口尺寸',error.message));});
+  win.on('resize',()=>{if(programTabs.sessions.size)programTabs.resize(40).catch(error=>logError('程序窗口尺寸',error));});
   win.on('close',event=>{
     if(programExitAllowed||(!programTabs.hasWork&&!externalLaunches.size))return;
     event.preventDefault();if(programClosing)return;programClosing=true;
@@ -670,7 +673,11 @@ if(lock)app.whenReady().then(async()=>{
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',(event,url)=>{if(url!=='hoyo://app/index.html')event.preventDefault();});
   win.on('closed',()=>{dependencyPrompts.cancelAll();hotkeyMonitor?.stop().catch(()=>{});hotkeyOverlay?.dispose().catch(()=>{});hotkeyOcr?.close().catch(()=>{});});
-  win.webContents.on('render-process-gone',()=>dependencyPrompts.cancelAll());
+  win.webContents.on('render-process-gone',(_event,details)=>{dependencyPrompts.cancelAll();logError('界面进程退出',JSON.stringify(details));});
+  win.webContents.on('console-message',details=>{if(details.level==='error')logError('界面控制台',`${details.message} (${details.sourceId}:${details.lineNumber})`);});
+  win.webContents.on('preload-error',(_event,preloadPath,error)=>logError('预加载脚本 · '+path.basename(preloadPath),error));
+  win.webContents.on('did-fail-load',(_event,code,description,url,isMainFrame)=>{if(isMainFrame)logError('界面加载失败',`${code} ${description} ${url}`);});
+  win.on('unresponsive',()=>logError('窗口无响应',Error('窗口无响应')));
   win.webContents.on('did-start-loading',()=>dependencyPrompts.cancelAll());
   ipcMain.handle('hoyo:call',async(event,action,payload)=>{
     try{
@@ -681,7 +688,7 @@ if(lock)app.whenReady().then(async()=>{
     }catch(e){
       // 给界面的是通俗中文；英文原文写进日志，需要时可在通知里看详细信息。
       const described=describeError(e);
-      if(described.details)logError(action,described.details);
+      logError('操作 · '+action,e);
       return {ok:false,error:described.message,details:described.details};
     }
   });
@@ -701,9 +708,9 @@ if(lock)app.whenReady().then(async()=>{
   setTimeout(()=>{if(lib.snapshot().settings.autoCheckAppUpdates&&!updateHandoff)appUpdater.check({automatic:true}).catch(()=>{});},8000).unref();
   const periodic=()=>{for(const context of workspaces.contexts.values())if(context.started)workspaces.run(context,()=>{if(!workspace().busy&&lib.snapshot().settings.autoCheckUpdates&&lib.snapshot().mods.some(m=>m.sourceId))exclusive(()=>checkUpdates(true)).catch(e=>notifyError(e,{title:'检查更新'}));});};
   setTimeout(periodic,20000).unref();updateTimer=setInterval(periodic,6*60*60*1000);updateTimer.unref();
-}).catch(e=>{dialog.showErrorBox('HMM 无法启动','请将便携版放在可写入的文件夹。\n'+e.message);app.quit();});
-process.on('uncaughtException',e=>notify('程序发生未预期的错误：'+describeError(e).message,'error'));
-process.on('unhandledRejection',reason=>notify('后台任务失败：'+describeError(reason).message,'error'));
+}).catch(e=>{logError('启动失败',e);dialog.showErrorBox('HMM 无法启动','请将便携版放在可写入的文件夹。\n'+e.message);app.quit();});
+process.on('uncaughtException',e=>{logError('主进程未捕获异常',e);notify('程序发生未预期的错误：'+describeError(e).message,'error')});
+process.on('unhandledRejection',reason=>{logError('主进程 Promise 拒绝',reason);notify('后台任务失败：'+describeError(reason).message,'error')});
 app.on('second-instance',()=>{if(win){if(showWithoutFocus){win.showInactive();return;}if(win.isMinimized())win.restore();win.focus();}});
 app.on('before-quit',event=>{if((programTabs?.hasWork||externalLaunches.size)&&!programExitAllowed){event.preventDefault();win?.close();}});
 app.on('will-quit',()=>{clearInterval(programTimer);hotkeyMonitor?.stop().catch(()=>{});hotkeyOcr?.close().catch(()=>{});hotkeyOverlay?.dispose().catch(()=>{});programHost?.dispose();});

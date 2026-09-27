@@ -19,7 +19,7 @@ data/
 │       ├── download-queue.json      下载队列（按需生成）
 │       ├── downloads/              下载包与临时解压内容（按需生成）
 │       └── deployment-journal.json  启用操作期间的恢复记录
-├── notifications.json              共用通知历史，消息标注来源游戏
+├── notifications.json              旧版通知历史；新版启动时删除，不再创建
 ├── components/                     旧版本可能遗留的组件文件
 ├── session/                        共用 Chromium 会话；启动时清理界面缓存
 └── logs/errors.log                 共用错误日志

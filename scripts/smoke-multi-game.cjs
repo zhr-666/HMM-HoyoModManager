@@ -122,7 +122,8 @@ async function main(){
   await fs.access(path.join(data,'games','wuwa','state.json'));
   await evaluate(`document.querySelector('#context-menu .mod-context-action').click()`);
   await waitFor(`!!document.querySelector('#remove-game-confirm')`,'移除游戏提示');
-  await evaluate(`document.querySelector('#modal button[value="cancel"]').click()`);
+  await evaluate(`document.querySelector('#modal .dialog-close').click()`);
+  assert.equal(await evaluate(`document.querySelector('#modal').open`),false,'关闭移除确认应取消操作');
   await fs.access(path.join(data,'games','wuwa','state.json'));
   await evaluate(`document.querySelector('#game-list [data-game="wuwa"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));document.querySelector('#context-menu .mod-context-action').click();document.querySelector('#remove-game-confirm').click()`);
   await waitFor(`!addedGameIds.includes('wuwa')&&busyCount===0`,'确认移除鸣潮').catch(async error=>{console.error(await evaluate(`({addedGameIds,busyCount,modalOpen:document.querySelector('#modal')?.open,notices:notificationEntries.slice(0,3)})`));throw error;});

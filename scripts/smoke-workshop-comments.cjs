@@ -46,7 +46,7 @@ if(process.type==='renderer'){
       await win.webContents.executeJavaScript("openDetail({id:55,name:'Test Mod'})");
       await wait(win,"document.querySelector('.detail-comments')!==null");
       const initial=await win.webContents.executeJavaScript("({folded:!document.querySelector('.detail-comments').open,footer:document.querySelector('#modal-actions').textContent.trim(),labels:[...document.querySelectorAll('.file-direct-download')].map(x=>x.textContent.trim()),count:document.querySelector('.file-option small').textContent.includes('321 次下载')})");
-      assert.deepEqual(initial,{folded:true,footer:'下载并安装',labels:['下载此处'],count:true});
+      assert.deepEqual(initial,{folded:true,footer:'下载并安装',labels:[],count:true});
       await win.webContents.executeJavaScript("document.querySelector('.detail-gallery-main').click()");
       assert.equal(await win.webContents.executeJavaScript("!document.querySelector('#image-modal').open && !document.querySelector('.detail-gallery').classList.contains('nsfw-detail')"),true);
       await win.webContents.executeJavaScript("document.querySelectorAll('.detail-gallery-thumbs button')[1].click()");
@@ -70,11 +70,10 @@ if(process.type==='renderer'){
         await new Promise(resolve=>setTimeout(resolve,250));
         await require('node:fs/promises').writeFile(process.env.HMM_SMOKE_SCREENSHOT,(await win.webContents.capturePage()).toPNG());
       }
-      await win.webContents.executeJavaScript("document.querySelector('.file-direct-download').click()");
       const calls=await win.webContents.executeJavaScript("hoyo.call('testCalls')");
       assert.ok(calls.some(row=>row.action==='comments'&&row.p.id===55&&row.p.page===1));
       assert.ok(calls.some(row=>row.action==='replies'&&row.p.id==='1'&&row.p.page===1));
-      assert.ok(calls.some(row=>row.action==='openGameBananaDownload'&&row.p.id==='88'));
+      assert.equal(calls.some(row=>row.action==='openGameBananaDownload'),false);
       assert.equal(await win.webContents.executeJavaScript("document.querySelector('#modal .dialog-back')!==null && document.querySelector('#modal .dialog-head .icon-button')!==null"),true);
       await win.webContents.executeJavaScript("document.querySelector('#modal .dialog-back').click();confirmRemove({id:'local',name:'Local Mod'})");
       assert.equal(await win.webContents.executeJavaScript("document.querySelector('#modal-actions').textContent.trim()"),'确认移除');

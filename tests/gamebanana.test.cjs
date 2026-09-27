@@ -114,15 +114,56 @@ test('list marks warned or rated records NSFW and exposes rating labels', async 
 });
 
 test('NSFW-only mode filters the current upstream page without claiming a false total',async()=>{
-  const api=new GameBanana(async()=>({_aMetadata:{_nRecordCount:99,_bIsComplete:false},_aRecords:[
+  const api=new GameBanana(async url=>({_aMetadata:{_nRecordCount:2,_bIsComplete:true},_aRecords:new URL(url).searchParams.get('_nPage')==='1'?[
     {_idRow:1,_sModelName:'Mod',_sName:'Safe',_aGame:{_idRow:8552},_sInitialVisibility:'show'},
     {_idRow:2,_sModelName:'Mod',_sName:'Rated',_aGame:{_idRow:8552},_bHasContentRatings:true,_sInitialVisibility:'hide'}
-  ]}));
+  ]:[]}));
   const result=await api.list({sfw:false,nsfw:true});
   assert.deepEqual(result.records.map(row=>row.id),[2]);
   assert.equal(result.total,null);
-  assert.equal(result.hasMore,true);
+  assert.equal(result.hasMore,false);
   assert.equal(result.scanned,true);
+});
+
+test('NSFW pages contain 20 distinct matching mods until the final page',async()=>{
+ const calls=[];
+ const api=new GameBanana(async url=>{
+  const page=Number(new URL(url).searchParams.get('_nPage'));calls.push(page);
+  return {_aMetadata:{_nRecordCount:60,_nPerpage:20,_bIsComplete:page>=3},_aRecords:page>3?[]:Array.from({length:20},(_,i)=>({_idRow:(page-1)*20+i+1,_sModelName:'Mod',_aGame:{_idRow:8552},_nDownloadCount:1,_bHasContentRatings:i%2===0}))};
+ });
+ const first=await api.list({sfw:false,nsfw:true,page:1});
+ const second=await api.list({sfw:false,nsfw:true,page:2});
+ assert.equal(first.records.length,20);assert.equal(first.hasMore,true);
+ assert.equal(second.records.length,10);assert.equal(second.hasMore,false);
+ assert.equal(new Set([...first.records,...second.records].map(row=>row.id)).size,30);
+ assert.deepEqual(calls,[1,2,3,1,2,3]);
+});
+
+test('SFW-only pages also refill when upstream unrated records are warned',async()=>{
+ const api=new GameBanana(async url=>{
+  const page=Number(new URL(url).searchParams.get('_nPage'));
+  return {_aMetadata:{_nRecordCount:40,_nPerpage:20,_bIsComplete:page>=2},_aRecords:Array.from({length:20},(_,i)=>({_idRow:(page-1)*20+i+1,_sModelName:'Mod',_aGame:{_idRow:8552},_nDownloadCount:1,_sInitialVisibility:page===1&&i<5?'warn':'show'}))};
+ });
+ const first=await api.list({sfw:true,nsfw:false});
+ assert.equal(first.records.length,20);
+ assert.equal(first.records[0].id,6);
+ assert.equal(first.hasMore,true);
+});
+
+test('search finds an author regardless of case and fills a page from title results',async()=>{
+ const calls=[];
+ const api=new GameBanana(async url=>{
+  calls.push(url);
+  if(url.includes('/Core/Member/Identify'))return [42];
+  const p=new URL(url).searchParams;
+  if(p.has('_aFilters[Generic_Submitter]'))return {_aMetadata:{_nRecordCount:1,_bIsComplete:true},_aRecords:[{_idRow:1,_sModelName:'Mod',_sName:'Other title',_aSubmitter:{_sName:'Alice'},_aGame:{_idRow:8552},_nDownloadCount:1}]};
+  return {_aMetadata:{_nRecordCount:1,_bIsComplete:true},_aRecords:[{_idRow:2,_sModelName:'Mod',_sName:'ALICE costume',_aSubmitter:{_sName:'Bob'},_aGame:{_idRow:8552},_nDownloadCount:1}]};
+ });
+ const result=await api.list({query:'aLiCe'});
+ assert.deepEqual(result.records.map(row=>row.id),[1,2]);
+ assert.equal(new URL(calls[0]).searchParams.get('username'),'aLiCe');
+ assert.equal(calls.some(url=>new URL(url).searchParams.get('_aFilters[Generic_Submitter]')==='42'),true);
+ assert.equal(result.hasMore,false);
 });
 
 test('detail validates the game and exposes text, images and downloadable files', async () => {

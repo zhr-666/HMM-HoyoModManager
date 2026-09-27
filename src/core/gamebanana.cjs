@@ -176,6 +176,14 @@ class GameBanana {
   async list({category, page = 1, query = '', sort = 'uploaded', sfw = true, nsfw = true} = {}) {
     page = Math.max(1, Number.parseInt(page, 10) || 1);
     if (!sfw && !nsfw) return {records:[],total:0,page,hasMore:false,scanned:false};
+    query=String(query).trim();
+    let authorId=0;
+    if(query){
+      try{
+        const found=await this.json(`https://api.gamebanana.com/Core/Member/Identify?${new URLSearchParams({username:query,format:'json'})}`);
+        authorId=Number(Array.isArray(found)?found[0]:found)||0;
+      }catch{ /* Name search remains available if member lookup is down. */ }
+    }
     const params = new URLSearchParams({
       _nPage: String(page),
       _nPerpage: '20',
@@ -183,15 +191,43 @@ class GameBanana {
       _sSort: SORTS[sort] || SORTS.uploaded
     });
     if (category) params.set('_aFilters[Generic_Category]', String(category));
-    if (String(query).trim()) params.set('_aFilters[Generic_Name]', `contains,${String(query).trim()}`);
+    if (query) params.set('_aFilters[Generic_Name]', `contains,${query}`);
     if (sfw && !nsfw) params.set('_aFilters[Generic_ContentRatings]', '-');
+    const scanned = sfw!==nsfw || authorId>0;
+    if(scanned){
+      const records=[],seen=new Set(),needed=page*20+1;
+      const streams=authorId?[{type:'author',id:authorId},{type:'name'}]:[{type:'name'}];
+      for(const stream of streams){
+        let upstreamPage=1,complete=false;
+        while(!complete&&records.length<needed){
+          const next=new URLSearchParams(params);
+          next.set('_nPage',String(upstreamPage++));
+          if(stream.type==='author'){
+            next.delete('_aFilters[Generic_Name]');
+            next.set('_aFilters[Generic_Submitter]',String(stream.id));
+          }
+          const data=await this.json(`${API}/Mod/Index?${next}`);
+          const rows=data._aRecords||[];
+          for(const row of rows){
+            if(row._sModelName!=='Mod'||Number(row._aGame?._idRow)!==this.game.gameBananaId||seen.has(Number(row._idRow)))continue;
+            const record=baseRecord(row,this.game.id);
+            if((sfw||record.nsfw)&&(!sfw||nsfw||!record.nsfw)){
+              records.push(record);seen.add(record.id);
+            }
+          }
+          const meta=data._aMetadata||{},count=Number(meta._nRecordCount)||0,perpage=Number(meta._nPerpage)||20;
+          complete=meta._bIsComplete===true||rows.length===0||(meta._bIsComplete==null&&upstreamPage>1&&((upstreamPage-1)*perpage>=count||rows.length<perpage));
+        }
+      }
+      const selected=records.slice((page-1)*20,page*20);
+      await this.hydrateCounts(selected);
+      return {records:selected,total:null,page,hasMore:records.length>page*20,scanned:true};
+    }
     const data = await this.json(`${API}/Mod/Index?${params}`);
     let records = (data._aRecords || [])
       .filter(row => row._sModelName === 'Mod' && Number(row._aGame?._idRow) === this.game.gameBananaId)
       .map(row=>baseRecord(row,this.game.id));
-    const scanned = !sfw && nsfw;
-    if (scanned) records = records.filter(row => row.nsfw);
-    else if (sfw && !nsfw) records = records.filter(row => !row.nsfw);
+    if (sfw && !nsfw) records = records.filter(row => !row.nsfw);
     await this.hydrateCounts(records);
     const metadata = data._aMetadata || {};
     const count = Number(metadata._nRecordCount) || 0;

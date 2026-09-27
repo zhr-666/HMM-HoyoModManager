@@ -2,10 +2,12 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
 const {Library}=require('../src/core/library.cjs');
 const {replaceHash}=require('../src/core/hash-replace.cjs');
-test('exact case insensitive hash replacement preserves bytes and UTF16 encoding',()=>{
- const source='hash = AABBCCDD\r\n; aabbccdd\r\nother = 0xaabbccdd\r\nlong = 11aabbccdd\r\nname_aabbccdd = 1\r\n';
- const r=replaceHash(Buffer.from(source),'aabbccdd','11223344');assert.equal(r.count,3);assert.equal(r.buffer.toString(),source.replace('AABBCCDD','11223344').replace('; aabbccdd','; 11223344').replace('0xaabbccdd','0x11223344'));
- const utf16=Buffer.concat([Buffer.from([255,254]),Buffer.from('hash = aabbccdd\r\n','utf16le')]);const wide=replaceHash(utf16,'aabbccdd','11223344');assert.equal(wide.count,1);assert.deepEqual(wide.buffer.subarray(0,2),utf16.subarray(0,2));assert.equal(wide.buffer.subarray(2).toString('utf16le'),'hash = 11223344\r\n');
+test('literal case-sensitive replacement supports arbitrary text and preserves UTF16 encoding',()=>{
+ const source='name = Aabb\r\n; aabb\r\nlong = 11aabb\r\n';
+ const r=replaceHash(Buffer.from(source),'aabb','文字');assert.equal(r.count,2);assert.equal(r.buffer.toString(),source.replaceAll('aabb','文字'));
+ const utf16=Buffer.concat([Buffer.from([255,254]),Buffer.from('name = aabb\r\n','utf16le')]);const wide=replaceHash(utf16,'aabb','');assert.equal(wide.count,1);assert.deepEqual(wide.buffer.subarray(0,2),utf16.subarray(0,2));assert.equal(wide.buffer.subarray(2).toString('utf16le'),'name = \r\n');
+ assert.throws(()=>replaceHash(Buffer.from(source),'','x'),/查找/);
+ assert.equal(replaceHash(Buffer.from('a+b a+b'),'a+b','$&').buffer.toString(),'$& $&');
 });
 async function fixture(t){const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-hash-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));const lib=new Library(root);await lib.init();const source=path.join(root,'input');await fs.mkdir(source);await fs.writeFile(path.join(source,'mod.ini'),'[TextureOverride]\nhash = aabbccdd\n');const a=await lib.install(source,{name:'A',characterId:'1',characterName:'Amber'}),b=await lib.install(source,{name:'B',characterId:'2',characterName:'Mona'});return {root,lib,a,b};}
 test('preview, apply across inactive and active mods, persist and roll back sequential batches',async t=>{
@@ -36,4 +38,12 @@ test('batch operations report scan, backup and rollback progress',async t=>{
  const preview=await lib.previewHash('aabbccdd','11223344',report);assert.ok(events.some(e=>e.label.includes('扫描')&&e.total===2));
  const batch=await lib.applyHash(preview,report);assert.ok(events.some(e=>e.label.includes('备份')));
  await lib.rollbackHash(batch.id,report);assert.ok(events.some(e=>e.label.includes('回滚')));
+});
+test('preview and apply change only the selected mods',async t=>{
+ const {lib,a,b}=await fixture(t);
+ const preview=await lib.previewHash('aabbccdd','target',[a.id]);
+ assert.deepEqual(preview.files.map(file=>file.modId),[a.id]);
+ await lib.applyHash(preview);
+ assert.match(await fs.readFile(lib.snapshot().mods.find(mod=>mod.id===a.id).folder+'/mod.ini','utf8'),/target/);
+ assert.match(await fs.readFile(lib.snapshot().mods.find(mod=>mod.id===b.id).folder+'/mod.ini','utf8'),/aabbccdd/);
 });

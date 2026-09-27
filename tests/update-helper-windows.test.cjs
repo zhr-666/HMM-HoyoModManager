@@ -3,9 +3,9 @@ const fs=process.versions.electron?require('original-fs').promises:nodeFs;
 const electronExe=require('electron');
 const helperModule=path.resolve(__dirname,'../src/core/update-helper.cjs');
 const engineModule=path.resolve(__dirname,'../src/core/update-run.cjs');
-const waitFor=async(file,timeout=90000)=>{
+const waitFor=async(file,timeout=90000,expected)=>{
  const deadline=Date.now()+timeout;
- while(Date.now()<deadline){try{return await fs.readFile(file,'utf8');}catch(e){if(!['ENOENT','EBUSY','EPERM'].includes(e.code))throw e;}await new Promise(resolve=>setTimeout(resolve,200));}
+ while(Date.now()<deadline){try{const value=await fs.readFile(file,'utf8');if(expected===undefined||value===expected)return value;}catch(e){if(!['ENOENT','EBUSY','EPERM'].includes(e.code))throw e;}await new Promise(resolve=>setTimeout(resolve,200));}
  throw Error('Timed out waiting for '+path.basename(file));
 };
 // 最小 asar 封装：这里要的是「Electron 真能从 app.asar 启动」，不为测试引入新依赖。
@@ -95,7 +95,7 @@ test('the detached update engine survives a console-less parent and replaces the
  const running=launchParent(parent);
  try{
   try{
-   assert.equal(await waitFor(path.join(f.job,'status.txt')),'complete');
+   assert.equal(await waitFor(path.join(f.job,'status.txt'),90000,'complete'),'complete');
    assert.equal(Math.round((await fs.stat(path.join(f.appDir,'HoYoMod.exe'))).mtimeMs/1000),f.stamp,'the running executable was replaced by the staged one');
    assert.equal((await fs.readFile(path.join(f.appDir,'resources','app.asar'))).equals(f.newPackage),true);
    assert.equal((await fs.readFile(path.join(f.job,'backup','resources','app.asar'))).equals(f.oldPackage),true);

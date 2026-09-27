@@ -1,5 +1,4 @@
 const fs = require('node:fs/promises');
-const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const tones = new Set(['info', 'error']);
 
@@ -12,7 +11,7 @@ function normalizeText(value) {
 }
 
 // 通知中心只保留两种通道：
-// ① add()：完成 / 错误通知——进历史、计未读、落盘，并弹一张右下角卡片（界面 8 秒后自动关闭，也可以手动关）；
+// ① add()：完成 / 错误通知——只保留本次运行的消息、计未读，并弹一张右下角卡片；
 // ② toast()：3 秒即时通知——只弹一次给用户「按钮点成功了」的反馈，不进历史、不计未读、不落盘。
 class NotificationCenter {
   constructor(file, { onChange = () => {}, onPopup = () => {}, onToast = () => {}, limit = 200 } = {}) {
@@ -28,14 +27,8 @@ class NotificationCenter {
   }
 
   async init() {
-    try {
-      const saved = JSON.parse(await fs.readFile(this.file, 'utf8'));
-      const entries = Array.isArray(saved) ? saved : saved?.entries;
-      if (!Array.isArray(entries)) throw new Error('通知历史格式无效');
-      this.entries = entries.filter(entry => entry && typeof entry === 'object' && typeof entry.text === 'string').slice(0, this.limit);
-    } catch (e) {
-      if (e.code !== 'ENOENT') throw e;
-    }
+    // 清掉旧版留下的历史文件；当前运行不再写入通知内容。
+    await fs.rm(this.file,{force:true});
     this.ready = true;
     return this.snapshot();
   }
@@ -48,7 +41,7 @@ class NotificationCenter {
     return this.entries.filter(entry => !entry.read).length;
   }
 
-  // Adds one persistent message. Messages raised before the window is listening are queued and
+  // Adds one session message. Messages raised before the window is listening are queued and
   // replayed by flushPending(); nothing is ever popped twice, because the queue is drained once.
   add({ text, title, tone, target, details } = {}) {
     const message = normalizeText(text);
@@ -66,7 +59,6 @@ class NotificationCenter {
     if (this.ready) {
       this.onPopup(entry);
       this.onChange(this.unread());
-      this.persist().catch(() => {});
     } else {
       this.pending.push(entry);
     }
@@ -109,26 +101,14 @@ class NotificationCenter {
     return this.persist();
   }
 
-  // Waits for every queued write, so callers can rely on the history being on disk.
+  // Retained for callers that wait for notification state to settle.
   async flush() {
     await this.serial;
   }
 
-  // Writes are chained so that a write started by add() can never race an explicit
-  // markAllRead()/clear()/remove() call on the same temporary file.
   persist() {
-    const task = this.serial.then(() => this.write());
-    this.serial = task.catch(() => {});
-    return task;
-  }
-
-  async write() {
-    await fs.mkdir(path.dirname(this.file), { recursive: true });
-    const temp = this.file + '.tmp';
-    await fs.writeFile(temp, JSON.stringify({ entries: this.entries }, null, 2));
-    await fs.rename(temp, this.file);
     this.onChange(this.unread());
-    return this.snapshot();
+    return Promise.resolve(this.snapshot());
   }
 }
 
