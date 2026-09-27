@@ -1,5 +1,10 @@
 :root{color-scheme:dark;font-family:"Microsoft YaHei UI","Microsoft YaHei",sans-serif;--font-size:15px}
 *{box-sizing:border-box}
+*{scrollbar-width:auto;scrollbar-color:#b7b5ad rgba(22,29,36,.96)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:rgba(22,29,36,.96)}
+::-webkit-scrollbar-thumb{background:#b7b5ad;border:2px solid rgba(22,29,36,.96);border-radius:7px}
+::-webkit-scrollbar-button{display:none;width:0;height:0}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;color:#f8f5ee;font-size:var(--font-size)}
 button,input{font:inherit}
 [hidden]{display:none!important}

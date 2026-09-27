@@ -83,7 +83,7 @@
     <main>
       <header class="topbar">
         <div><h1 id="page-title">首页</h1></div>
-        <div class="top-actions"><button type="button" class="button secondary" id="workshop-menu-toggle" aria-controls="workshop-menu" aria-expanded="true" hidden>收起筛选菜单</button><button class="button secondary" id="open-library-button" hidden>安装库</button><button class="button secondary" id="open-mods-button" hidden>启用库</button></div>
+        <div class="top-actions"><button class="button secondary" id="open-library-button" hidden>安装库</button><button class="button secondary" id="open-mods-button" hidden>启用库</button></div>
       </header>
 
       <section id="page-home" class="page active launcher-page" data-testid="home-page">
@@ -112,7 +112,8 @@
 
       <section id="page-workshop" class="page" data-testid="workshop-page">
         <aside id="workshop-menu" class="workshop-menu" aria-label="模组工坊筛选菜单">
-          <div class="workshop-menu-intro"><strong>浏览工具</strong><p>搜索、筛选并选择模组分类</p></div>
+          <div class="workshop-menu-top"><button type="button" id="workshop-menu-toggle" aria-controls="workshop-menu" aria-expanded="true" aria-label="收起浏览工具" title="收起浏览工具"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></button></div>
+          <div id="workshop-menu-body" class="workshop-menu-body">
           <section class="workshop-menu-section" aria-labelledby="workshop-search-heading">
             <h2 id="workshop-search-heading">搜索</h2>
             <div class="toolbar"><label class="search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="search-input" type="search" placeholder="模组名称或作者" aria-label="搜索模组或作者"></label><button class="button primary" id="search-button">搜索模组</button></div>
@@ -128,9 +129,16 @@
             <div id="category-list" class="category-list" aria-label="模组分类"></div>
             <p id="category-empty" class="meta" hidden>当前层级没有匹配的分类。</p>
           </section>
-          <nav class="pager" aria-label="模组列表翻页"><button class="button secondary" id="prev-page">上一页</button><span id="page-info">第 1 页</span><button class="button secondary" id="next-page">下一页</button></nav>
+          </div>
+          <div id="workshop-menu-status" class="workshop-menu-status" role="group" aria-label="当前浏览设置" hidden>
+            <div class="workshop-status-item" data-workshop-status="search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><span>全部</span></div>
+            <div class="workshop-status-item" data-workshop-status="sort"><svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>排序</span></div>
+            <div class="workshop-status-item" data-workshop-status="content"><svg class="icon" aria-hidden="true"><use href="#i-check-check"/></svg><span>全部</span></div>
+            <div class="workshop-status-item" data-workshop-status="category"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg><span>全部</span></div>
+            <div class="workshop-status-item" data-workshop-status="page"><svg class="icon" aria-hidden="true"><use href="#i-grid"/></svg><span>第1页</span></div>
+          </div>
         </aside>
-        <div class="workshop-results" aria-label="模组列表"><div id="browse-grid" class="card-grid"></div><div id="browse-empty" class="empty" hidden></div></div>
+        <div class="workshop-results" aria-label="模组列表"><div id="browse-grid" class="card-grid"></div><div id="browse-empty" class="empty" hidden></div><nav class="pager" aria-label="模组列表翻页"><button class="button secondary" id="prev-page">上一页</button><span id="page-info">第 1 页</span><button class="button secondary" id="next-page">下一页</button></nav></div>
       </section>
 
       <section id="page-library" class="page" data-testid="library-page">

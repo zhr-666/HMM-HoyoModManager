@@ -663,19 +663,34 @@ function flyIcon(src,{from,to},done=()=>{}){
   activeFlight=abort;
 }
 const WORKSHOP_MENU_KEY='hoyomod:workshop-menu-collapsed';
+function renderWorkshopMenuStatus(){
+  const sort=$('#sort-select'),categoryName=categoryPath(taxonomy,category).at(-1)?.name||'全部分类';
+  const sfw=$('#sfw-filter').checked,nsfw=$('#nsfw-filter').checked;
+  const values={search:query?`搜索：${query}`:'未搜索',sort:`排序：${sort.selectedOptions[0]?.textContent||'下载最多'}`,content:`内容：${sfw&&nsfw?'SFW 与 NSFW':sfw?'仅 SFW':nsfw?'仅 NSFW':'未选择'}`,category:`分类：${categoryName}`,page:`第 ${page} 页`};
+  const short={search:query||'全部',sort:sort.selectedOptions[0]?.textContent||'排序',content:sfw&&nsfw?'全部':sfw?'SFW':nsfw?'NSFW':'未选',category:categoryName,page:`第${page}页`};
+  for(const item of $$('#workshop-menu-status .workshop-status-item')){
+    const key=item.dataset.workshopStatus,label=String(short[key]||'');
+    $('span',item).textContent=label.length>4?label.slice(0,4)+'…':label;
+    item.title=values[key];item.setAttribute('aria-label',values[key]);
+  }
+}
 function setWorkshopMenuCollapsed(collapsed){
-  const page=$('#page-workshop'),menu=$('#workshop-menu'),button=$('#workshop-menu-toggle');
+  const page=$('#page-workshop'),button=$('#workshop-menu-toggle');
   page.classList.toggle('menu-collapsed',collapsed);
-  menu.hidden=collapsed;
+  document.documentElement.dataset.workshopMenu=collapsed?'collapsed':'expanded';
+  $('#workshop-menu-body').hidden=collapsed;
+  $('#workshop-menu-status').hidden=!collapsed;
   button.setAttribute('aria-expanded',String(!collapsed));
-  button.textContent=collapsed?'展开筛选菜单':'收起筛选菜单';
+  button.setAttribute('aria-label',collapsed?'展开浏览工具':'收起浏览工具');
+  button.title=collapsed?'展开浏览工具':'收起浏览工具';
+  renderWorkshopMenuStatus();
   try{localStorage.setItem(WORKSHOP_MENU_KEY,collapsed?'1':'0')}catch{}
 }
 function showPage(name){
   if(!titles[name])return;
   if(name!=='settings')setMode(launcherPages.has(name)?'launcher':'workspace');
   document.documentElement.dataset.page=name;
-  $('#open-mods-button').hidden=name!=='library';$('#open-library-button').hidden=name!=='library';$('#replace-hash').hidden=name!=='library';$('#shaderfixes-history').hidden=name!=='library';$('#workshop-menu-toggle').hidden=name!=='workshop';
+  $('#open-mods-button').hidden=name!=='library';$('#open-library-button').hidden=name!=='library';$('#replace-hash').hidden=name!=='library';$('#shaderfixes-history').hidden=name!=='library';
   hideContextMenu();pageScroll[activePage]=window.scrollY;activePage=name;
   $$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===name));
   $$('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+name));
@@ -713,10 +728,11 @@ function renderCategories(){
   for(const c of visible){
     const button=document.createElement('button');button.className='category';button.title=[...path.map(n=>n.name),c.name].join(' / ');
     const icon=safeImage(c.icon);
-    button.innerHTML=`${icon?`<img src="${esc(icon)}" alt="">`:''}<span class="category-label"><span class="category-line"><span class="category-name">${esc(c.name)}</span><span class="category-count">${counts.get(String(c.id))||0}</span></span><small>${c.children?.length?c.children.length+' 个子分类':'浏览模组'}</small></span><span class="category-arrow" aria-hidden="true">›</span>`;
+    button.innerHTML=`${icon?`<img src="${esc(icon)}" alt="">`:''}<span class="category-label"><span class="category-name">${esc(c.name)}</span><small>${c.children?.length?c.children.length+' 个子分类':'浏览模组'}</small></span><span class="category-count">${counts.get(String(c.id))||0}</span><span class="category-arrow" aria-hidden="true">›</span>`;
     button.onclick=()=>selectCategory(c.id);box.append(button);
   }
   $('#category-empty').hidden=!children.length||visible.length>0;
+  renderWorkshopMenuStatus();
 }
 async function loadCategories(){
   const requestedGame=activeGame;
@@ -783,6 +799,7 @@ async function pickImportCategory(subtitle){
 function skeletonMarkup(count=8){return Array.from({length:count},()=>'<div class="mod-skeleton" aria-label="正在加载模组"><div class="skeleton-preview"><span class="skeleton-spinner"></span></div><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>').join('');}
 async function browse(){
   const revision=++browseRevision,grid=$('#browse-grid'),empty=$('#browse-empty');
+  renderWorkshopMenuStatus();
   // 换页时立刻回到页面最上方，不保留上一页的滚动位置（需求 3）。放在换骨架之前：这时旧内容
   // 还在，滚到顶不会因为高度突然变化而跳一下；加载成功、失败或取消都停在这个位置。
   // 切换分类、搜索与筛选同样走这里；不在工坊时不动滚动位置。
@@ -791,7 +808,7 @@ async function browse(){
   try{
     const r=await api.call('browse',{category,page,query,sort:$('#sort-select').value,sfw:$('#sfw-filter').checked,nsfw:$('#nsfw-filter').checked});
     if(revision!==browseRevision)return;
-    total=Number(r.total)||0;page=Number(r.page)||page;
+    total=Number(r.total)||0;page=Number(r.page)||page;renderWorkshopMenuStatus();
     grid.replaceChildren(...(r.records||[]).map(workshopCard));
     empty.hidden=grid.children.length>0;
     if(!empty.hidden)empty.innerHTML='<strong>没有找到模组</strong>试试其他分类或搜索词。';
