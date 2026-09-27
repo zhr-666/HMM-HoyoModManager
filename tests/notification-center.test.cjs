@@ -86,8 +86,8 @@ test('keeps toasts out of the unread count',async()=>{
   assert.deepEqual(center.snapshot().entries.map(e=>e.text),['全部任务下载完成']);
 });
 
-// 完成通知默认保留在历史；界面上的手动叉号另行调用 remove() 删除。
-test('keeps a completion notice in history until it is explicitly removed',async()=>{
+// 完成通知保留在本次运行的消息列表，直到手动删除或退出。
+test('keeps a completion notice in this session after its popup closes',async()=>{
   const {file}=await workspace();
   const popups=[];
   const center=new NotificationCenter(file,{onPopup:entry=>popups.push(entry)});
@@ -96,12 +96,11 @@ test('keeps a completion notice in history until it is explicitly removed',async
   assert.equal(popups.length,1,'完成通知要有一张右下角卡片');
   assert.equal(popups[0].target,'downloads');
   await center.flush();
-  const reopened=new NotificationCenter(file);await reopened.init();
-  assert.deepEqual(reopened.snapshot().entries.map(e=>e.text),['全部任务下载完成'],'自动收起后历史里仍然找得到');
+  assert.deepEqual(center.snapshot().entries.map(e=>e.text),['全部任务下载完成'],'自动收起后本次运行里仍然找得到');
 });
 
 // 三种通知状态之外没有第四条路：add() 不再接受 ephemeral，瞬时反馈只能走 toast()。
-test('add() always persists, even when the caller passes ephemeral',async()=>{
+test('add() always enters this session even when the caller passes ephemeral',async()=>{
   const {file}=await workspace();
   const center=new NotificationCenter(file);
   await center.init();
@@ -153,7 +152,7 @@ test('does not pop queued messages again on the next start',async()=>{
   assert.deepEqual(popups,[]);
 });
 
-test('keeps the history across restarts',async()=>{
+test('starts each run with no messages from the previous run',async()=>{
   const {file}=await workspace();
   const first=new NotificationCenter(file);
   await first.init();
@@ -161,13 +160,11 @@ test('keeps the history across restarts',async()=>{
   await first.flush();
   const second=new NotificationCenter(file);
   const snapshot=await second.init();
-  assert.equal(snapshot.entries.length,1);
-  assert.equal(snapshot.entries[0].text,'持久化的消息');
-  assert.equal(snapshot.entries[0].read,false);
-  assert.equal(snapshot.unread,1);
+  assert.deepEqual(snapshot,{entries:[],unread:0});
+  await assert.rejects(()=>fs.readFile(file,'utf8'),/ENOENT/);
 });
 
-test('marks every message read and survives a restart',async()=>{
+test('marks every message read during the current run',async()=>{
   const {file}=await workspace();
   const center=new NotificationCenter(file);
   await center.init();
@@ -175,8 +172,7 @@ test('marks every message read and survives a restart',async()=>{
   const snapshot=await center.markAllRead();
   assert.equal(snapshot.unread,0);
   assert.ok(snapshot.entries.every(entry=>entry.read));
-  const reopened=new NotificationCenter(file);await reopened.init();
-  assert.equal(reopened.unread(),0);
+  assert.ok(center.snapshot().entries.every(entry=>entry.read));
 });
 
 test('removes one message and clears the whole history',async()=>{
@@ -217,7 +213,7 @@ test('normalizes unknown tones and optional metadata',async()=>{
   assert.equal(center.snapshot().entries[0].title,undefined);
 });
 
-test('keeps concurrent writes consistent on disk',async()=>{
+test('keeps rapid message updates consistent in memory',async()=>{
   const {file}=await workspace();
   const center=new NotificationCenter(file);
   await center.init();
@@ -225,16 +221,17 @@ test('keeps concurrent writes consistent on disk',async()=>{
   const snapshot=await center.markAllRead();
   await center.flush();
   assert.equal(snapshot.entries.length,20);
-  const persisted=JSON.parse(await fs.readFile(file,'utf8'));
-  assert.equal(persisted.entries.length,20);
-  assert.ok(persisted.entries.every(entry=>entry.read));
+  assert.equal(center.snapshot().entries.length,20);
+  assert.ok(center.snapshot().entries.every(entry=>entry.read));
+  await assert.rejects(()=>fs.readFile(file,'utf8'),/ENOENT/);
 });
 
-test('rejects a corrupt history file instead of silently dropping it',async()=>{
+test('removes old history files even if their contents are corrupt',async()=>{
   const {file}=await workspace();
   await fs.writeFile(file,'{"entries":"oops"}');
   const center=new NotificationCenter(file);
-  await assert.rejects(()=>center.init(),/通知历史格式无效/);
+  assert.deepEqual(await center.init(),{entries:[],unread:0});
+  await assert.rejects(()=>fs.readFile(file,'utf8'),/ENOENT/);
 });
 
 test('starts with an empty history when no file exists yet',async()=>{
@@ -254,6 +251,5 @@ test('keeps a details line apart from the user-facing message',async()=>{
  assert.equal(entry.text,'找不到指定文件，请检查文件是否被移动或删除。');
  assert.match(entry.details,/ENOENT/);
  await center.flush();
- const reopened=new NotificationCenter(file);await reopened.init();
- assert.equal(reopened.snapshot().entries[0].details,entry.details,'详细信息要跟着历史落盘');
+ assert.equal(center.snapshot().entries[0].details,entry.details);
 });

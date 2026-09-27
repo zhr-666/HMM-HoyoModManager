@@ -46,7 +46,7 @@ function connect(url){
   });
 }
 
-// 启动一次真实程序并接上调试端口；两次启动共用同一个 data 目录，用来验证历史持久化。
+// 启动一次真实程序并接上调试端口；两次启动共用同一个 data 目录，验证消息不跨启动保留。
 async function launch(data){
   const env={...process.env,HOYOMOD_DATA:data};
   delete env.ELECTRON_RUN_AS_NODE;
@@ -82,7 +82,7 @@ async function stop(){
 
 async function main(){
   const data=dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-notifications-'));
-  const saved=async()=>JSON.parse(await fs.readFile(path.join(data,'notifications.json'),'utf8'));
+  const noSavedHistory=async()=>assert.rejects(()=>fs.readFile(path.join(data,'notifications.json'),'utf8'),/ENOENT/);
   // 固定设置与分类缓存：离线启动、不自动检查更新，尽量避免与断言无关的消息。
   const store=await new (require('../src/core/workspaces.cjs'))(data).init();
   await store.select('genshin');
@@ -154,7 +154,7 @@ async function main(){
   assert.equal((await historyTexts()).includes(instant),false,'即时通知不进历史');
   await waitFor(`document.querySelector('#notification-toast').hidden===true`,'即时通知 3 秒后自动消失',8000);
   await sleep(300);
-  assert.equal((await saved()).entries.some(entry=>entry.text===instant),false,'即时通知不落盘');
+  await noSavedHistory();
   console.log('✓ 3 秒即时通知自动消失、不进通知中心、不落盘');
 
   // 2. 完成通知：右下角弹出、8 秒后自动关闭，消息留在通知中心（关闭前也可以手动关掉）
@@ -175,20 +175,20 @@ async function main(){
   await sleep(3500);
   assert.ok((await popupTexts()).some(text=>text.includes(done)),'提示卡 8 秒内仍然留在右下角，用户可以看清并手动关掉');
   await sleep(300);
-  assert.ok((await saved()).entries.some(entry=>entry.text===done),'完成通知应写入 data/notifications.json');
-  // 8 秒后自动关闭（需求 2）：卡片自己消失，消息仍在通知中心与磁盘历史里。
+  await noSavedHistory();
+  // 8 秒后自动关闭：卡片自己消失，消息仍在本次运行的通知中心。
   await waitFor(`document.querySelectorAll('.notification-popup').length===0`,'提示卡 8 秒后自动关闭',9000);
   assert.ok((await historyTexts()).includes(done),'自动关闭不删除消息');
   assert.equal(await evaluate('document.querySelector("#notification-center").matches(":popover-open")'),true,'通知按钮应一直保持可点击');
   console.log('✓ 完成通知右下角弹出、8 秒后自动关闭，消息与未读角标保留');
 
-  // 2b. 手动关闭右下角提示卡：只删除这条消息，自动收起的历史仍然保留。
+  // 2b. 手动关闭右下角提示卡：只删除这条消息，自动收起的会话消息仍然保留。
   const manuallyClosed='用户手动关闭的提示';
   await evaluate(`window.hoyo.call("addNotification",{text:${quoted(manuallyClosed)}})`);
   await waitFor(`[...document.querySelectorAll('.notification-popup')].some(box=>box.textContent.includes(${quoted(manuallyClosed)}))`,'待手动关闭的提示卡');
   await evaluate(`[...document.querySelectorAll('.notification-popup')].find(box=>box.textContent.includes(${quoted(manuallyClosed)})).querySelector('.notification-popup-close').click()`);
   await waitFor(`window.hoyo.call("notifications").then(s=>!s.entries.some(entry=>entry.text===${quoted(manuallyClosed)}))`,'手动关闭后从历史删除');
-  assert.equal((await saved()).entries.some(entry=>entry.text===manuallyClosed),false,'手动关闭后不留在磁盘历史');
+  await noSavedHistory();
   assert.ok((await historyTexts()).includes(done),'自动收起的消息仍在历史里');
   assert.equal(await evaluate('window.hoyo.call("notifications").then(s=>s.unread)'),1,'只减少手动关闭消息的未读数');
   console.log('✓ 手动关闭提示卡会删除该条历史，自动收起仍保留');
@@ -218,7 +218,7 @@ async function main(){
   assert.equal(await itemError(failed),true,'错误消息应有错误样式');
   console.log('✓ 主进程消息更新角标，展开后可见且带错误样式');
 
-  // 6. 单条删除只删这一条，并同步磁盘
+  // 6. 单条删除只删这一条
   const failedId=await evaluate('window.hoyo.call("notifications").then(s=>s.entries.find(e=>e.text.includes("后台任务失败")).id)');
   await evaluate(`document.querySelector('.notification-item[data-notification-id="${failedId}"] .notification-item-remove').click()`);
   await waitFor(`window.hoyo.call("notifications").then(s=>!s.entries.some(e=>e.text.includes("后台任务失败")))`,'单条删除');
@@ -226,16 +226,16 @@ async function main(){
   assert.equal(await itemCount(failed),0,'列表里也应移除');
   assert.ok((await historyTexts()).includes(done),'其他消息不应被删除');
   await sleep(300);
-  assert.ok(!(await saved()).entries.some(entry=>entry.text===failed),'磁盘历史同步删除');
-  console.log('✓ 单条删除与磁盘同步');
+  await noSavedHistory();
+  console.log('✓ 单条删除');
 
-  // 7a. 「×」只关掉面板：消息与磁盘历史都不动
+  // 7a. 「×」只关掉面板：本次运行的消息不变
   await evaluate('document.querySelector("#notification-close").click()');
   await waitFor('document.querySelector("#notification-panel").hidden','× 收起面板');
   await evaluate('document.querySelector("#notification-button").click()');
   await waitFor('!document.querySelector("#notification-panel").hidden','重新展开面板');
   assert.ok((await historyTexts()).includes(done),'× 不删除消息');
-  assert.ok((await saved()).entries.length>0,'× 不清空磁盘历史');
+  await noSavedHistory();
   console.log('✓ × 只关闭面板，不删除消息');
 
   // 7b. 清空消息（双勾）：清空所有消息，列表回到空状态
@@ -245,10 +245,10 @@ async function main(){
   assert.equal(await evaluate('document.querySelector("#notification-empty").hidden'),false);
   assert.equal(await evaluate('document.querySelector("#notification-badge").hidden'),true,'清空后角标不显示');
   await sleep(300);
-  assert.deepEqual((await saved()).entries,[],'磁盘历史应清空');
+  await noSavedHistory();
   console.log('✓ 清空消息回到空状态');
 
-  // 8. 重启：历史与未读状态保留，且不重复弹出提示卡
+  // 8. 重启：旧消息和未读状态消失，且不重复弹出提示卡
   const reminder='模组更新提醒：钟离模组有更新';
   await evaluate(`window.hoyo.call("addNotification",{text:${quoted(reminder)}})`);
   await waitFor(`window.hoyo.call("notifications").then(s=>s.entries.some(e=>e.text.includes("模组更新提醒")))`,'写入一条未读');
@@ -256,11 +256,10 @@ async function main(){
   client.close();
   await stop();
   session=await launch(data);({client,evaluate,waitFor}=session);
-  await waitItem(reminder);
-  assert.equal(await itemUnread(reminder),'true','重启后未读状态保留');
-  await waitFor('document.querySelector("#notification-badge").hidden===false','重启后角标');
+  await waitFor(`window.hoyo.call("notifications").then(s=>!s.entries.some(e=>e.text===${quoted(reminder)}))`,'重启后上次运行的消息消失');
   assert.equal(await popupTexts().then(list=>list.some(text=>text.includes('模组更新提醒'))),false,'重启不应重复弹出旧消息的提示卡');
-  console.log('✓ 重启后历史与未读状态保留，且不重复弹提示卡');
+  await noSavedHistory();
+  console.log('✓ 重启后上次运行的消息消失，且不重复弹提示卡');
 
   client.close();
   await fs.rm(data,{recursive:true,force:true});dataDir=null;

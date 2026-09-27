@@ -4,6 +4,7 @@ const path=require('node:path');
 const {NotificationCenter}=require('./core/notification-center.cjs');
 const {DownloadBatchReporter}=require('./core/download-summary.cjs');
 const {downloadQueueTask,isActive}=require('./core/download-progress.cjs');
+const {newestFirst}=require('./core/download-order.cjs');
 const {pathToFileURL}=require('node:url');
 const {Workspaces}=require('./core/workspaces.cjs');
 const {GAMES,getGame}=require('./core/games.cjs');
@@ -79,7 +80,7 @@ function send(channel,data){
   if(channel==='downloads')data={gameId:workspace().game.id,rows:data};
   win.webContents.send('hoyo:'+channel,data);
 }
-// 通知中心：完成 / 错误这类通知进入这里，历史持久化在 data 目录；右下角提示卡由界面在 8 秒后自动收起。
+// 通知中心：完成 / 错误这类通知只保留在本次运行；右下角提示卡由界面在 8 秒后自动收起。
 function pushNotification(text,{title,tone='info',target,details}={}){if(!text)return null;
   if(target!=='appUpdate'&&title!=='软件更新'&&workspaces.contexts.size){const game=workspace().game;title=game.name+(title?' · '+title:'');if(['downloads','modUpdates'].includes(target))target+=':'+game.id;}
   return notifications?.add({text,title,tone,target,details})||null;
@@ -177,7 +178,7 @@ function applyAppearance(){
 async function downloadRows(){
   const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key).filter(Boolean),...downloadQueue.hiddenKeysSnapshot()]);
   const legacy=(await installer.history()).filter(r=>!keys.has(r.key)).map(r=>({...r,id:'legacy:'+r.key,createdAt:r.changedAt||0,progress:{label:r.status==='installed'?'已安装':r.error||r.status,received:0,total:0}}));
-  workspace().legacyDownloads=legacy;return [...rows,...legacy];
+  workspace().legacyDownloads=legacy;return newestFirst([...rows,...legacy]);
 }
 async function dependencyReminder(detail,active=false,mods=lib.snapshot().mods){
  if(!detail.requirements?.length&&detail.requirementsKnown!==false)return true;
@@ -617,7 +618,7 @@ if(lock)app.whenReady().then(async()=>{
   context.api=new GameBanana(network.json,context.game.id);
   context.downloadReporter=new DownloadBatchReporter(summary=>pushNotification(summary.text,{title:'下载',tone:summary.tone,target:summary.target}));
   context.installer=new InstallService(context.root,{lib:context.lib,api:context.api,previewRoot:context.root,download:network.download,extract,progress:v=>downloadQueue?.progress(v),validate:()=>requireMods(lib.snapshot().settings),refresh:async()=>{},confirmEnable:(mod,detail,retry)=>operationContext.run({...retry,action:retry?.action||'enable',payload:{...(retry?.payload||{id:mod.id}),gameId:workspace().game.id}},async()=>dependencyReminder(detail,true,await enableState(mod)))});
-  context.downloadQueue=new DownloadQueue(context.root,{validate:async p=>{if(p.kind==='component')throw Error('已停止管理 XXMI 组件，请直接选择启用目录。');await requireMods(lib.snapshot().settings);},onChange:()=>{const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key),...downloadQueue.hiddenKeysSnapshot()]);send('downloads',[...rows,...workspace().legacyDownloads.filter(r=>!keys.has(r.key))]);reportDownloadBatch(rows);syncDownloadTasks(rows);},run:async(row,progress,{signal}={})=>{
+  context.downloadQueue=new DownloadQueue(context.root,{validate:async p=>{if(p.kind==='component')throw Error('已停止管理 XXMI 组件，请直接选择启用目录。');await requireMods(lib.snapshot().settings);},onChange:()=>{const rows=downloadQueue.snapshot(),keys=new Set([...rows.map(r=>r.key),...downloadQueue.hiddenKeysSnapshot()]);send('downloads',newestFirst([...rows,...workspace().legacyDownloads.filter(r=>!keys.has(r.key))]));reportDownloadBatch(rows);syncDownloadTasks(rows);},run:async(row,progress,{signal}={})=>{
     const p=row.payload;
     // 进度由 syncDownloadTasks 汇总到唯一那张队列任务卡上；这里只负责真正干活。
     try{

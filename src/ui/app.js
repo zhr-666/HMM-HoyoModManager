@@ -84,7 +84,7 @@ const ICON=name=>`<svg class="icon" aria-hidden="true"><use href="#i-${name}"/><
 
 // 通知与弹窗所用的线性图标：错误用警示，其余用消息。
 const notificationIcon={error:ICON('warning'),message:ICON('message')};const notificationGlyph=entry=>notificationIcon[entry.tone]||notificationIcon.message;
-// 通知中心里的完成 / 错误通知：历史由主进程持久化，条目有 target 才可点击。
+// 通知中心里的完成 / 错误通知：消息由主进程在本次运行中保留，条目有 target 才可点击。
 // 3 秒即时通知（#notification-toast）与进行中的任务都不写入这里。
 let notificationEntries=[],notificationUnread=0;
 // 完成 / 错误提示卡的自动关闭时间：弹出 8 秒后自己关掉，用户也可以提前点「×」。
