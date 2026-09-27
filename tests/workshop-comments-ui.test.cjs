@@ -14,10 +14,10 @@ test('dialog footers only contain decisions; back and close remain in the header
   assert.doesNotMatch(html,/id="dependency-cancel"/);
 });
 
-test('mod detail offers expandable comments before files and a direct download action per file',()=>{
+test('mod detail offers expandable comments before files without per-file direct download',()=>{
   const detail=app.match(/async function openDetail\(record\)\{[\s\S]*?\n\}/)?.[0];
   assert.ok(detail);
   assert.ok(detail.indexOf('查看评论')<detail.indexOf('file-picker'));
-  assert.match(detail,/file-direct-download/);
+  assert.doesNotMatch(detail,/file-direct-download|下载此处/);
   assert.match(detail,/call\('comments'/);
 });

@@ -99,3 +99,45 @@ test('ShaderFixes supports the validated bundled importer and isolates game hist
   assert.equal((await store.get('genshin').lib.shaderFixesHistory()).length,1);
   assert.deepEqual(await store.get('zzz').lib.shaderFixesHistory(),[]);
 });
+test('ShaderFixes cleanup removes only unchanged owned files and reports modified and missing files',async t=>{
+  const {lib,source,add,target,meta}=await fixture(t);
+  await add('safe.txt','safe');await add('changed.txt','original');await add('gone.txt','gone');
+  await lib.install(source,meta);
+  const batch=(await lib.shaderFixesHistory())[0];
+  assert.ok(batch.files.filter(row=>row.status==='written').every(row=>/^[0-9a-f]{64}$/.test(row.sha256)));
+  await fs.writeFile(path.join(target,'changed.txt'),'user edit');await fs.rm(path.join(target,'gone.txt'));
+  const result=await lib.cleanupShaderFixes(batch.id);
+  assert.equal(result.deleted,1);assert.equal(result.changed,1);assert.equal(result.missing,1);
+  assert.deepEqual(result.missingFiles,['gone.txt']);
+  assert.deepEqual(result.changedFiles,['changed.txt']);
+  await assert.rejects(fs.access(path.join(target,'safe.txt')));
+  assert.equal(await fs.readFile(path.join(target,'changed.txt'),'utf8'),'user edit');
+  const after=(await lib.shaderFixesHistory())[0];
+  assert.deepEqual(Object.fromEntries(after.files.map(row=>[row.file,row.cleanupStatus])),{'safe.txt':'deleted','changed.txt':'changed','gone.txt':'missing'});
+});
+test('ShaderFixes cleanup never follows a replaced file or parent link',async t=>{
+  const {root,lib,source,add,target,meta}=await fixture(t);
+  await add('nested/fix.txt','owned');await lib.install(source,meta);
+  const batch=(await lib.shaderFixesHistory())[0],outside=path.join(root,'outside');
+  await fs.mkdir(outside);await fs.writeFile(path.join(outside,'fix.txt'),'personal');
+  await fs.rm(path.join(target,'nested'),{recursive:true});
+  await fs.symlink(outside,path.join(target,'nested'),process.platform==='win32'?'junction':'dir');
+  await assert.rejects(lib.cleanupShaderFixes(batch.id),/链接/);
+  assert.equal(await fs.readFile(path.join(outside,'fix.txt'),'utf8'),'personal');
+});
+test('legacy and skipped ShaderFixes records can be removed without deleting files',async t=>{
+  const {lib,source,add,target,meta}=await fixture(t);
+  await add('owned.txt');await lib.install(source,meta);
+  const rows=await lib.shaderFixesHistory(),legacy={...rows[0],id:'legacy',files:rows[0].files.map(({sha256,...file})=>file)};
+  await lib._atomicJson(path.join(lib.root,'shader-fixes-history.json'),[legacy,...rows]);
+  await assert.rejects(lib.cleanupShaderFixes('legacy'),/旧记录/);
+  await lib.removeShaderFixesHistory('legacy');
+  await assert.rejects(lib.removeShaderFixesHistory(rows[0].id),/请先清理/);
+  await lib.install(source,meta);
+  const skipped=(await lib.shaderFixesHistory()).find(batch=>batch.files.every(file=>file.status==='skipped'));
+  assert.ok(skipped);
+  await lib.removeShaderFixesHistory(skipped.id);
+  await fs.access(path.join(target,'owned.txt'));
+  assert.equal((await lib.shaderFixesHistory()).some(row=>row.id==='legacy'),false);
+  assert.equal((await lib.shaderFixesHistory()).some(row=>row.id===skipped.id),false);
+});

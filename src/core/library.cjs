@@ -211,7 +211,11 @@ class Library {
     });
   }
 
-  previewHash(oldHash,newHash,progress) {return this._enqueue(()=>hashReplace.preview(this,oldHash,newHash,progress));}
+  previewHash(oldHash,newHash,modIdsOrProgress,progress) {
+    const modIds=Array.isArray(modIdsOrProgress)?modIdsOrProgress:undefined;
+    const report=typeof modIdsOrProgress==='function'?modIdsOrProgress:progress;
+    return this._enqueue(()=>hashReplace.preview(this,oldHash,newHash,report,modIds));
+  }
   applyHash(preview,progress) {return this._enqueue(()=>hashReplace.apply(this,preview,progress));}
   rollbackHash(id,progress) {return this._enqueue(()=>hashReplace.rollback(this,id,progress));}
 
@@ -317,6 +321,8 @@ class Library {
   }
 
   shaderFixesHistory(){return shaderFixes.history(this);}
+  cleanupShaderFixes(id){return this._enqueue(()=>shaderFixes.cleanup(this,id));}
+  removeShaderFixesHistory(id){return this._enqueue(()=>shaderFixes.removeHistory(this,id));}
 
   install(folder, metadata) {
     return this._enqueue(async () => {

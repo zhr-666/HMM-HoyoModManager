@@ -105,27 +105,30 @@ async function main(){
   assert.equal(await evaluate('(()=>{const button=document.querySelector("#shaderfixes-history");return !!button&&!button.hidden&&button.getClientRects().length>0})()'),true,'我的模组应显示 ShaderFixes 历史按钮');
   if(process.env.HOYO_SCREENSHOT_DIR){const shot=await client.send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(process.env.HOYO_SCREENSHOT_DIR,'shaderfixes-entry.png'),Buffer.from(shot.data,'base64'));}
   await evaluate('document.querySelector("#shaderfixes-history").click()');
-  assert.equal(await evaluate('document.querySelector(\'[data-hash-tab="shaderfixes"]\').getAttribute("aria-selected")'), 'true');
-  await waitFor('document.querySelector("#hash-panel").textContent.includes("还没有 ShaderFixes")','空 ShaderFixes 历史');
+  assert.equal(await evaluate('document.querySelector("#modal-title").textContent'),'ShaderFixes 历史');
+  assert.equal(await evaluate('document.querySelector("#hash-tabs")'),null,'ShaderFixes 使用独立窗口');
+  await waitFor('document.querySelector("#shaderfixes-panel").textContent.includes("还没有")','空 ShaderFixes 历史');
   const shaderTarget=path.join(dataDir,'GIMI','ShaderFixes');
-  await fs.writeFile(path.join(data,'games','genshin','shader-fixes-history.json'),JSON.stringify([{id:'test',name:'<img src=x onerror=alert(1)>',sourceFileName:'mod.zip',createdAt:Date.now(),target:shaderTarget,files:[{file:'nested/fix.txt',status:'written'},{file:'old.txt',status:'skipped',reason:'已存在同名项'},{file:'interrupted.txt',status:'pending'}]}]));
-  await evaluate('document.querySelector(\'[data-hash-tab="records"]\').click();document.querySelector(\'[data-hash-tab="shaderfixes"]\').click()');
-  await waitFor('document.querySelector("#hash-panel").textContent.includes("nested/fix.txt")','ShaderFixes 文件历史');
-  const shaderText=await evaluate('document.querySelector("#hash-panel").textContent');
+  await fs.writeFile(path.join(data,'games','genshin','shader-fixes-history.json'),JSON.stringify([{id:'test',name:'<img src=x onerror=alert(1)>',sourceFileName:'mod.zip',createdAt:Date.now(),target:shaderTarget,files:[{file:'nested/fix.txt',status:'written',sha256:'a'.repeat(64)},{file:'old.txt',status:'skipped',sha256:'a'.repeat(64),reason:'已存在同名项'},{file:'interrupted.txt',status:'pending',sha256:'a'.repeat(64)}]}]));
+  await evaluate('closeModal();document.querySelector("#shaderfixes-history").click()');
+  await waitFor('document.querySelector("#shaderfixes-panel").textContent.includes("nested/fix.txt")','ShaderFixes 文件历史');
+  const shaderText=await evaluate('document.querySelector("#shaderfixes-panel").textContent');
   assert.match(shaderText,/已写入/);assert.match(shaderText,/已跳过/);assert.match(shaderText,/状态待核对/);assert.ok(shaderText.includes(shaderTarget));
-  assert.equal(await evaluate('document.querySelectorAll("#hash-panel img").length'),0);
-  await evaluate('document.querySelector(\'[data-hash-tab="shaderfixes"]\').click();document.querySelector(\'[data-hash-tab="apply"]\').click()');
+  assert.equal(await evaluate('document.querySelectorAll("#shaderfixes-panel img").length'),0);
+  await evaluate('closeModal();document.querySelector("#replace-hash").click()');
   await sleep(300);assert.equal(await evaluate('!!document.querySelector("#old-hash")'),true);
   await evaluate('closeModal()');
-  console.log('✓ ShaderFixes 真实 IPC、空历史、文件状态、路径、转义与标签切换');
+  console.log('✓ ShaderFixes 独立窗口、真实 IPC、文件状态、路径与转义');
 
   // 1. 我的模组：已登记的空文件夹显示为文件夹，有模组的显示数量
   await evaluate('showPage("library")');
   await waitFor('document.querySelectorAll("#library-folders .folder-card").length>0','库文件夹渲染');
-  assert.deepEqual(await cards('#library-folders .folder-card'),['Skins|1 个模组']);
-  await clickByText('#library-folders .folder-card','Skins');
-  assert.deepEqual(await cards('#library-folders .folder-card'),['Characters|1 个模组']);
-  await clickByText('#library-folders .folder-card','Characters');
+  const skinsName=(await cards('#library-folders .folder-card'))[0].split('|')[0];
+  assert.deepEqual(await cards('#library-folders .folder-card'),[`${skinsName}|1 个模组`]);
+  await clickByText('#library-folders .folder-card',skinsName);
+  const charactersName=(await cards('#library-folders .folder-card'))[0].split('|')[0];
+  assert.deepEqual(await cards('#library-folders .folder-card'),[`${charactersName}|1 个模组`]);
+  await clickByText('#library-folders .folder-card',charactersName);
   assert.deepEqual(await cards('#library-folders .folder-card'),['胡桃|空文件夹','钟离|1 个模组']);
   console.log('✓ 我的模组把登记的空文件夹显示为文件夹，下载的模组仍按分类归入');
 
@@ -141,11 +144,11 @@ async function main(){
   await waitFor('!!document.querySelector("#location-confirm")','分类选择弹窗');
   assert.equal(await evaluate('document.querySelector("#modal-title").textContent'),'选择分类');
   assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),true,'未选分类时不能导入');
-  await clickByText('#location-folders .folder-card','Skins');
+  await clickByText('#location-folders .folder-card',skinsName);
   assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),false,'大分类可以直接存放');
-  assert.equal(await evaluate('document.querySelector("#location-confirm").textContent'),'导入到「Skins」');
-  assert.match(await evaluate('document.querySelector("#location-selection").textContent'),/已选择：Skins/);
-  await clickByText('#location-folders .folder-card','Characters');
+  assert.equal(await evaluate('document.querySelector("#location-confirm").textContent'),`导入到「${skinsName}」`);
+  assert.ok((await evaluate('document.querySelector("#location-selection").textContent')).includes(`已选择：${skinsName}`));
+  await clickByText('#location-folders .folder-card',charactersName);
   assert.deepEqual(await cards('#location-folders .folder-card'),['胡桃|空文件夹','钟离|1 个模组','甘雨|可以存放模组']);
   assert.equal(await evaluate('document.querySelector("#location-confirm").disabled'),false,'子分类层也应可导入');
   await evaluate('(()=>{const input=document.querySelector("#location-search");input.value="钟";input.dispatchEvent(new Event("input"))})()');
@@ -154,11 +157,24 @@ async function main(){
   await evaluate('document.querySelector("#location-search").value="";document.querySelector("#location-search").dispatchEvent(new Event("input"))');
   await sleep(120);
   await clickByText('#location-folders .folder-card','甘雨');
-  assert.match(await evaluate('document.querySelector("#location-selection").textContent'),/已选择：Skins \/ Characters \/ 甘雨/);
+  assert.ok((await evaluate('document.querySelector("#location-selection").textContent')).includes(`已选择：${skinsName} / ${charactersName} / 甘雨`));
   assert.equal(await evaluate('document.querySelector("#location-confirm").textContent'),'导入到「甘雨」');
   await evaluate('document.querySelector("#location-confirm").click()');
   await waitFor('!document.querySelector("#modal").open','弹窗关闭');
   assert.equal(await evaluate('window.__picked&&window.__picked.id'),'900003','确认后应把选中的分类交回导入流程');
+  await evaluate('(()=>{window.__pickedBack="pending";pickImportCategory("返回测试").then(node=>window.__pickedBack=node);return "started"})()');
+  await waitFor('!!document.querySelector("#location-confirm")','返回测试分类弹窗');
+  await clickByText('#location-folders .folder-card',skinsName);
+  await clickByText('#location-folders .folder-card',charactersName);
+  await clickByText('#location-folders .folder-card','甘雨');
+  for(const name of [charactersName,skinsName,'选择大分类']){
+    await evaluate('document.querySelector("#modal .dialog-back").click()');
+    assert.equal(await evaluate('document.querySelector("#location-heading").textContent'),name,'返回应逐级退出分类');
+  }
+  await evaluate('document.querySelector("#modal .dialog-back").click()');
+  await waitFor('!document.querySelector("#modal").open','根层返回结束导入');
+  await waitFor('window.__pickedBack===null','根层返回完成异步回调');
+  assert.equal(await evaluate('window.__pickedBack'),null,'根层返回应结束导入');
   console.log('✓ 分类选择弹窗可在大分类或子分类导入、可搜索，并交回导入流程');
 
   // 4. 按所选分类导入：模组副本进该分类的安装库文件夹，「我的模组」归到同一分类，
@@ -193,16 +209,16 @@ async function main(){
   assert.equal(imported.active,true,"导入后自动启用");
   const folderPieces=imported.libraryPath.split('/');
   assert.equal(folderPieces.length,3,'安装库内应是「总分类/角色/模组」：'+imported.libraryPath);
-  assert.match(folderPieces[0],/^Skins-/);assert.match(folderPieces[1],/^甘雨-/);
+  assert.ok(folderPieces[0].startsWith(skinsName+'-'));assert.match(folderPieces[1],/^甘雨-/);
   const importedFolder=path.join(data,"games","genshin","library",...folderPieces);
   assert.equal(await fs.realpath(path.join(modsPath,"HoYoModManaged",imported.id)),await fs.realpath(importedFolder),"启用位置与其他模组同一条规则");
   await evaluate("loadState()");await sleep(300);
   await evaluate("showPage('library');libraryNavigation=[];renderLibrary()");
   await sleep(250);
   // 导入前只有钟离一条模组：分类位置对了才会和它并列在 Skins 下，且不应出现「本地导入」总分类。
-  assert.deepEqual(await cards('#library-folders .folder-card'),['Skins|2 个模组'],'模组应按所选分类归入「我的模组」');
-  await clickByText('#library-folders .folder-card','Skins');
-  await clickByText('#library-folders .folder-card','Characters');
+  assert.deepEqual(await cards('#library-folders .folder-card'),[`${skinsName}|2 个模组`],'模组应按所选分类归入「我的模组」');
+  await clickByText('#library-folders .folder-card',skinsName);
+  await clickByText('#library-folders .folder-card',charactersName);
   assert.deepEqual(await cards('#library-folders .folder-card'),['胡桃|空文件夹','钟离|1 个模组','甘雨|1 个模组']);
   console.log("✓ 导入本地模组按所选分类落库：安装库路径、我的模组归类、自动启用都对");
 
@@ -242,6 +258,45 @@ async function main(){
   // 7. 导入入口：① 选压缩包（系统对话框，不在此自动化）→ ② 分类选择弹窗 → ③ 导入
   assert.equal(await evaluate('document.querySelector("#import-button").disabled'),false);
   assert.equal(await evaluate('typeof pickImportCategory'),'function','分类选择弹窗应接在导入流程里');
+
+  // 更新窗口立即打开，列出所有忽略记录；进度在窗口和通知中心同步。
+  await evaluate('state.mods[0].ignoredUpdates=[{uploadedAt:1700000000,name:"旧版文件"}];checkUpdatesButton()');
+  await waitFor('document.querySelector("#modal").open && !!document.querySelector(".update-start")','更新检查窗口');
+  assert.match(await evaluate('document.querySelector("#modal-body").textContent'),/旧版文件/);
+  await evaluate('applyTasks([{id:"mod-update-check:genshin",status:"running",label:"正在检查更新",received:1,total:2,percent:50,queue:{text:"正在检查更新第 2 个，共 2 个"}}])');
+  assert.equal(await evaluate('document.querySelector(".update-progress-bar").value'),1);
+  assert.match(await evaluate('document.querySelector(".update-progress-text").textContent'),/第 2 个/);
+  await evaluate('applyTasks([]);closeModal();state.mods[0].ignoredUpdates=[]');
+  console.log('✓ 检查更新立即打开窗口、显示忽略记录与同步进度');
+
+  // 通用文本替换只修改勾选的一个模组，并保留未选中的原文件。
+  await evaluate('document.querySelector("#replace-hash").click()');
+  assert.equal(await evaluate('document.querySelectorAll(".hash-mod:checked").length'),2);
+  await evaluate('document.querySelector(".hash-select-none").click()');
+  await evaluate(`document.querySelector('.hash-mod[value="${importedId}"]').checked=true;document.querySelector('#old-hash').value='TextureOverride';document.querySelector('#new-hash').value='ChangedTexture';document.querySelector('#preview-hash').click()`);
+  await waitFor('!!document.querySelector("#apply-hash")','查找替换预览');
+  assert.match(await evaluate('document.querySelector("#hash-preview").textContent'),/1 个模组/);
+  await evaluate('document.querySelector("#apply-hash").click()');
+  await waitFor('document.querySelector("[data-hash-tab=records]").getAttribute("aria-selected")==="true"','替换完成记录');
+  const afterReplace=await evaluate('window.hoyo.call("state").then(s=>s.mods.map(m=>({id:m.id,folder:m.folder})))');
+  assert.match(await fs.readFile(path.join(afterReplace.find(mod=>mod.id===importedId).folder,'mod.ini'),'utf8'),/ChangedTexture/);
+  assert.match(await fs.readFile(path.join(afterReplace.find(mod=>mod.id===MOD_ID).folder,'mod.ini'),'utf8'),/TextureOverride/);
+  await evaluate('closeModal()');
+  console.log('✓ 按原样替换文本仅影响选中的模组');
+
+  // 我的模组“来源”使用当前界面的详情窗口，不调用外部浏览器。
+  await evaluate(`(()=>{window.__sourceCalls=[];window.__sourceCall=api.call;api.call=async(action,payload)=>{window.__sourceCalls.push(action);if(action==='detail')return {id:123,name:'来源详情',images:[],files:[],author:'作者'};if(action==='openSource')throw Error('不应打开浏览器');return window.__sourceCall(action,payload)};const mod=state.mods.find(item=>item.id==='${MOD_ID}');mod.sourceId=123;showModContext(new MouseEvent('contextmenu',{clientX:100,clientY:100}),mod);[...document.querySelectorAll('#context-menu .mod-context-action')].find(button=>button.textContent==='来源').click()})()`);
+  await waitFor('document.querySelector("#modal").open && document.querySelector("#modal-title").textContent.includes("钟离模组")','模组来源详情');
+  assert.ok((await evaluate('window.__sourceCalls')).includes('detail'));
+  assert.equal((await evaluate('window.__sourceCalls')).includes('openSource'),false);
+  await evaluate('closeModal();api.call=window.__sourceCall;delete window.__sourceCall');
+  console.log('✓ 我的模组来源在当前界面打开 GameBanana 详情');
+
+  await evaluate('window.hoyo.call("reportRendererError",{scope:"冒烟测试",message:"sample error",stack:"sample error\\n at smoke"})');
+  const logFile=path.join(data,'logs','errors.log');
+  for(let attempt=0;attempt<30;attempt++){if((await fs.readFile(logFile,'utf8').catch(()=>'' )).includes('冒烟测试'))break;await sleep(100)}
+  assert.match(await fs.readFile(logFile,'utf8'),/冒烟测试/);
+  console.log('✓ 渲染进程错误写入可分享的诊断日志');
 
   client.close();
   await fs.rm(dataDir,{recursive:true,force:true});dataDir=null;

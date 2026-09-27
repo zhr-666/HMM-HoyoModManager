@@ -179,7 +179,7 @@ async function main(){
   // 8 秒后自动关闭（需求 2）：卡片自己消失，消息仍在通知中心与磁盘历史里。
   await waitFor(`document.querySelectorAll('.notification-popup').length===0`,'提示卡 8 秒后自动关闭',9000);
   assert.ok((await historyTexts()).includes(done),'自动关闭不删除消息');
-  assert.equal(await evaluate('document.querySelector("#notification-center").matches(":popover-open")'),false,'最后一项通知结束后再离开顶层，不挡住页面点击');
+  assert.equal(await evaluate('document.querySelector("#notification-center").matches(":popover-open")'),true,'通知按钮应一直保持可点击');
   console.log('✓ 完成通知右下角弹出、8 秒后自动关闭，消息与未读角标保留');
 
   // 2b. 手动关闭右下角提示卡：只删除这条消息，自动收起的历史仍然保留。

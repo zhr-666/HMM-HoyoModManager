@@ -5,17 +5,18 @@ const {createHash,randomUUID}=require('node:crypto');
 const {scanHotkeys}=require('./hotkeys.cjs');
 const sha=buffer=>createHash('sha256').update(buffer).digest('hex');
 function values(oldValue,newValue){
-  const oldHash=String(oldValue||'').trim().replace(/^0x/i,''),newHash=String(newValue||'').trim().replace(/^0x/i,'');
-  if(!/^[a-f0-9]{8,64}$/i.test(oldHash)||!/^[a-f0-9]{8,64}$/i.test(newHash))throw Error('请输入 8–64 位十六进制 hash（数字和 a–f）。');
-  if(oldHash.toLowerCase()===newHash.toLowerCase())throw Error('新旧 hash 相同。');return {oldHash,newHash};
+  if(typeof oldValue!=='string'||typeof newValue!=='string'||!oldValue||oldValue.length>1024||newValue.length>1024)throw Error('请输入 1–1024 个字符的查找文本；替换文本可以为空。');
+  if(oldValue===newValue)throw Error('查找和替换文本相同。');return {oldHash:oldValue,newHash:newValue};
 }
 function replaceHash(buffer,oldValue,newValue){
   const {oldHash,newHash}=values(oldValue,newValue);let encoding='latin1',input=buffer,swapped=false;
   if(buffer[0]===254&&buffer[1]===255){input=Buffer.from(buffer);if(input.length%2)throw Error('UTF-16 文件长度无效。');input.swap16();encoding='utf16le';swapped=true;}
   else if((buffer[0]===255&&buffer[1]===254)||(buffer.length>3&&buffer[1]===0&&buffer[3]===0))encoding='utf16le';
+  else try{new TextDecoder('utf-8',{fatal:true}).decode(buffer);encoding='utf8';}catch{}
   if(encoding==='utf16le'&&input.length%2)throw Error('UTF-16 文件长度无效。');
-  const regex=new RegExp('(?<![a-z0-9_])((?:0x)?)'+oldHash+'(?![a-z0-9_])','gi');let count=0;
-  const text=input.toString(encoding).replace(regex,(_,prefix)=>{count++;return prefix+newHash;});
+  if(encoding==='latin1'&&[...newHash].some(char=>char.codePointAt(0)>255))throw Error('此 INI 不是 UTF-8，不能写入当前替换文本。');
+  const original=input.toString(encoding),count=original.split(oldHash).length-1;
+  const text=count?original.replaceAll(oldHash,()=>newHash):original;
   const output=Buffer.from(text,encoding);if(swapped)output.swap16();return {buffer:output,count};
 }
 async function tree(folder){
@@ -33,10 +34,13 @@ async function tree(folder){
   }
   await walk(folder,0);return {rows,digest:sha(JSON.stringify(rows))};
 }
-async function preview(lib,oldValue,newValue,progress=()=>{}){
-  const {oldHash,newHash}=values(oldValue,newValue),result={oldHash,newHash,files:[],mods:[],count:0};let bytes=0;
-  for(const [index,mod] of lib.state.mods.entries()){
-    progress({label:'扫描与校验：'+mod.name,received:index,total:lib.state.mods.length,unit:'items'});
+async function preview(lib,oldValue,newValue,progress=()=>{},modIds){
+  const {oldHash,newHash}=values(oldValue,newValue);
+  if(modIds!==undefined&&(!Array.isArray(modIds)||!modIds.length||modIds.some(id=>typeof id!=='string'||!lib.state.mods.some(mod=>mod.id===id))))throw Error('请选择要修改的模组。');
+  const selected=modIds===undefined?lib.state.mods:lib.state.mods.filter(mod=>modIds.includes(mod.id));
+  const result={oldHash,newHash,modIds:selected.map(mod=>mod.id),files:[],mods:[],count:0};let bytes=0;
+  for(const [index,mod] of selected.entries()){
+    progress({label:'扫描与校验：'+mod.name,received:index,total:selected.length,unit:'items'});
     const snapshot=await tree(mod.folder);result.mods.push({id:mod.id,folder:path.relative(lib.libraryRoot,mod.folder).split(path.sep).join('/'),digest:snapshot.digest});
     for(const file of snapshot.rows.filter(f=>f.type==='file'&&/\.ini$/i.test(f.file))){
       bytes+=file.size;if(file.size>16*1024**2||bytes>128*1024**2)throw Error('INI 文件超过批量处理大小限制，未进行替换。');
@@ -48,7 +52,7 @@ async function preview(lib,oldValue,newValue,progress=()=>{}){
 }
 function batchFolder(lib,id,name){return lib._rebaseMod({id,folder:path.basename(name),libraryPath:name}).folder;}
 async function apply(lib,expected,progress=()=>{}){
-  const fresh=await preview(lib,expected.oldHash,expected.newHash,progress);if(JSON.stringify(fresh)!==JSON.stringify(expected))throw Error('模组文件已变化，请重新预览。');if(!fresh.count)throw Error('没有匹配的 hash。');
+  const fresh=await preview(lib,expected.oldHash,expected.newHash,progress,expected.modIds);if(JSON.stringify(fresh)!==JSON.stringify(expected))throw Error('模组文件已变化，请重新预览。');if(!fresh.count)throw Error('没有匹配的文本。');
   const next=JSON.parse(JSON.stringify(lib.state)),batch={id:randomUUID(),oldHash:fresh.oldHash,newHash:fresh.newHash,createdAt:Date.now(),count:fresh.count,status:'applied',entries:[]},created=[];
   try{
     for(const mod of next.mods){

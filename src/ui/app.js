@@ -3,6 +3,12 @@ const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const bridge=window.hoyo;
 const api=bridge?{...bridge,call:(action,payload={})=>bridge.call(action,{gameId:activeGame,...payload})}:null;
+function reportRendererError(scope,error){
+  const message=error?.message||String(error||'未知错误'),stack=error?.stack||message;
+  bridge?.call('reportRendererError',{scope,message,stack}).catch(()=>{});
+}
+window.addEventListener('error',event=>reportRendererError('未捕获异常',event.error||event.message));
+window.addEventListener('unhandledrejection',event=>reportRendererError('Promise 拒绝',event.reason));
 let state={settings:{},gameSettings:{},mods:[],presets:[],runtime:{}}, categories=[], taxonomy=[], libraryNavigation=[], category='', page=1, query='', total=0, busyCount=0, browseRevision=0;
 let activePage='home', downloads=[];
 // 全部游戏与已添加游戏分开：未添加的游戏不出现在首页左栏，也不创建工作空间。
@@ -83,20 +89,13 @@ const notificationIcon={error:ICON('warning'),message:ICON('message')};const not
 let notificationEntries=[],notificationUnread=0;
 // 完成 / 错误提示卡的自动关闭时间：弹出 8 秒后自己关掉，用户也可以提前点「×」。
 const POPUP_CLOSE_MS=8000;
-// 通知系统整体放在浏览器顶层（#notification-center 带 popover="manual"）：有内容要显示就打开，
-// 最后一项消失（提示卡淡出、面板收起、即时通知消失）才关掉。顶层里的元素永远在对话框、遮罩
-// 与背景模糊之上，通知与通知中心始终清晰、不被遮挡；位置仍由 CSS 固定在右下角。
-// 严格按可见性判断：正在淡出的提示卡仍然算「有内容」，要等它真的移除后再离开顶层。
-function notificationLayerVisible(){
-  return Boolean(document.querySelectorAll('.notification-popup:not(.leaving)').length||document.querySelector('#notification-toast')?.hidden===false||document.querySelector('#notification-panel')?.hidden===false);
-}
+// 通知系统始终留在浏览器顶层（#notification-center 带 popover="manual"），
+// 使右下角入口在二级窗口打开或后台任务进行时仍能点击。
 function syncNotificationLayer(){
   const center=$('#notification-center');if(!center?.showPopover)return;
-  try{
-    if(notificationLayerVisible()){if(!center.matches(':popover-open'))center.showPopover()}
-    else if(center.matches(':popover-open'))center.hidePopover();
-  }catch{}
+  try{if(!center.matches(':popover-open'))center.showPopover()}catch{}
 }
+window.syncNotificationLayer=syncNotificationLayer;
 const notificationTime=value=>{const d=new Date(Number(value)||Date.now());return new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(d)};
 function renderNotifications(scrollToLatest=false){
   const button=$('#notification-button'),badge=$('#notification-badge');
@@ -221,7 +220,7 @@ function renderTasks(){
   const empty=$('#notification-tasks-empty');if(empty)empty.hidden=running.length>0;
   renderNotifications();
 }
-function applyTasks(list){taskList=Array.isArray(list)?list:[];renderTasks()}
+function applyTasks(list){taskList=Array.isArray(list)?list:[];renderTasks();renderUpdateProgress()}
 // 成功反馈与按钮校验提示统一走右下角 3 秒即时通知：自动消失、不进通知中心、不可点击。
 // 真实错误才写通知历史（可查详细信息），右下角弹出 8 秒后自动关闭，也可以提前手动关掉。
 const reportedErrors=new WeakSet();
@@ -231,6 +230,7 @@ function notifyError(error,fallback='操作失败，请重试。'){
     if(reportedErrors.has(error))return message;
     reportedErrors.add(error);
   }
+  reportRendererError('界面操作',error||message);
   call('addNotification',{text:message,tone:'error'},{silent:true,foreground:false}).then(applyNotifications).catch(()=>{});
   return message;
 }
@@ -335,7 +335,7 @@ async function setLibraryView(view){
   try{await call('settings',{libraryView:view},{foreground:false})}
   catch{state.settings.libraryView=previous;renderLibrary()}
 }
-function setBusy(value){busyCount=Math.max(0,busyCount+(value?1:-1));if(value&&busyCount===1){$$('button').filter(el=>!el.closest('.sidebar')&&!el.closest('[data-layer-kind="dependency-modal"]')&&!el.classList.contains('category')&&!el.closest('.pager')&&!el.closest('.library-navigation')).forEach(el=>{busyButtons.set(el,el.disabled);el.disabled=true})}else if(!busyCount){for(const [el,disabled] of busyButtons)if(el.isConnected)el.disabled=disabled;busyButtons.clear();refreshInstallAvailability()}}
+function setBusy(value){busyCount=Math.max(0,busyCount+(value?1:-1));if(value&&busyCount===1){$$('button').filter(el=>!el.closest('.sidebar')&&!el.closest('#notification-center')&&!el.closest('.dialog-head')&&!el.closest('[data-layer-kind="dependency-modal"]')&&!el.classList.contains('category')&&!el.closest('.pager')&&!el.closest('.library-navigation')).forEach(el=>{busyButtons.set(el,el.disabled);el.disabled=true})}else if(!busyCount){for(const [el,disabled] of busyButtons)if(el.isConnected)el.disabled=disabled;busyButtons.clear();refreshInstallAvailability()}}
 async function call(action,payload,opts={}){if(!api?.call)throw new Error('本地服务不可用，请重新启动应用。');if(opts.foreground!==false)setBusy(true);try{const result=await api.call(action,payload);if(opts.reload)await loadState();return result}catch(e){if(!opts.silent)notifyError(e);throw e}finally{if(opts.foreground!==false)setBusy(false)}}
 // 下载入队失败不再插页面上方的横条，统一走右下角通知中心（需求 14）。
 async function enqueue(action,payload){try{const result=await call(action,payload,{foreground:false,silent:true});if(result?.queued)showToast('已加入下载列表');await loadDownloads()}catch(e){notifyError(e);showPage('downloads')}}
@@ -365,6 +365,7 @@ function renderState(){state.settings??={};state.mods??=[];state.presets??=[];st
 function imageMarkup(url,alt,nsfw=false){const safe=safeImage(url),blur=nsfw&&state.settings.blurNsfw!==false;return safe?`<img src="${esc(safe)}" alt="${esc(alt)}" loading="lazy" class="${blur?'nsfw-image':''}">${blur?'<span class="nsfw-cover">NSFW · 点击查看</span>':''}`:'<div class="preview-placeholder">暂无预览</div>'}
 function revealNsfw(root){$('.nsfw-image',root)?.classList.remove('nsfw-image');$('.nsfw-cover',root)?.remove()}
 function openSourceItem(item){if(!item?.sourceId&&!item?.id)return;call('openSource',{id:Number(item.sourceId||item.id)}).catch(()=>{})}
+function openInstalledSource(mod){if(mod?.sourceId)openDetail({id:Number(mod.sourceId),name:mod.name});}
 function updateStatusMarkup(s){if(!s)return'';const labels={update:'有更新',current:'已是最新',unknown:'无法判断',error:'检查失败'},cls=s.status==='update'?'update':'muted';return `<span class="update-badge ${cls}">${esc(labels[s.status]||s.status)}</span>`}
 function renderLibraryFolders(){
   const tree=buildLibraryTree(taxonomy,state.mods,state.folders||[]),path=[];
@@ -416,7 +417,7 @@ function editModProfile(mod,{importing=false,previewsOnly=false,onSave}={}){
  const q=selector=>$(selector,dialog),error=message=>{q('.profile-error').textContent=message;q('.profile-error').hidden=!message};
  const revision=dialog.dataset.layerRevision,events=new AbortController();
  const alive=()=>dialog.open&&dialog.isConnected&&dialog.dataset.layerRevision===revision;
- const setWorking=value=>{working=value;for(const button of $$('button',dialog))button.disabled=value;};
+ const setWorking=value=>{working=value;for(const button of $$('button',dialog))if(!button.matches('.dialog-close,.dialog-back'))button.disabled=value;};
  const add=async action=>{
    if(working)return;setWorking(true);error('');
    try{const result=await call(action,{},{foreground:false,silent:true});if(!alive())return;
@@ -441,7 +442,7 @@ function editModProfile(mod,{importing=false,previewsOnly=false,onSave}={}){
    dialog.addEventListener('close',()=>{events.abort();finish(null)},{once:true});
    // 保存期间阻止关闭，确保结果和当前编辑窗口一致；读取图片期间关闭则丢弃返回结果。
    let saving=false;
-   const back=()=>{if(!saving)dialogStack.back(dialog)};
+   const back=()=>dialogStack.back(dialog);
    $('.dialog-back',dialog).onclick=back;dialog.oncancel=e=>{e.preventDefault();back()};dialog.onsubmit=e=>{e.preventDefault();back()};
    q('.profile-save').onclick=async()=>{
      if(working)return;
@@ -761,6 +762,7 @@ async function pickImportCategory(subtitle){
     const finish=value=>{if(settled)return;settled=true;resolve(value)};
     // 「取消」、返回与 ESC 都走 dialogStack 的关闭路径，这里统一按取消处理。
     dialog.addEventListener('close',()=>finish(null));
+    $('.dialog-back',dialog).onclick=()=>{if(trail.length){trail.pop();render()}else dialogStack.back(dialog)};
     q('#location-search').oninput=render;
     confirm.onclick=()=>{if(!selection)return;const chosen=selection;finish(chosen);closeModal()};
     render();
@@ -819,7 +821,8 @@ function renderDependency(){
  $('.dialog-back',dialog).focus();
 }
 async function dependencyDecision(d,dialog,decision,index){
- if(dependencyActing)return;dependencyActing=true;$$('button',dialog).forEach(b=>b.disabled=true);
+ if(dependencyActing){if(decision==='cancel'){const pos=dependencyRequests.indexOf(d);if(pos>=0)dependencyRequests.splice(pos,1);d.stale=true;dialogStack.back(dialog);api.call('answerDependency',{token:d.token,decision:'cancel'}).catch(error=>reportRendererError('取消前置提醒',error))}return}
+ dependencyActing=true;$$('button',dialog).filter(button=>!button.closest('.dialog-head')).forEach(b=>b.disabled=true);
  try{
   if(d.stale&&decision!=='open'){
    dialogStack.back(dialog);
@@ -827,6 +830,7 @@ async function dependencyDecision(d,dialog,decision,index){
    return;
   }
   const result=await api.call(decision==='open'?'openDependency':'answerDependency',{token:d.token,decision,index});
+  if(!dialog.open)return;
   if(decision==='open'&&!result.sourceId)return;
   if(!d.stale){const pos=dependencyRequests.indexOf(d);if(pos>=0)dependencyRequests.splice(pos,1);}
   if(result.sourceId){
@@ -909,11 +913,10 @@ async function openDetail(record){
  try{
   const d=await call('detail',{id:record.id},{foreground:false});if(!dialog.open||dialog.dataset.layerRevision!==revision)return;
   const q=sel=>$(sel,dialog),files=d.files||[];
-  q('[id$="modal-body"]').innerHTML=`<p class="meta detail-meta">${esc(d.author||'未知作者')} · ${esc([d.rootCategoryName,d.characterName].filter(Boolean).join(' / ')||'模组')}</p><div class="detail-gallery"><div class="detail-gallery-main"><div class="preview-placeholder">图片加载中…</div></div><div class="detail-gallery-thumbs"></div></div><p class="description">${esc(d.description||'作者没有填写说明。')}</p><details class="detail-comments"><summary>查看评论</summary><div class="detail-comments-content"><p class="meta comments-status">展开后加载评论…</p><div class="comments-list"></div><button type="button" class="button secondary comments-more" hidden>加载更多</button></div></details><fieldset class="file-picker"><legend>选择要安装的文件</legend><div class="file-options">${files.length?files.map(f=>`<div class="file-row"><label class="file-option"><input type="radio" name="file" value="${esc(f.id)}" ${files.length===1?'checked':''}><span><strong>${esc(f.name)}</strong><small>${esc(formatSize(f.size))} · 上传 ${esc(formatDate(f.uploadedAt)||'日期未知')} · ${f.downloadCount==null?'下载次数暂不可用':Number(f.downloadCount).toLocaleString('zh-CN')+' 次下载'}</small></span></label><button type="button" class="button secondary file-direct-download" data-file-id="${esc(f.id)}">下载此处</button></div>`).join(''):'没有可下载的文件'}</div></fieldset>${!state.settings.modsPath?'<p class="setup-required">请先选择当前游戏的启用目录。<button type="button" class="link-button detail-settings">前往设置</button></p>':''}`;
+  q('[id$="modal-body"]').innerHTML=`<p class="meta detail-meta">${esc(d.author||'未知作者')} · ${esc([d.rootCategoryName,d.characterName].filter(Boolean).join(' / ')||'模组')}</p><div class="detail-gallery"><div class="detail-gallery-main"><div class="preview-placeholder">图片加载中…</div></div><div class="detail-gallery-thumbs"></div></div><p class="description">${esc(d.description||'作者没有填写说明。')}</p><details class="detail-comments"><summary>查看评论</summary><div class="detail-comments-content"><p class="meta comments-status">展开后加载评论…</p><div class="comments-list"></div><button type="button" class="button secondary comments-more" hidden>加载更多</button></div></details><fieldset class="file-picker"><legend>选择要安装的文件</legend><div class="file-options">${files.length?files.map(f=>`<div class="file-row"><label class="file-option"><input type="radio" name="file" value="${esc(f.id)}" ${files.length===1?'checked':''}><span><strong>${esc(f.name)}</strong><small>${esc(formatSize(f.size))} · 上传 ${esc(formatDate(f.uploadedAt)||'日期未知')} · ${esc(f.downloadCount==null?'下载次数暂不可用':Number(f.downloadCount).toLocaleString('zh-CN')+' 次下载')}</small></span></label></div>`).join(''):'没有可下载的文件'}</div></fieldset>${!state.settings.modsPath?'<p class="setup-required">请先选择当前游戏的启用目录。<button type="button" class="link-button detail-settings">前往设置</button></p>':''}`;
   q('[id$="modal-actions"]').innerHTML=`<button type="button" class="button primary" data-install-confirm data-layer-id="install-confirm" id="${dialog.id==='modal'?'install-confirm':dialog.id+'-install-confirm'}" ${files.length&&state.settings.modsPath?'':'disabled'}>下载并安装</button>`;
   const install=q('[data-install-confirm]');install.dataset.hasFiles=String(files.length>0);
   q('.detail-settings')?.addEventListener('click',()=>{dialogStack.back(dialog);showPage('settings')});
-  $$('.file-direct-download',dialog).forEach(button=>button.onclick=()=>call('openGameBananaDownload',{id:button.dataset.fileId},{foreground:false}).catch(()=>{}));
   const comments=q('.detail-comments'),status=q('.comments-status'),list=q('.comments-list'),more=q('.comments-more');
   let commentPage=0,loadingComments=false;
   const commentMarkup=row=>`<article class="comment-row"><div><strong>${esc(row.author)}</strong><small>${esc(row.postedAt?formatDate(row.postedAt):'日期未知')}</small></div><p>${esc(row.text||'（空评论）')}</p>${row.replyCount?`<details class="comment-replies" data-post-id="${esc(row.id)}"><summary>查看 ${esc(row.replyCount)} 条回复</summary><p class="meta replies-status">展开后加载回复…</p><div class="reply-list"></div><button type="button" class="button secondary replies-more" hidden>加载更多回复</button></details>`:''}</article>`;
@@ -985,8 +988,7 @@ function confirmRemoveGame(id){
 function confirmDeletePreset(p){modal('删除搭配方案','不会删除其中的模组。',`<p>确定删除“${esc(p.name)}”吗？</p>`,`<button type="button" class="button danger" id="delete-confirm">确认删除</button>`);$('#delete-confirm').onclick=()=>{closeModal();mutate('deletePreset',{id:p.id})}}
 function savePreset(){modal('保存当前搭配','记录现在启用的所有角色模组。',`<div class="field"><label for="preset-name">方案名称</label><input id="preset-name" maxlength="50" autofocus placeholder="例如：日常探索"></div>`,`<button type="button" class="button primary" id="preset-confirm">保存</button>`);$('#preset-confirm').onclick=()=>{const name=$('#preset-name').value.trim();if(!name)return notify('请输入方案名称。',true);closeModal();mutate('savePreset',{name})}}
 function updateSummaryBody(result){const updates=result.updates||[],failures=result.failures||[],unknown=result.unknown||[];const updateRows=updates.map((u,i)=>`<div class="update-result"><div class="update-title"><div><strong>${esc(u.name)}</strong><small>当前 ${esc(formatDate(u.baselineAt)||'日期未知')} → 最新 ${esc(formatDate(u.latestAt)||'日期未知')}</small></div><div class="row-actions"><button class="link-button update-source" type="button" data-source="${esc(u.sourceId||'')}">打开来源</button><button class="link-button update-ignore" type="button" data-ignore-mod="${esc(u.id)}" data-ignore-at="${esc(String(u.latestAt||''))}" data-ignore-name="${esc((u.files||[])[0]?.name||'')}">忽略这个版本</button></div></div><div class="update-files">${(u.files||[]).map(f=>`<label class="file-option"><input type="radio" name="update-${i}" value="${esc(f.id)}"><span><strong>${esc(f.name)}</strong><small>${esc(formatDate(f.uploadedAt)||'时间未知')} · ${esc(formatSize(f.size))}</small></span></label>`).join('')||'<p class="meta">未找到可安装文件</p>'}</div></div>`).join('');const issues=[...failures.map(x=>({...x,type:'检查失败'})),...unknown.map(x=>({...x,type:'无法判断'}))];const ignored=result.ignored||[];return `<p class="summary-status">已检查 ${result.checked??result.total??0} 个模组，${updates.length} 个有更新</p>`+(ignored.length?`<p class="meta">${ignored.length} 个模组的最新版本已忽略。</p>`:'')+`${updateRows||'<div class="summary-ok">没有发现明确可用的更新。</div>'}${issues.length?`<div class="update-issues"><strong>需要留意</strong>${issues.map(x=>`<p><b>${esc(x.name)}</b> · ${esc(x.type)}：${esc(x.error||x.reason||'原因未知')}</p>`).join('')}</div>`:''}`}
-// 后台检查更新的状态。检查只发右下角通知 + 点亮按钮红点，结果缓存在这里，
-// 等用户点那条通知或再点一次按钮，才打开结果窗口。
+// 检查更新的结果缓存在这里；窗口和通知中心共用任务进度。
 let updateSummary=null,updateSummaryUnviewed=false,appUpdateUnviewed=false;
 const updateChecks=new Set();
 function renderUpdateDots(){
@@ -997,47 +999,60 @@ function markAppUpdateSeen(){if(!appUpdateUnviewed)return;appUpdateUnviewed=fals
 // 未查看标记只增不减：自动检查没查到更新时不能把用户还没看过的红点抹掉。
 function applyUpdateSummary(payload){
   if(payload?.summary)updateSummary=payload.summary;
-  if(payload?.unviewed)updateSummaryUnviewed=true;
+  const showing=dialogStack.layers.at(-1)?.dialog?.dataset.updateGame===activeGame;
+  if(payload?.unviewed&&!showing)updateSummaryUnviewed=true;
+  if(showing){updateSummaryUnviewed=false;renderUpdateDialog(dialogStack.layers.at(-1).dialog)}
   renderUpdateDots();
 }
 async function startUpdateCheck(){
   const game=activeGame;
-  if(updateChecks.has(game))return;
+  if(updateChecks.has(game)||taskList.some(task=>task.id==='mod-update-check:'+game&&task.status==='running'))return;
   updateChecks.add(game);
+  renderUpdateProgress();
   try{
     const result=await call('checkUpdates',{},{foreground:false,silent:true});
-    if(result&&activeGame===game)applyUpdateSummary({summary:result,unviewed:true});
+    if(result&&!result.cancelled&&activeGame===game)applyUpdateSummary({summary:result,unviewed:true});
   }catch(error){if(!error?.cancelled)notifyError(error,'检查更新失败。')}
-  finally{updateChecks.delete(game)}
+  finally{updateChecks.delete(game);renderUpdateProgress()}
 }
-// 点「检查更新」：有还没看过的结果就直接打开，否则先跑一次后台检查（首次也不弹窗）。
-function checkUpdatesButton(){if(updateSummaryUnviewed&&updateSummary)return openUpdateSummary();return startUpdateCheck()}
-// 结果窗口只从缓存渲染，不重新请求网络。重启后内存里没有了，就先向主进程要一份
-// （主进程用模组库里已落盘的检查结果重建），这样点历史里的通知依然打得开。
+function checkUpdatesButton(){return openUpdateSummary()}
+function ignoredVersionRows(){return state.mods.flatMap(mod=>(mod.ignoredUpdates||[]).map(row=>({mod,row}))).sort((a,b)=>Number(b.row.uploadedAt)-Number(a.row.uploadedAt))}
+function renderUpdateProgress(){
+  const dialog=dialogStack.layers.at(-1)?.dialog;if(!dialog?.open||dialog.dataset.updateGame!==activeGame)return;
+  const task=taskList.find(item=>item.id==='mod-update-check:'+activeGame),running=task?.status==='running'||updateChecks.has(activeGame);
+  const button=$('.update-start',dialog),status=$('.update-progress-text',dialog),bar=$('.update-progress-bar',dialog);
+  if(button)button.disabled=running;
+  if(status)status.textContent=task?.status==='running'?`${task.queue?.text||'正在检查更新'} · ${task.percent||0}%`:task?.message||(running?'正在准备检查':'点击“开始检查”获取最新结果。');
+  if(bar){bar.hidden=!task;bar.max=task?.total||1;bar.value=task?.received||0;}
+}
+function renderUpdateDialog(dialog){
+  if(!dialog?.open||dialog.dataset.updateGame!==activeGame)return;
+  const result=updateSummary,ignored=ignoredVersionRows(),body=$('[id$="modal-body"]',dialog);
+  body.innerHTML=`<section class="update-check-controls"><button type="button" class="button primary update-start">开始检查</button><p class="meta update-progress-text" role="status"></p><progress class="update-progress-bar" hidden></progress></section><h3 class="hash-heading">已忽略的版本 · ${ignored.length}</h3>${ignored.length?ignored.map(({mod,row})=>`<article class="update-result"><div class="update-title"><div><strong>${esc(mod.name)}</strong><small>${esc(row.name||'未命名文件')} · ${esc(formatDate(row.uploadedAt)||'日期未知')}</small></div><button type="button" class="button secondary ignore-restore" data-mod="${esc(mod.id)}" data-at="${esc(String(row.uploadedAt))}">取消忽略</button></div></article>`).join(''):'<p class="summary-ok">没有已忽略的版本。</p>'}<h3 class="hash-heading">检查结果</h3>${result?updateSummaryBody(result):'<p class="summary-ok">尚未检查更新。</p>'}`;
+  $('[id$="modal-actions"]',dialog).innerHTML=result?.updates?.length?'<button type="button" class="button primary" id="update-confirm">安装所选更新</button>':'';
+  $('.update-start',dialog).onclick=startUpdateCheck;
+  for(const button of $$('.ignore-restore',dialog))button.onclick=async()=>{
+    button.disabled=true;
+    try{state=await call('restoreIgnoredUpdate',{id:button.dataset.mod,uploadedAt:Number(button.dataset.at)},{silent:true,foreground:false});renderState();renderUpdateDialog(dialog);notify('已取消忽略；下次检查会重新提示该版本。')}
+    catch(error){button.disabled=false;notifyError(error)}
+  };
+  for(const button of $$('.update-source',dialog))button.onclick=()=>openSourceItem({sourceId:button.dataset.source});
+  for(const button of $$('.update-ignore',dialog))button.onclick=async()=>{
+    button.disabled=true;
+    try{state=await call('ignoreUpdate',{id:button.dataset.ignoreMod,uploadedAt:Number(button.dataset.ignoreAt),name:button.dataset.ignoreName},{silent:true,foreground:false});updateSummary={...updateSummary,updates:(updateSummary?.updates||[]).filter(item=>item.id!==button.dataset.ignoreMod)};renderState();renderUpdateDialog(dialog);notify('已忽略这个版本。')}
+    catch(error){button.disabled=false;notifyError(error)}
+  };
+  $('#update-confirm',dialog)?.addEventListener('click',async()=>{const choices=(result.updates||[]).map((u,i)=>({u,fileId:$(`input[name="update-${i}"]:checked`,dialog)?.value})).filter(x=>x.fileId);if(!choices.length)return notify('请先为至少一个模组选择更新文件。',true);dialogStack.back(dialog);for(const x of choices)await enqueue('updateMod',{id:x.u.id,fileId:x.fileId})});
+  renderUpdateProgress();
+}
+// 立即打开窗口；历史结果离线可用，新的网络检查由窗口里的按钮触发。
 async function openUpdateSummary(){
-  const game=activeGame;
+  const game=activeGame,dialog=modal('检查模组更新','','正在读取检查结果…','');dialog.dataset.updateGame=game;
+  updateSummaryUnviewed=false;renderUpdateDots();renderUpdateDialog(dialog);
   if(!updateSummary){
-    try{const restored=await call('updateSummary',{},{silent:true,foreground:false});if(game!==activeGame)return;if(restored)updateSummary=restored}catch{}
-    if(game!==activeGame)return;
+    try{const restored=await call('updateSummary',{},{silent:true,foreground:false});if(game===activeGame&&restored)updateSummary=restored}catch{}
   }
-  const result=updateSummary;
-  if(!result)return startUpdateCheck();
-  updateSummaryUnviewed=false;renderUpdateDots();
-  const updates=result.updates||[];
-  modal('更新检查结果',`已检查 ${result.checked??result.total??state.mods.length} 个模组 · ${updates.length} 个有更新`,updateSummaryBody(result),`${updates.length?'<button type="button" class="button primary" id="update-confirm">安装所选更新</button>':''}`);
-  $$('.update-source').forEach(b=>b.onclick=()=>openSourceItem({sourceId:b.dataset.source}));
-  // 忽略某个具体版本（需求 9）：记在模组上，之后同一版本不再提示。
-  $$('.update-ignore').forEach(b=>b.onclick=async()=>{
-    b.disabled=true;
-    try{
-      state=await call('ignoreUpdate',{id:b.dataset.ignoreMod,uploadedAt:Number(b.dataset.ignoreAt),name:b.dataset.ignoreName},{silent:true});
-      renderState();
-      updateSummary={...updateSummary,updates:(updateSummary?.updates||[]).filter(item=>item.id!==b.dataset.ignoreMod)};
-      notify('已忽略这个版本；作者发布更新的版本时会重新提示。');
-      closeModal();openUpdateSummary();
-    }catch(error){b.disabled=false;notifyError(error)}
-  });
-  $('#update-confirm')?.addEventListener('click',async()=>{const choices=updates.map((u,i)=>({u,fileId:$(`input[name="update-${i}"]:checked`)?.value})).filter(x=>x.fileId);if(!choices.length)return notify('请先为至少一个模组选择更新文件。',true);closeModal();for(const x of choices)await enqueue('updateMod',{id:x.u.id,fileId:x.fileId})});
+  if(dialog.open&&game===activeGame)renderUpdateDialog(dialog);
 }
 // 已忽略版本：列出这个模组记下的版本，可以逐条取消忽略（取消后下次检查会重新提示）。
 function openIgnoredVersions(mod){
@@ -1052,7 +1067,7 @@ function openIgnoredVersions(mod){
       state=await call('restoreIgnoredUpdate',{id:mod.id,uploadedAt:Number(button.dataset.at)},{silent:true});
       renderState();renderLibrary();
       notify('已取消忽略；下一次检查更新会重新提示这个版本。');
-      const fresh=state.mods.find(item=>item.id===mod.id);if(fresh)openIgnoredVersions(fresh);else closeModal();
+      const fresh=state.mods.find(item=>item.id===mod.id);dialogStack.back(dialog);if(fresh)openIgnoredVersions(fresh);
     }catch(error){button.disabled=false;notifyError(error)}
   };
 }
@@ -1107,7 +1122,7 @@ $('#import-button').onclick=async()=>{
   }catch(error){notifyError(error)}
   finally{importRunning=false;$('#import-button').disabled=false}
 };
-$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods',{gameId:activeGame});$('#choose-program').onclick=()=>mutate('chooseProgram',{gameId:activeGame});$('#choose-background').onclick=()=>mutate('chooseBackground',{gameId:activeGame});$('#reset-background').onclick=()=>mutate('resetBackground',{gameId:activeGame});$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#check-updates').onclick=checkUpdatesButton;$('#check-updates-library').onclick=checkUpdatesButton;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
+$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods',{gameId:activeGame});$('#choose-program').onclick=()=>mutate('chooseProgram',{gameId:activeGame});$('#choose-background').onclick=()=>mutate('chooseBackground',{gameId:activeGame});$('#reset-background').onclick=()=>mutate('resetBackground',{gameId:activeGame});$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#open-logs').onclick=()=>call('openLogs',{}, {foreground:false}).catch(()=>{});$('#check-updates').onclick=checkUpdatesButton;$('#check-updates-library').onclick=checkUpdatesButton;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
 $('#blur-nsfw').onchange=async e=>{await mutate('settings',{blurNsfw:e.target.checked});refreshWorkshopBlur()};$('#use-links').onchange=e=>mutate('settings',{useLinks:e.target.checked});$('#material-select').onchange=e=>mutate('settings',{material:e.target.value});$('#proxy-mode').onchange=e=>{if(e.target.value==='manual'){ $('#proxy-url-row').hidden=false;if(state.settings.proxyUrl)mutate('settings',{proxyMode:'manual'});}else mutate('settings',{proxyMode:'system'})};$('#save-proxy').onclick=()=>mutate('settings',{proxyMode:$('#proxy-mode').value,proxyUrl:$('#proxy-url').value.trim()});$('#test-proxy').onclick=async()=>{try{const r=await call('proxyDiagnostics');$('#proxy-result').textContent=[r.message,r.route,r.apiRoute].filter(Boolean).join(' · ')}catch(e){$('#proxy-result').textContent=e.message}};for(const id of ['sort-select','sfw-filter','nsfw-filter'])$('#'+id).onchange=()=>{page=1;browse()};
 api?.onDownloads?.(payload=>{if(payload?.gameId&&payload.gameId!==activeGame)return;downloads=Array.isArray(payload)?payload:payload?.rows||[];renderDownloads()});
 // 全局进度条取消了：长任务只在它自己打开的弹窗里报告进度，下载进度看「下载列表」的每一行。
@@ -1125,7 +1140,7 @@ api?.onUpdateSummary?.(payload=>{if(!payload?.gameId||payload.gameId===activeGam
 api?.onNotificationPopups?.(list=>{for(const payload of list||[])showNotificationPopup(payload?.entry||payload)});
 // 3 秒即时通知：主进程发来的按钮反馈，只弹一次、不进通知中心。
 api?.onToast?.(entry=>showToast(entry?.text,entry?.tone));
-// 后台任务的统一进度：检查更新、下载、更新、替换 Hash、软件更新都走这一条通道。
+// 后台任务的统一进度：检查更新、下载、INI 查找替换、软件更新都走这一条通道。
 api?.onTasks?.(list=>applyTasks(list));
 call('tasks',{}, {silent:true,foreground:false}).then(applyTasks).catch(()=>{});
 $('#notification-button').onclick=event=>{event.stopPropagation();toggleNotificationPanel()};
@@ -1137,6 +1152,7 @@ document.addEventListener('pointerdown',event=>{if(!event.target.closest('#notif
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closeNotificationPanel()});
 window.addEventListener('scroll',()=>closeNotificationPanel());
 call('notifications',{}, {silent:true,foreground:false}).then(applyNotifications).catch(()=>{});
+syncNotificationLayer();
 
 renderUpdateDots();
 (async()=>{try{await loadState();startOnboarding();if(!addedGameIds.length)return;const game=activeGame;await Promise.all([loadDownloads(),loadCategories(),call('updateSummary',{},{silent:true,foreground:false}).then(value=>{if(activeGame===game)updateSummary=value})])}catch(error){notifyError(error,'初始化失败，请重新启动应用。')}})();
@@ -1159,14 +1175,14 @@ async function showHotkeys(mod){
   }catch(error){notifyError(error)}
 }
 
-// 「替换 Hash」二级窗口通过标签展示查找替换、替换记录、回溯记录和 ShaderFixes 历史。
+// INI 查找替换与 ShaderFixes 历史使用各自的二级窗口。
 // 替换记录回答「什么值换成了什么值」；回溯记录用来查看并执行「换回替换前」。
-const HASH_TABS=[['apply','查找替换'],['records','替换记录'],['rollback','回溯记录'],['shaderfixes','ShaderFixes']];
-let hashTab='apply',hashInputs={old:'',new:''},hashPreview=null;
+const HASH_TABS=[['apply','查找替换'],['records','替换记录'],['rollback','回溯记录']];
+let hashTab='apply',hashInputs={old:'',new:'',modIds:null},hashPreview=null;
 function hashFileRows(files){return `<div class="hash-file-list">${files.map(f=>`<p><strong>${esc(f.modName)}</strong><br><small>${esc(f.file)} · ${f.count} 处</small></p>`).join('')}</div>`}
 function openHashReplace(){
   hashPreview=null;
-  const dialog=modal(hashTab==='shaderfixes'?'ShaderFixes 历史':'替换 Hash','安装库内全部已安装模组（含未启用）的 .ini','<nav id="hash-tabs" class="dialog-tabs" role="tablist" aria-label="模组工具分区"></nav><div id="hash-panel" class="hash-panel" role="tabpanel"></div>','');
+  const dialog=modal('INI 查找替换','只修改所选安装库模组中的 .ini 文件','<nav id="hash-tabs" class="dialog-tabs" role="tablist" aria-label="模组工具分区"></nav><div id="hash-panel" class="hash-panel" role="tabpanel"></div>','');
   dialog.hashReturn=null;
   $('#hash-tabs',dialog).innerHTML=HASH_TABS.map(([id,name])=>`<button type="button" role="tab" class="dialog-tab" data-hash-tab="${id}">${name}</button>`).join('');
   for(const button of $$('[data-hash-tab]',dialog))button.onclick=()=>{hashTab=button.dataset.hashTab;renderHashPanel(dialog)};
@@ -1178,31 +1194,44 @@ function renderHashPanel(dialog){
   for(const button of $$('[data-hash-tab]',dialog))button.setAttribute('aria-selected',String(button.dataset.hashTab===hashTab));
   const panel=$('#hash-panel',dialog);if(!panel)return;
   panel.hashRequest=Symbol();panel.replaceChildren();
-  if(hashTab==='shaderfixes')return renderShaderFixes(dialog,panel);
   if(hashTab==='records')return renderHashRecords(dialog,panel);
   if(hashTab==='rollback')return renderHashRollback(dialog,panel);
   return renderHashApply(dialog,panel);
 }
 async function renderShaderFixes(dialog,panel){
-  const game=activeGame,request=panel.hashRequest;
-  const current=()=>dialog.open&&panel.isConnected&&hashTab==='shaderfixes'&&activeGame===game&&panel.hashRequest===request;
+  const game=activeGame,request=panel.shaderRequest=Symbol();
+  const current=()=>dialog.open&&panel.isConnected&&activeGame===game&&panel.shaderRequest===request;
   panel.innerHTML='<p class="meta">正在读取 ShaderFixes 历史记录…</p>';
   try{
-    const rows=await call('shaderFixesHistory',{},{foreground:false});
+    const rows=(await call('shaderFixesHistory',{},{foreground:false})).filter(batch=>batch.files?.some(file=>file.sha256));
     if(!current())return;
     const labels={written:'已写入',skipped:'同名或路径冲突，已跳过',pending:'写入状态待核对（可能中断）',failed:'写入失败'};
-    panel.innerHTML='<p class="meta">以下文件独立存放于加载器的 ShaderFixes 目录。已有同名项会保留；移除或停用模组不会删除这些共享文件。如需清理，请按记录路径在文件管理器中手动删除。</p>'+(rows.length?rows.slice().reverse().map(batch=>`<article class="hotkey-entry"><h3>${esc(batch.name)}</h3><p class="meta">${esc(new Date(batch.createdAt).toLocaleString('zh-CN'))}${batch.sourceFileName?' · '+esc(batch.sourceFileName):''}</p><p class="shaderfixes-path">目标目录：${esc(batch.target)}</p><div class="hash-file-list">${batch.files.map(file=>`<p><strong>${esc(file.file)}</strong> · ${esc(labels[file.status]||'待核对')}<br><small class="shaderfixes-path">${esc(file.destination||batch.target+'/'+file.file)}${file.reason?' · '+esc(file.reason):''}</small></p>`).join('')}</div></article>`).join(''):'<p class="summary-ok">还没有 ShaderFixes 安装记录。</p>');
+    const cleanupLabels={deleted:'已清理',changed:'内容已变化，跳过',missing:'文件不存在',failed:'清理失败'};
+    panel.innerHTML='<p class="meta">只清理这次实际写入、且内容未变化的文件。旧版历史没有校验值，不在此列表中，原文件保持不变。</p>'+(rows.length?rows.slice().reverse().map(batch=>{
+      const pending=batch.files.some(file=>file.status==='written'&&!['deleted','missing'].includes(file.cleanupStatus));
+      const removable=batch.files.every(file=>file.status!=='pending'&&(file.status!=='written'||['deleted','missing'].includes(file.cleanupStatus)));
+      return `<article class="hotkey-entry" data-shader-batch="${esc(batch.id)}"><h3>${esc(batch.name)}</h3><p class="meta">${esc(new Date(batch.createdAt).toLocaleString('zh-CN'))}${batch.sourceFileName?' · '+esc(batch.sourceFileName):''}</p><p class="shaderfixes-path">目标目录：${esc(batch.target)}</p><div class="hash-file-list">${batch.files.map(file=>`<p><strong>${esc(file.file)}</strong> · ${esc(cleanupLabels[file.cleanupStatus]||labels[file.status]||'待核对')}<br><small class="shaderfixes-path">${esc(file.destination||batch.target+'/'+file.file)}${file.reason?' · '+esc(file.reason):''}</small></p>`).join('')}</div><div class="row-actions hash-actions">${pending?'<button type="button" class="button danger shader-cleanup">删除本次添加的所有文件</button>':''}${removable?'<button type="button" class="button secondary shader-remove-history">删除记录</button>':''}</div></article>`;
+    }).join(''):'<p class="summary-ok">还没有可清理的 ShaderFixes 新记录。</p>');
+    for(const button of $$('.shader-cleanup',panel))button.onclick=()=>{
+      button.textContent='确认删除未变化的文件';button.classList.add('confirming');
+      button.onclick=async()=>{button.disabled=true;try{const result=await call('cleanupShaderFixes',{id:button.closest('[data-shader-batch]').dataset.shaderBatch},{foreground:false,silent:true});notify(`已删除 ${result.deleted} 个；跳过修改 ${result.changed} 个；找不到 ${result.missing} 个。${result.missingFiles?.length?' 找不到：'+result.missingFiles.join('、'):''}`);renderShaderFixes(dialog,panel)}catch(error){button.disabled=false;notifyError(error)}};
+    };
+    for(const button of $$('.shader-remove-history',panel))button.onclick=async()=>{button.disabled=true;try{await call('removeShaderFixesHistory',{id:button.closest('[data-shader-batch]').dataset.shaderBatch},{foreground:false,silent:true});renderShaderFixes(dialog,panel)}catch(error){button.disabled=false;notifyError(error)}};
   }catch(error){if(current())panel.innerHTML=`<p class="notice error">${esc(error.message)}</p>`}
 }
+function openShaderFixes(){const dialog=modal('ShaderFixes 历史','','<div id="shaderfixes-panel" class="hash-panel"></div>','');renderShaderFixes(dialog,$('#shaderfixes-panel',dialog))}
 function renderHashApply(dialog,panel){
-  panel.innerHTML=`<div class="field"><label for="old-hash">查找 Hash</label><input id="old-hash" maxlength="66" spellcheck="false" placeholder="例如 a1b2c3d4"></div><div class="field"><label for="new-hash">替换为</label><input id="new-hash" maxlength="66" spellcheck="false" placeholder="输入新的 hash"></div><div class="row-actions hash-actions"><button type="button" class="button primary" id="preview-hash">查找并预览</button></div><div id="hash-preview"></div>`;
+  panel.innerHTML=`<div class="field"><label for="old-hash">查找文本</label><textarea id="old-hash" maxlength="1024" spellcheck="false" placeholder="按输入原样匹配，区分大小写"></textarea></div><div class="field"><label for="new-hash">替换为</label><textarea id="new-hash" maxlength="1024" spellcheck="false" placeholder="可以留空以删除匹配文本"></textarea></div><fieldset class="hash-mod-picker"><legend>要修改的模组</legend><div class="row-actions"><button type="button" class="button secondary hash-select-all">全选</button><button type="button" class="button secondary hash-select-none">清空</button></div><div class="hash-mod-list">${state.mods.map(mod=>`<label><input type="checkbox" class="hash-mod" value="${esc(mod.id)}" ${!hashInputs.modIds||hashInputs.modIds.includes(mod.id)?'checked':''}><span>${esc(mod.name)}</span></label>`).join('')||'<p class="meta">安装库中还没有模组。</p>'}</div></fieldset><div class="row-actions hash-actions"><button type="button" class="button primary" id="preview-hash">查找并预览</button></div><div id="hash-preview"></div>`;
   $('#old-hash',panel).value=hashInputs.old;$('#new-hash',panel).value=hashInputs.new;
+  const invalidate=()=>{hashPreview=null;$('#hash-preview',panel)?.replaceChildren()};panel.oninput=invalidate;
+  $('.hash-select-all',panel).onclick=()=>{$$('.hash-mod',panel).forEach(input=>input.checked=true);invalidate()};
+  $('.hash-select-none',panel).onclick=()=>{$$('.hash-mod',panel).forEach(input=>input.checked=false);invalidate()};
   if(hashPreview)renderHashPreview(dialog,panel,hashPreview);
   $('#preview-hash',panel).onclick=async()=>{
-    const oldHash=$('#old-hash',panel).value,newHash=$('#new-hash',panel).value;
-    hashInputs={old:oldHash,new:newHash};
+    const oldHash=$('#old-hash',panel).value,newHash=$('#new-hash',panel).value,modIds=$$('.hash-mod:checked',panel).map(input=>input.value);
+    hashInputs={old:oldHash,new:newHash,modIds};
     try{
-      const result=await call('previewHash',{oldHash,newHash});
+      const result=await call('previewHash',{oldHash,newHash,modIds});
       if(!dialog.open||$('#hash-panel',dialog)!==panel)return;
       hashPreview=result;renderHashPreview(dialog,panel,result);
     }catch{hashPreview=null}
@@ -1215,7 +1244,7 @@ function renderHashPreview(dialog,panel,result){
     const button=event.currentTarget;button.disabled=true;
     try{
       const batch=await call('applyHash',{token:result.token},{reload:true});
-      hashPreview=null;hashInputs={old:'',new:''};
+      hashPreview=null;hashInputs={old:'',new:'',modIds:null};
       notify(`已替换 ${batch.count} 处；可在“替换记录”查看，或在“回溯记录”换回替换前。`);
       hashTab='records';renderHashPanel(dialog);
     }catch{button.disabled=false}
@@ -1257,7 +1286,7 @@ function confirmHashRollback(dialog,panel,batch){
   };
 }
 $('#replace-hash').onclick=()=>{hashTab='apply';openHashReplace()};
-$('#shaderfixes-history').onclick=()=>{hashTab='shaderfixes';openHashReplace()};
+$('#shaderfixes-history').onclick=openShaderFixes;
 
 function renameMod(mod){
  modal('修改模组名称','只修改显示名称，文件、分类、来源和启用状态保持不变。',`<div class="field"><label for="mod-name">模组名称</label><input id="mod-name" maxlength="200" value="${esc(mod.name)}" autofocus></div>`,'<button class="button primary" type="button" id="rename-confirm">保存</button>');
@@ -1289,7 +1318,7 @@ function showModContext(event,mod){
  event.preventDefault();event.stopPropagation();const menu=$('#context-menu');$$('.mod-context-action',menu).forEach(b=>b.remove());$('#context-refresh').hidden=true;
  // 术语与页面顶部按钮一致：安装库 = data/games/<游戏>/library，启用库 = 当前游戏加载器的 Mods 目录。
  const ignored=(mod.ignoredUpdates||[]).length;
- const items=[['重命名',()=>renameMod(mod)],['编辑来源和作者',()=>editInstalledProfile(mod)],['添加 / 修改预览图',()=>editInstalledProfile(mod,true)],[mod.isSkinMod?'取消皮肤模组标记':'设为皮肤模组',()=>mutate('setSkinMod',{id:mod.id,value:!mod.isSkinMod})],['移除',()=>confirmRemove(mod)],...(mod.sourceId?[['来源',()=>openSourceItem(mod)]]:mod.sourceUrl?[['打开来源网址',()=>call('openModSource',{id:mod.id}).catch(()=>{})]]:[]),['安装库',()=>openModFolder(mod,'library')],['启用库',()=>openModFolder(mod,'mods'),mod.active?'':'此模组未启用，当前游戏启用库中还没有它的文件。'],...(ignored?[[`已忽略版本：${ignored} 个`,()=>openIgnoredVersions(mod)]]:[])];
+ const items=[['重命名',()=>renameMod(mod)],['编辑来源和作者',()=>editInstalledProfile(mod)],['添加 / 修改预览图',()=>editInstalledProfile(mod,true)],[mod.isSkinMod?'取消皮肤模组标记':'设为皮肤模组',()=>mutate('setSkinMod',{id:mod.id,value:!mod.isSkinMod})],['移除',()=>confirmRemove(mod)],...(mod.sourceId?[['来源',()=>openInstalledSource(mod)]]:mod.sourceUrl?[['打开来源网址',()=>call('openModSource',{id:mod.id}).catch(()=>{})]]:[]),['安装库',()=>openModFolder(mod,'library')],['启用库',()=>openModFolder(mod,'mods'),mod.active?'':'此模组未启用，当前游戏启用库中还没有它的文件。'],...(ignored?[[`已忽略版本：${ignored} 个`,()=>openIgnoredVersions(mod)]]:[])];
  for(const [text,fn,unavailable]of items){const b=document.createElement('button');b.type='button';b.className='mod-context-action';b.setAttribute('role','menuitem');b.textContent=text;b.disabled=busyCount>0||!!unavailable;if(unavailable)b.title=unavailable;b.onclick=()=>{hideContextMenu();fn();};menu.append(b);}
  menu.hidden=false;menu.dataset.scrollX=scrollX;menu.dataset.scrollY=scrollY;menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-170))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-menu.offsetHeight-8))+'px';$('.mod-context-action',menu)?.focus({preventScroll:true});
 }
