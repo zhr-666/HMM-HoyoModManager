@@ -32,7 +32,22 @@ class DialogStack {
   if(id==='modal')dialog.querySelector('.dialog-close').onclick=()=>this.back(dialog);
   dialog.oncancel=e=>{e.preventDefault();onBack?onBack():this.back(dialog);};
   dialog.onsubmit=e=>{e.preventDefault();onBack?onBack():this.back(dialog);};
+  dialog.onclick=event=>this.onBackdropClick(event,dialog);
   dialog.showModal();moveNotificationCenter(dialog);return dialog;
+ }
+ async onBackdropClick(event,dialog){
+  if(event.target!==dialog||this.layers.at(-1)?.dialog!==dialog)return;
+  const rect=dialog.getBoundingClientRect();
+  if(event.clientX>=rect.left&&event.clientX<rect.right&&event.clientY>=rect.top&&event.clientY<rect.bottom)return;
+  if(this.dismissing)return;
+  this.dismissing=true;
+  try{
+   while(this.layers.length){
+    const layer=this.layers.at(-1);
+    if(layer.onBack)await layer.onBack();else this.back(layer.dialog);
+    if(this.layers.at(-1)===layer)break;
+   }
+  }finally{this.dismissing=false;}
  }
  back(dialog){
   const index=this.layers.findIndex(x=>x.dialog===dialog);if(index<0)return;

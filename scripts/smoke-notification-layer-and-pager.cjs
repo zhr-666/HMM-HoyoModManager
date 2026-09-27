@@ -150,6 +150,16 @@ async function main(){
   assert.equal(await evaluate('document.querySelector("#notification-center").matches(":popover-open")'),true,'通知按钮始终可点击');
   console.log('✓ 通知全部收完后按钮仍可点击，透明区域不阻挡页面点击');
 
+  // 两层弹窗：点内容不关闭，点遮罩一次回到底层页面。
+  await evaluate(`modal('第一层','','','');modal('第二层','','','')`);
+  const dialogPoints=await evaluate(`(()=>{const r=dialogStack.layers.at(-1).dialog.getBoundingClientRect();return {inside:{x:r.left+r.width/2,y:r.top+24},outside:{x:r.left-24,y:r.top+24}}})()`);
+  const clickAt=async({x,y})=>{await client.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});await client.send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1})};
+  await clickAt(dialogPoints.inside);
+  assert.equal(await evaluate('dialogStack.layers.length'),2,'点击弹窗内部应保留两层');
+  await clickAt(dialogPoints.outside);
+  await waitFor('dialogStack.layers.length===0','点击遮罩返回底层页面');
+  console.log('✓ 点击多层弹窗外侧一次返回底层页面');
+
   // ——— 需求 3：翻页后回到页面最上方 ———
   // 这里没有可用的 GameBanana 连接，工坊会停在「加载失败」；但翻页本身（上一页 / 下一页 →
   // 回到页面最上方）不依赖网络结果，所以照样能在这里验：页面用临时占位块撑高，滚到底之后
@@ -166,7 +176,7 @@ async function main(){
   assert.ok(expanded.menuLeft>=expanded.railRight&&expanded.resultsLeft>=expanded.menuRight,'筛选菜单应在游戏栏和模组卡片之间：'+JSON.stringify(expanded));
   assert.ok(expanded.menuLeft-expanded.railRight<=1,'筛选菜单应紧贴游戏栏：'+JSON.stringify(expanded));
   assert.equal(expanded.menuBottom,expanded.viewportHeight,'筛选菜单应延伸到窗口底部');
-  assert.ok(expanded.menuTop===0||expanded.menuTop===40,'筛选菜单应从内容顶部开始');
+  assert.equal(expanded.menuTop,0,'筛选菜单应从窗口顶部开始');
   assert.ok(expanded.resultsWidth>300,'卡片区域应有独立宽度：'+JSON.stringify(expanded));
   const categoryVisible=await evaluate(`(()=>{const item=document.querySelector('#category-list .category');if(!item)return true;const box=item.getBoundingClientRect(),menu=document.querySelector('#workshop-menu').getBoundingClientRect();const x=box.left+box.width/2,y=box.top+box.height/2;return y<menu.bottom&&document.elementFromPoint(x,y)?.closest('.category')===item})()`);
   assert.equal(categoryVisible,true,'翻页区不应遮住分类列表');
@@ -177,10 +187,15 @@ async function main(){
   assert.ok(badgeCenter<=1,'分类数量应在标签上下居中：'+badgeCenter);
   await fs.mkdir(path.join(root,'test-results'),{recursive:true});
   await fs.writeFile(path.join(root,'test-results','workshop-sidebar.png'),await screenshot());
-  const scrollbarStyle=await evaluate(`(()=>{const body=document.querySelector('#workshop-menu-body'),probe=document.createElement('div');probe.id='scrollbar-probe';probe.style.height='1600px';body.append(probe);return {scrollbarWidth:getComputedStyle(body).scrollbarWidth,scrollbarColor:getComputedStyle(body).scrollbarColor,buttonDisplay:getComputedStyle(body,'::-webkit-scrollbar-button').display,scrollHeight:body.scrollHeight,clientHeight:body.clientHeight}})()`);
+  await evaluate(`(()=>{const probe=document.createElement('div');probe.id='scrollbar-probe';probe.style.height='1600px';document.querySelector('#workshop-menu-body').append(probe)})()`);
+  await sleep(800);
+  const scrollbarStyle=await evaluate(`(()=>{const body=document.querySelector('#workshop-menu-body');return {scrollbarWidth:getComputedStyle(body).scrollbarWidth,scrollbarColor:getComputedStyle(body).scrollbarColor,buttonDisplay:getComputedStyle(body,'::-webkit-scrollbar-button').display,scrollHeight:body.scrollHeight,clientHeight:body.clientHeight}})()`);
   assert.ok(scrollbarStyle.scrollHeight>scrollbarStyle.clientHeight,'菜单内容应产生纵向滚动条');
-  assert.equal(scrollbarStyle.scrollbarWidth,'auto','滚动条不使用自动隐藏的细线样式');
+  assert.equal(scrollbarStyle.scrollbarWidth,'thin','滚动条应为细线');
+  assert.match(scrollbarStyle.scrollbarColor,/^(?:transparent|rgba\(0, 0, 0, 0\)) (?:transparent|rgba\(0, 0, 0, 0\))$/,'静止时滚动条应隐藏');
   assert.equal(scrollbarStyle.buttonDisplay,'none','滚动条不显示上下箭头');
+  const scrollingStyle=await evaluate(`(()=>{const body=document.querySelector('#workshop-menu-body');body.dispatchEvent(new Event('scroll'));return getComputedStyle(body).scrollbarColor})()`);
+  assert.ok(scrollingStyle.includes('164, 173, 187'),'滚动时细线应显示');
   await sleep(1000);
   await fs.writeFile(path.join(root,'test-results','workshop-scrollbar.png'),await screenshot());
   await evaluate('document.querySelector("#scrollbar-probe").remove()');
