@@ -168,6 +168,9 @@ async function main(){
   assert.ok(expanded.resultsWidth>300,'卡片区域应有独立宽度：'+JSON.stringify(expanded));
   const categoryVisible=await evaluate(`(()=>{const item=document.querySelector('#category-list .category');if(!item)return true;const box=item.getBoundingClientRect(),menu=document.querySelector('#workshop-menu').getBoundingClientRect();const x=box.left+box.width/2,y=box.top+box.height/2;return y<menu.bottom&&document.elementFromPoint(x,y)?.closest('.category')===item})()`);
   assert.equal(categoryVisible,true,'翻页区不应遮住分类列表');
+  const badgeGeometry=await evaluate(`(()=>{const badge=document.querySelector('#category-list .category-count');if(!badge)return null;const original=badge.textContent;const geometry=()=>{const r=badge.getBoundingClientRect();return {width:r.width,height:r.height}};const single=geometry();badge.textContent='1234';const many=geometry();badge.textContent=original;return {single,many}})()`);
+  assert.ok(badgeGeometry,'工坊分类应显示数量');
+  for(const [label,box] of Object.entries(badgeGeometry))assert.ok(Math.abs(box.width-box.height)<=1&&box.width>=20,`${label} 位数的数量徽标应保持圆形：`+JSON.stringify(box));
   await fs.mkdir(path.join(root,'test-results'),{recursive:true});
   await fs.writeFile(path.join(root,'test-results','workshop-sidebar.png'),await screenshot());
   const pagerReachable=await evaluate(`(()=>{const menu=document.querySelector('#workshop-menu');menu.scrollTop=menu.scrollHeight;const next=document.querySelector('#next-page').getBoundingClientRect();return next.bottom<=menu.getBoundingClientRect().bottom+1})()`);
