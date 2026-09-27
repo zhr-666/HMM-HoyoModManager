@@ -83,7 +83,7 @@
     <main>
       <header class="topbar">
         <div><h1 id="page-title">首页</h1></div>
-        <div class="top-actions"><button class="button secondary" id="open-library-button" hidden>安装库</button><button class="button secondary" id="open-mods-button" hidden>启用库</button></div>
+        <div class="top-actions"><button type="button" class="button secondary" id="workshop-menu-toggle" aria-controls="workshop-menu" aria-expanded="true" hidden>收起筛选菜单</button><button class="button secondary" id="open-library-button" hidden>安装库</button><button class="button secondary" id="open-mods-button" hidden>启用库</button></div>
       </header>
 
       <section id="page-home" class="page active launcher-page" data-testid="home-page">
@@ -111,22 +111,26 @@
       </section>
 
       <section id="page-workshop" class="page" data-testid="workshop-page">
-        <div class="toolbar">
-          <label class="search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="search-input" type="search" placeholder="搜索模组或作者" aria-label="搜索模组或作者"></label>
-          <button class="button secondary" id="search-button">搜索</button>
-        </div>
-        <div class="browse-filters" aria-label="浏览筛选">
-          <label>排序<select id="sort-select" aria-label="模组排序"><option value="downloads">下载最多</option><option value="uploaded">最新发布</option><option value="oldest">最早发布</option><option value="modified">最近修改</option><option value="newUpdated">新发布与更新</option><option value="updated">最近更新</option><option value="alphabetical">名称 A-Z</option><option value="reverseAlphabetical">名称 Z-A</option><option value="likes">获赞最多</option><option value="views">浏览最多</option><option value="comments">评论最多</option><option value="latestComment">最近评论</option></select></label>
-          <label class="check-filter"><input id="sfw-filter" type="checkbox" checked> SFW</label>
-          <label class="check-filter"><input id="nsfw-filter" type="checkbox" checked> NSFW</label>
-        </div>
-        <nav id="category-breadcrumb" class="category-breadcrumb" aria-label="模组分类路径"></nav>
-        <div id="category-head" class="character-head"><strong id="category-heading">选择大分类</strong><label class="mini-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="character-search" type="search" placeholder="查找当前层级分类" aria-label="查找当前层级分类"></label></div>
-        <div id="category-list" class="category-list" aria-label="模组分类"></div>
-        <p id="category-empty" class="meta" hidden>当前层级没有匹配的分类。</p>
-        <div id="browse-grid" class="card-grid"></div>
-        <div id="browse-empty" class="empty" hidden></div>
-        <div class="pager"><button class="button secondary" id="prev-page">上一页</button><span id="page-info">第 1 页</span><button class="button secondary" id="next-page">下一页</button></div>
+        <aside id="workshop-menu" class="workshop-menu" aria-label="模组工坊筛选菜单">
+          <div class="workshop-menu-intro"><strong>浏览工具</strong><p>搜索、筛选并选择模组分类</p></div>
+          <section class="workshop-menu-section" aria-labelledby="workshop-search-heading">
+            <h2 id="workshop-search-heading">搜索</h2>
+            <div class="toolbar"><label class="search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="search-input" type="search" placeholder="模组名称或作者" aria-label="搜索模组或作者"></label><button class="button primary" id="search-button">搜索模组</button></div>
+          </section>
+          <section class="workshop-menu-section" aria-labelledby="workshop-filter-heading">
+            <h2 id="workshop-filter-heading">排序与内容</h2>
+            <div class="browse-filters" aria-label="浏览筛选"><label class="workshop-sort">排序方式<select id="sort-select" aria-label="模组排序"><option value="downloads">下载最多</option><option value="uploaded">最新发布</option><option value="oldest">最早发布</option><option value="modified">最近修改</option><option value="newUpdated">新发布与更新</option><option value="updated">最近更新</option><option value="alphabetical">名称 A-Z</option><option value="reverseAlphabetical">名称 Z-A</option><option value="likes">获赞最多</option><option value="views">浏览最多</option><option value="comments">评论最多</option><option value="latestComment">最近评论</option></select></label><div class="workshop-safety"><label class="check-filter"><input id="sfw-filter" type="checkbox" checked> SFW</label><label class="check-filter"><input id="nsfw-filter" type="checkbox" checked> NSFW</label></div></div>
+          </section>
+          <section class="workshop-menu-section workshop-category-section" aria-labelledby="workshop-category-heading">
+            <h2 id="workshop-category-heading">模组分类</h2>
+            <nav id="category-breadcrumb" class="category-breadcrumb" aria-label="模组分类路径"></nav>
+            <div id="category-head" class="character-head"><strong id="category-heading">选择大分类</strong><label class="mini-search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input id="character-search" type="search" placeholder="查找分类" aria-label="查找当前层级分类"></label></div>
+            <div id="category-list" class="category-list" aria-label="模组分类"></div>
+            <p id="category-empty" class="meta" hidden>当前层级没有匹配的分类。</p>
+          </section>
+          <nav class="pager" aria-label="模组列表翻页"><button class="button secondary" id="prev-page">上一页</button><span id="page-info">第 1 页</span><button class="button secondary" id="next-page">下一页</button></nav>
+        </aside>
+        <div class="workshop-results" aria-label="模组列表"><div id="browse-grid" class="card-grid"></div><div id="browse-empty" class="empty" hidden></div></div>
       </section>
 
       <section id="page-library" class="page" data-testid="library-page">

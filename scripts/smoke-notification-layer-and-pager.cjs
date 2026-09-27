@@ -157,6 +157,30 @@ async function main(){
   await waitFor('taxonomy.length>0','分类缓存就绪',20000);
   await evaluate('showPage("workshop")');
   await sleep(600);
+  const expanded=await evaluate(`(()=>{
+    const rail=document.querySelector('.sidebar').getBoundingClientRect();
+    const menu=document.querySelector('#workshop-menu').getBoundingClientRect();
+    const results=document.querySelector('.workshop-results').getBoundingClientRect();
+    return {railRight:rail.right,menuLeft:menu.left,menuRight:menu.right,resultsLeft:results.left,resultsWidth:results.width};
+  })()`);
+  assert.ok(expanded.menuLeft>=expanded.railRight&&expanded.resultsLeft>=expanded.menuRight,'筛选菜单应在游戏栏和模组卡片之间：'+JSON.stringify(expanded));
+  assert.ok(expanded.menuLeft-expanded.railRight<=30,'筛选菜单应紧邻游戏栏：'+JSON.stringify(expanded));
+  assert.ok(expanded.resultsWidth>300,'卡片区域应有独立宽度：'+JSON.stringify(expanded));
+  const categoryVisible=await evaluate(`(()=>{const item=document.querySelector('#category-list .category');if(!item)return true;const box=item.getBoundingClientRect(),menu=document.querySelector('#workshop-menu').getBoundingClientRect();const x=box.left+box.width/2,y=box.top+box.height/2;return y<menu.bottom&&document.elementFromPoint(x,y)?.closest('.category')===item})()`);
+  assert.equal(categoryVisible,true,'翻页区不应遮住分类列表');
+  await fs.mkdir(path.join(root,'test-results'),{recursive:true});
+  await fs.writeFile(path.join(root,'test-results','workshop-sidebar.png'),await screenshot());
+  const pagerReachable=await evaluate(`(()=>{const menu=document.querySelector('#workshop-menu');menu.scrollTop=menu.scrollHeight;const next=document.querySelector('#next-page').getBoundingClientRect();return next.bottom<=menu.getBoundingClientRect().bottom+1})()`);
+  assert.equal(pagerReachable,true,'菜单滚到底后应能操作翻页按钮');
+  await evaluate('document.querySelector("#workshop-menu").scrollTop=0');
+  await evaluate('document.querySelector("#workshop-menu-toggle").click()');
+  const collapsed=await evaluate(`(()=>({hidden:document.querySelector('#workshop-menu').hidden,expanded:document.querySelector('#workshop-menu-toggle').getAttribute('aria-expanded'),width:document.querySelector('.workshop-results').getBoundingClientRect().width}))()`);
+  assert.equal(collapsed.hidden,true,'收起后菜单内容不可见');
+  assert.equal(collapsed.expanded,'false','收起后按钮状态同步');
+  assert.ok(collapsed.width>expanded.resultsWidth+150,'收起后卡片区域应获得菜单宽度：'+JSON.stringify({expanded,collapsed}));
+  await evaluate('document.querySelector("#workshop-menu-toggle").click()');
+  assert.equal(await evaluate('document.querySelector("#workshop-menu").hidden'),false,'菜单可重新展开');
+  console.log('✓ 工坊筛选菜单位于游戏栏与卡片之间，收起后卡片区域扩展，展开可恢复');
   await evaluate("(()=>{const s=document.createElement('div');s.id='pager-probe';s.style.height='1600px';document.body.append(s)})()");
   // 注意：离线时下一页会被置灰（没有可翻的页），这里先手动恢复可用再点，验证的是翻页动作本身。
   const scrollReset=async label=>{

@@ -662,11 +662,20 @@ function flyIcon(src,{from,to},done=()=>{}){
   fly.addEventListener('animationend',land,{once:true});
   activeFlight=abort;
 }
+const WORKSHOP_MENU_KEY='hoyomod:workshop-menu-collapsed';
+function setWorkshopMenuCollapsed(collapsed){
+  const page=$('#page-workshop'),menu=$('#workshop-menu'),button=$('#workshop-menu-toggle');
+  page.classList.toggle('menu-collapsed',collapsed);
+  menu.hidden=collapsed;
+  button.setAttribute('aria-expanded',String(!collapsed));
+  button.textContent=collapsed?'展开筛选菜单':'收起筛选菜单';
+  try{localStorage.setItem(WORKSHOP_MENU_KEY,collapsed?'1':'0')}catch{}
+}
 function showPage(name){
   if(!titles[name])return;
   if(name!=='settings')setMode(launcherPages.has(name)?'launcher':'workspace');
   document.documentElement.dataset.page=name;
-  $('#open-mods-button').hidden=name!=='library';$('#open-library-button').hidden=name!=='library';$('#replace-hash').hidden=name!=='library';$('#shaderfixes-history').hidden=name!=='library';
+  $('#open-mods-button').hidden=name!=='library';$('#open-library-button').hidden=name!=='library';$('#replace-hash').hidden=name!=='library';$('#shaderfixes-history').hidden=name!=='library';$('#workshop-menu-toggle').hidden=name!=='workshop';
   hideContextMenu();pageScroll[activePage]=window.scrollY;activePage=name;
   $$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.page===name));
   $$('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+name));
@@ -1096,7 +1105,7 @@ syncGameTiles();
 $('#library-view-list').onclick=()=>setLibraryView('list');$('#library-view-grid').onclick=()=>setLibraryView('grid');
 $('#clear-downloads').onclick=()=>enqueue('clearDownloads',{});
 $('#cleanup-packages').onclick=async()=>{try{const result=await call('cleanupPackages',{},{foreground:false,silent:true});if(result?.downloads){downloads=result.downloads;renderDownloads()}notify(result?.removed?`已清理 ${result.removed} 个安装包，释放 ${formatSize(result.freed)}。`:'没有可清理的安装包。')}catch(e){notify(e.message,true)}};
-$$('.nav-item').forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==='settings')markAppUpdateSeen()});$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};function showBrowsePage(next){page=Math.max(1,Number(next)||1);browse()}
+$$('.nav-item').forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==='settings')markAppUpdateSeen()});$('#workshop-menu-toggle').onclick=()=>setWorkshopMenuCollapsed(!$('#page-workshop').classList.contains('menu-collapsed'));try{setWorkshopMenuCollapsed(localStorage.getItem(WORKSHOP_MENU_KEY)==='1')}catch{setWorkshopMenuCollapsed(false)}$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};function showBrowsePage(next){page=Math.max(1,Number(next)||1);browse()}
 $('#prev-page').onclick=()=>{if(page>1)showBrowsePage(page-1)};$('#next-page').onclick=()=>showBrowsePage(page+1);$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=()=>call('launch').catch(()=>{});// 导入本地模组：① 选 Mod 压缩包 → ② 选 GameBanana 分类 → ③ 解压、复制进安装库并登记（需求 4）。
 // 选中的分类决定模组在「我的模组」里的位置，也是安装库里存放模组副本的文件夹；导入后它和
 // 下载来的模组走同一套规则（同角色互斥、启用/停用、检查更新）。

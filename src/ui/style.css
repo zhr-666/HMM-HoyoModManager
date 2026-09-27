@@ -641,3 +641,23 @@ html:has(dialog[open]),html:has(dialog[open]) body{overflow:hidden}
 .profile-error{color:var(--danger);font-size:13px}.notification-section{border-bottom:1px solid var(--line)}
 
 .shaderfixes-path{overflow-wrap:anywhere;user-select:text}
+
+/* 工坊筛选菜单紧邻游戏栏；右侧只承载模组卡片和列表状态。 */
+html[data-page="workshop"] main{padding-left:14px;padding-right:24px}
+#page-workshop.page.active{display:grid;grid-template-columns:268px minmax(0,1fr);align-items:start;gap:22px}
+#page-workshop.menu-collapsed.page.active{grid-template-columns:minmax(0,1fr)}
+#workshop-menu[hidden]{display:none}
+.workshop-results{min-width:0}
+.workshop-menu{position:sticky;top:14px;max-height:calc(100vh - 140px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 14px 12px}
+.workshop-menu-intro{padding:2px 2px 14px}.workshop-menu-intro strong{font-size:16px}.workshop-menu-intro p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.5}
+.workshop-menu-section{border-top:1px solid var(--line);padding:17px 2px 18px}.workshop-menu-section h2{margin:0 0 12px;font-size:12px;letter-spacing:.04em;color:var(--text-secondary)}
+#page-workshop .toolbar{display:grid;max-width:none;gap:9px;margin:0}#page-workshop .toolbar .search{min-width:0;flex:none}#page-workshop .toolbar .button{width:100%;height:36px}
+#page-workshop .browse-filters{display:grid;gap:12px;margin:0;font-size:12px}#page-workshop .workshop-sort{display:grid;gap:7px;color:var(--muted)}#page-workshop .browse-filters select{width:100%;height:36px}
+.workshop-safety{display:grid;grid-template-columns:1fr 1fr;gap:8px}.workshop-safety .check-filter{justify-content:center;border-radius:7px;min-height:35px;padding:7px 8px;color:var(--text)}.workshop-safety .check-filter:has(input:checked){border-color:var(--blue);background:var(--blue-soft)}
+#page-workshop .category-breadcrumb{gap:4px 7px;margin:0 0 14px;font-size:11px;line-height:1.4}#page-workshop .category-breadcrumb .link-button{font-size:11px;text-align:left}
+#page-workshop .character-head{display:grid;gap:8px;margin:0 0 10px}#page-workshop .character-head>strong{font-size:11px}#page-workshop .mini-search{width:100%;height:34px}#page-workshop .mini-search input{min-width:0;width:100%}
+#page-workshop .category-list.category-list{display:grid;grid-template-columns:minmax(0,1fr);max-height:none;overflow:visible;gap:6px;padding:0;margin:0}
+#page-workshop .category.category{width:100%;min-height:51px;padding:7px 9px;background:var(--bg);border-radius:8px;color:var(--text)}#page-workshop .category.category:hover{border-color:var(--blue);background:var(--hover)}#page-workshop .category .category-label{flex:1;min-width:0}
+#page-workshop .pager{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px;padding:14px 2px 2px;background:var(--surface);border-top:1px solid var(--line)}#page-workshop .pager #page-info{grid-column:1/-1;text-align:center;font-size:11px}#page-workshop .pager .button{min-width:0;padding-inline:8px}
+#workshop-menu-toggle{min-width:110px}
+@media(max-width:960px){#page-workshop.page.active{grid-template-columns:226px minmax(0,1fr);gap:15px}.workshop-menu{padding-inline:11px}}
