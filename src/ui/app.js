@@ -361,7 +361,7 @@ function renderGameValues(root=document){
 }
 // snapshot().settings 是「全局 + 当前游戏」的生效设置：加载器 Mods 路径、外部程序、启动器背景
 // 都来自当前游戏（需求 27），页面显示与读写都按这一份走。
-function renderState(){state.settings??={};state.mods??=[];state.presets??=[];state.gameSettings??={};document.documentElement.dataset.emptyHome=String(!addedGameIds.length);$('#data-root').textContent=state.runtime?.dataRoot?`数据目录：${state.runtime.dataRoot}`:'数据目录不可用';$('#auto-check-app-updates').checked=state.settings.autoCheckAppUpdates!==false;$('#software-version').textContent=state.runtime?.version?'v'+state.runtime.version:'';$('#auto-enable').checked=!!state.settings.autoEnable;$('#auto-check-updates').checked=!!state.settings.autoCheckUpdates;$('#blur-nsfw').checked=state.settings.blurNsfw!==false;$('#use-links').checked=state.settings.useLinks!==false;renderGameValues();renderAppearance();refreshInstallAvailability();renderLibrary();renderPresets();renderHome();renderGamesPage();for(const selector of ['#home-open-library','#home-open-presets','#home-game-settings','#launch-button'])$(selector).disabled=!addedGameIds.length;$('#game-logo').hidden=!addedGameIds.length;}
+function renderState(){state.settings??={};state.mods??=[];state.presets??=[];state.gameSettings??={};document.documentElement.dataset.emptyHome=String(!addedGameIds.length);$('#data-root').textContent=state.runtime?.dataRoot?`数据目录：${state.runtime.dataRoot}`:'数据目录不可用';$('#auto-check-app-updates').checked=state.settings.autoCheckAppUpdates!==false;$('#software-version').textContent=state.runtime?.version?'v'+state.runtime.version:'';$('#auto-enable').checked=!!state.settings.autoEnable;$('#auto-check-updates').checked=!!state.settings.autoCheckUpdates;$('#blur-nsfw').checked=state.settings.blurNsfw!==false;$('#use-links').checked=state.settings.useLinks!==false;renderGameValues();renderAppearance();refreshInstallAvailability();renderLibrary();renderCategories();renderPresets();renderHome();renderGamesPage();for(const selector of ['#home-open-library','#home-open-presets','#home-game-settings','#launch-button'])$(selector).disabled=!addedGameIds.length;$('#game-logo').hidden=!addedGameIds.length;}
 function imageMarkup(url,alt,nsfw=false){const safe=safeImage(url),blur=nsfw&&state.settings.blurNsfw!==false;return safe?`<img src="${esc(safe)}" alt="${esc(alt)}" loading="lazy" class="${blur?'nsfw-image':''}">${blur?'<span class="nsfw-cover">NSFW · 点击查看</span>':''}`:'<div class="preview-placeholder">暂无预览</div>'}
 function revealNsfw(root){$('.nsfw-image',root)?.classList.remove('nsfw-image');$('.nsfw-cover',root)?.remove()}
 function openSourceItem(item){if(!item?.sourceId&&!item?.id)return;call('openSource',{id:Number(item.sourceId||item.id)}).catch(()=>{})}
@@ -687,6 +687,9 @@ function selectCategory(id){category=id;page=1;$('#character-search').value='';r
 function renderCategories(){
   const box=$('#category-list'),filter=($('#character-search').value||'').trim().toLocaleLowerCase();
   const path=categoryPath(taxonomy,category),current=path.at(-1),children=current?(current.children||[]):taxonomy;
+  const counts=new Map();
+  const collect=nodes=>{for(const node of nodes){counts.set(node.id,node.modIds.length);collect(node.children)}};
+  collect(buildLibraryTree(taxonomy,state.mods,state.folders||[]));
   const breadcrumb=$('#category-breadcrumb');breadcrumb.replaceChildren();
   for(const node of [{id:'',name:'全部分类'},...path]){
     if(breadcrumb.children.length){const separator=document.createElement('span');separator.textContent='›';separator.setAttribute('aria-hidden','true');breadcrumb.append(separator)}
@@ -701,7 +704,7 @@ function renderCategories(){
   for(const c of visible){
     const button=document.createElement('button');button.className='category';button.title=[...path.map(n=>n.name),c.name].join(' / ');
     const icon=safeImage(c.icon);
-    button.innerHTML=`${icon?`<img src="${esc(icon)}" alt="">`:''}<span class="category-label"><span class="category-name">${esc(c.name)}</span><small>${c.children?.length?c.children.length+' 个子分类':'浏览模组'}</small></span><span class="category-arrow" aria-hidden="true">›</span>`;
+    button.innerHTML=`${icon?`<img src="${esc(icon)}" alt="">`:''}<span class="category-label"><span class="category-line"><span class="category-name">${esc(c.name)}</span><span class="category-count">${counts.get(String(c.id))||0}</span></span><small>${c.children?.length?c.children.length+' 个子分类':'浏览模组'}</small></span><span class="category-arrow" aria-hidden="true">›</span>`;
     button.onclick=()=>selectCategory(c.id);box.append(button);
   }
   $('#category-empty').hidden=!children.length||visible.length>0;
@@ -1027,8 +1030,9 @@ function renderUpdateProgress(){
 }
 function renderUpdateDialog(dialog){
   if(!dialog?.open||dialog.dataset.updateGame!==activeGame)return;
+  const ignoredOpen=$('.update-ignored',dialog)?.open||false;
   const result=updateSummary,ignored=ignoredVersionRows(),body=$('[id$="modal-body"]',dialog);
-  body.innerHTML=`<section class="update-check-controls"><button type="button" class="button primary update-start">开始检查</button><p class="meta update-progress-text" role="status"></p><progress class="update-progress-bar" hidden></progress></section><h3 class="hash-heading">已忽略的版本 · ${ignored.length}</h3>${ignored.length?ignored.map(({mod,row})=>`<article class="update-result"><div class="update-title"><div><strong>${esc(mod.name)}</strong><small>${esc(row.name||'未命名文件')} · ${esc(formatDate(row.uploadedAt)||'日期未知')}</small></div><button type="button" class="button secondary ignore-restore" data-mod="${esc(mod.id)}" data-at="${esc(String(row.uploadedAt))}">取消忽略</button></div></article>`).join(''):'<p class="summary-ok">没有已忽略的版本。</p>'}<h3 class="hash-heading">检查结果</h3>${result?updateSummaryBody(result):'<p class="summary-ok">尚未检查更新。</p>'}`;
+  body.innerHTML=`<section class="update-check-controls"><button type="button" class="button primary update-start">开始检查</button><p class="meta update-progress-text" role="status"></p><progress class="update-progress-bar" hidden></progress></section><h3 class="hash-heading">检查结果</h3>${result?updateSummaryBody(result):'<p class="summary-ok">尚未检查更新。</p>'}<details class="update-ignored"${ignoredOpen?' open':''}><summary>已忽略的版本 · ${ignored.length}</summary><div class="update-ignored-list">${ignored.length?ignored.map(({mod,row})=>`<article class="update-result"><div class="update-title"><div><strong>${esc(mod.name)}</strong><small>${esc(row.name||'未命名文件')} · ${esc(formatDate(row.uploadedAt)||'日期未知')}</small></div><button type="button" class="button secondary ignore-restore" data-mod="${esc(mod.id)}" data-at="${esc(String(row.uploadedAt))}">取消忽略</button></div></article>`).join(''):'<p class="summary-ok">没有已忽略的版本。</p>'}</div></details>`;
   $('[id$="modal-actions"]',dialog).innerHTML=result?.updates?.length?'<button type="button" class="button primary" id="update-confirm">安装所选更新</button>':'';
   $('.update-start',dialog).onclick=startUpdateCheck;
   for(const button of $$('.ignore-restore',dialog))button.onclick=async()=>{

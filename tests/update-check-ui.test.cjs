@@ -46,3 +46,11 @@ test('点「检查更新」立即打开窗口，由窗口按钮开始后台检�
   assert.ok(app.includes("$('.update-start',dialog).onclick=startUpdateCheck"),'窗口中的开始检查按钮应启动检查');
   assert.ok(app.includes("call('checkUpdates',{},{foreground:false,silent:true})"),'后台检查不应阻塞界面');
 });
+
+test('检查结果下方可折叠已忽略版本，刷新时保留展开状态',()=>{
+  const app=read('src/ui/app.js');
+  const body=/function renderUpdateDialog\(dialog\)\{([\s\S]*?)\n\}/.exec(app)?.[1]||'';
+  assert.ok(body.indexOf('检查结果')<body.indexOf('<details class="update-ignored"'),'已忽略版本排在检查结果后面');
+  assert.match(body,/<details class="update-ignored"/,'已忽略版本使用可折叠区域');
+  assert.match(body,/ignoredOpen/,'结果刷新后保留折叠状态');
+});

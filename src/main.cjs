@@ -236,15 +236,15 @@ async function resolveCategory(categoryId){
 }
 // 分类 → 安装库文件夹与「我的模组」归类都由 core/library.cjs 按这份分类信息算；这里只负责
 // 把用户选的 GameBanana 分类编号解析成它。
-// 检查更新一律在后台跑：进行中只在通知中心的任务卡上显示
-// 「正在检查更新第 X 个，共 X 个」与进度条（没有独立任务页面，任务卡不可点击），
+// 检查更新一律在后台跑：进行中在通知中心的任务卡上显示
+// 「正在检查更新第 X 个，共 X 个」与进度条，点击任务卡可打开检查结果窗口；
 // 完成后只发一条通知 + 点亮按钮红点，绝不自动弹出结果窗口；自动检查保持安静，
 // 只有查到更新时才通知。被用户忽略过的版本不算更新（需求 9）。
 async function checkUpdates(automatic=false){
   const mods=lib.snapshot().mods.filter(m=>m.sourceId),result={updates:[],failures:[],unknown:[],ignored:[],checked:0,total:mods.length};
   const taskId=TASK.checkUpdates;
   const queue=checked=>({text:mods.length?`正在检查更新第 ${Math.min(checked+1,mods.length)} 个，共 ${mods.length} 个`:'正在检查更新',received:checked,total:mods.length,percent:mods.length?Math.round(checked/mods.length*100):0});
-  tasks.start({id:taskId,label:'正在检查更新',total:mods.length,cancelable:true,queue:queue(0)});
+  tasks.start({id:taskId,label:'正在检查更新',total:mods.length,cancelable:true,target:'modUpdates:'+workspace().game.id,queue:queue(0)});
   setTaskCancel(taskId,()=>workspace().checkAbort.abort());
   try{
     for(const mod of mods){

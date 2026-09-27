@@ -139,7 +139,7 @@ test('检查更新开始时不弹通知，进行中显示任务卡，结束后�
   const main=read('src/main.cjs');
   assert.equal(main.includes("pushToast('开始检查更新'"),false,'模组检查更新开始时不应弹即时通知');
   assert.ok(main.includes('正在检查更新第 ${Math.min(checked+1,mods.length)} 个，共 ${mods.length} 个'),'任务卡要显示检查到第几个');
-  assert.equal(/TASK\.checkUpdates[^;]*target/.test(main),false,'检查更新没有独立任务页面，任务卡不加 target');
+  assert.match(main,/tasks\.start\(\{id:taskId[^\n]*target:'modUpdates:'\+workspace\(\)\.game\.id/,'检查更新任务卡指向当前游戏的检查结果窗口');
   assert.match(read('src/core/update-summary.cjs'),/text: `检查更新完成：/,'结束通知以「检查更新完成」开头');
   assert.match(read('src/core/update-summary.cjs'),/target: 'modUpdates'/,'完成通知带对应结果页面');
   assert.equal(read('src/ui/app.js').includes("showToast('开始检查更新')"),false,'软件检查更新开始时不应弹即时通知');
