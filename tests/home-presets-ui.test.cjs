@@ -16,10 +16,10 @@ test('主页方案卡展示名称快捷按钮，不列出启用数量或模组�
  assert.match(app,/aria-pressed/);
 });
 
-test('设置页的当前游戏设置有独立分组，三个原有配置入口保留',()=>{
+test('设置页的当前游戏设置沿用弹窗的三行布局，并居中排列',()=>{
  const html=read('src/ui/index.html');
  const panel=html.split('id="game-settings-panel"')[1]?.split('id="software-update-card"')[0]||'';
- assert.match(panel,/class="game-settings-grid"/);
- assert.equal((panel.match(/class="game-setting-item(?: [^"]*)?"/g)||[]).length,3);
+ assert.equal((panel.match(/class="setting-row"/g)||[]).length,3);
  for(const id of ['choose-mods','choose-program','choose-background','fetch-background','reset-background'])assert.ok(panel.includes(`id="${id}"`),id);
+ assert.match(read('src/ui/style.css'),/\.game-settings-panel\{[^}]*max-width:[^;]+;[^}]*margin:[^}]*auto/);
 });

@@ -3,14 +3,16 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 
-test('主界面滚动条是细线，静止时隐藏且没有箭头',()=>{
+test('页面右侧滚动条覆盖在完整背景上，并淡出',()=>{
   const css=fs.readFileSync(path.join(__dirname,'../src/ui/style.css'),'utf8');
-  assert.match(css,/\*\{scrollbar-width:thin;scrollbar-color:transparent transparent\}/);
-  assert.match(css,/html\[data-scrolling\],html\[data-scrolling\] \*\{scrollbar-color:var\(--muted\) transparent\}/);
+  const html=fs.readFileSync(path.join(__dirname,'../src/ui/index.html'),'utf8');
+  assert.match(html,/id="page-scrollbar"[^>]*><div id="page-scrollbar-thumb"/);
+  assert.match(css,/html\{scrollbar-width:none\}/);
+  assert.match(css,/html::-webkit-scrollbar\{display:none\}/);
+  assert.match(css,/\.page-scrollbar\{[^}]*position:fixed[^}]*background:transparent/);
+  assert.match(css,/\.page-scrollbar-thumb\{[^}]*transition:opacity/);
+  assert.match(css,/\.page-scrollbar-thumb\.visible\{opacity:1/);
   assert.match(css,/::-webkit-scrollbar\{width:4px;height:4px\}/);
-  assert.match(css,/::-webkit-scrollbar-track\{background:transparent\}/);
-  assert.match(css,/::-webkit-scrollbar-thumb\{background:transparent/);
-  assert.match(css,/html\[data-scrolling\] ::-webkit-scrollbar-thumb\{background:var\(--muted\)/);
   assert.match(css,/::-webkit-scrollbar-button\{[^}]*display:none/);
 });
 

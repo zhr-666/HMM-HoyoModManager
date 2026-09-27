@@ -455,11 +455,6 @@ const actions={
       return workspaces.run(next,()=>snapshot());
     }finally{ctx.removing=false;}
   },
-  proxyDiagnostics:async()=>{
-    const route=await session.defaultSession.resolveProxy('https://files.gamebanana.com/'),apiRoute=await session.defaultSession.resolveProxy('https://gamebanana.com/apiv11/Mod/710045/ProfilePage');
-    let message;try{const response=await network.request('https://gamebanana.com/apiv11/Mod/710045/ProfilePage');await response.body?.cancel();message='GameBanana 接口可连接。此检测不代表大文件传输稳定；DIRECT 也可能由 TUN 模式接管。';}catch(e){message='连接检测失败：'+e.message;}
-    return {route,apiRoute,message};
-  },
   chooseMods:p=>exclusive(async()=>{
     const importer=workspace().game.importer;
     const r=await dialog.showOpenDialog(win,{title:'选择 '+importer+' 文件夹（包含 d3dx.ini）',properties:['openDirectory']});

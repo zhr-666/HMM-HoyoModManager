@@ -366,7 +366,7 @@ function renderGameValues(root=document){
 }
 // snapshot().settings 是「全局 + 当前游戏」的生效设置：加载器 Mods 路径、外部程序、启动器背景
 // 都来自当前游戏（需求 27），页面显示与读写都按这一份走。
-function renderState(){state.settings??={};state.mods??=[];state.presets??=[];state.gameSettings??={};document.documentElement.dataset.emptyHome=String(!addedGameIds.length);$('#data-root').textContent=state.runtime?.dataRoot?`数据目录：${state.runtime.dataRoot}`:'数据目录不可用';$('#auto-check-app-updates').checked=state.settings.autoCheckAppUpdates!==false;$('#software-version').textContent=state.runtime?.version?'v'+state.runtime.version:'';$('#auto-enable').checked=!!state.settings.autoEnable;$('#auto-check-updates').checked=!!state.settings.autoCheckUpdates;$('#blur-nsfw').checked=state.settings.blurNsfw!==false;$('#use-links').checked=state.settings.useLinks!==false;renderGameValues();renderAppearance();refreshInstallAvailability();renderLibrary();renderCategories();renderPresets();renderHome();renderGamesPage();for(const selector of ['#home-open-library','#home-open-presets','#home-game-settings','#launch-button'])$(selector).disabled=!addedGameIds.length;$('#game-logo').hidden=!addedGameIds.length;}
+function renderState(){state.settings??={};state.mods??=[];state.presets??=[];state.gameSettings??={};document.documentElement.dataset.emptyHome=String(!addedGameIds.length);$('#data-root').textContent=state.runtime?.dataRoot?`数据目录：${state.runtime.dataRoot}`:'数据目录不可用';$('#auto-check-app-updates').checked=state.settings.autoCheckAppUpdates!==false;$('#software-version').textContent=state.runtime?.version?'v'+state.runtime.version:'';$('#auto-enable').checked=!!state.settings.autoEnable;$('#auto-check-updates').checked=!!state.settings.autoCheckUpdates;$('#blur-nsfw').checked=state.settings.blurNsfw!==false;$('#use-links').checked=state.settings.useLinks!==false;renderGameValues();renderAppearance();refreshInstallAvailability();renderLibrary();refreshWorkshopInstalledChecks();renderCategories();renderPresets();renderHome();renderGamesPage();for(const selector of ['#home-open-library','#home-open-presets','#home-game-settings','#launch-button'])$(selector).disabled=!addedGameIds.length;$('#game-logo').hidden=!addedGameIds.length;}
 function imageMarkup(url,alt,nsfw=false){const safe=safeImage(url),blur=nsfw&&state.settings.blurNsfw!==false;return safe?`<img src="${esc(safe)}" alt="${esc(alt)}" loading="lazy" class="${blur?'nsfw-image':''}">${blur?'<span class="nsfw-cover">NSFW · 点击查看</span>':''}`:'<div class="preview-placeholder">暂无预览</div>'}
 function revealNsfw(root){$('.nsfw-image',root)?.classList.remove('nsfw-image');$('.nsfw-cover',root)?.remove()}
 function openSourceItem(item){if(!item?.sourceId&&!item?.id)return;call('openSource',{id:Number(item.sourceId||item.id)}).catch(()=>{})}
@@ -825,13 +825,23 @@ async function browse(){
 // 工坊卡片整块就是「查看详情」：不再单独放按钮，点方框（封面或文字）任意处都进详情。
 // 内部的「在 GameBanana 查看」与 NSFW 揭盖要拦下这次点击，避免误开详情。
 function workshopCard(m){const el=document.createElement('article');el.className='mod-card';el.dataset.testid='browse-card';el.dataset.nsfw=String(!!m.nsfw);el.tabIndex=0;el.setAttribute('aria-label',`查看「${m.name}」的详情`);
- el.innerHTML=`<div class="preview">${imageMarkup(m.preview,m.name,m.nsfw)}</div><div class="mod-card-body"><div class="eyebrow">${esc(m.characterName||flattenCategories(taxonomy).find(c=>String(c.id)===String(category))?.name||'模组')}${m.nsfw?' · NSFW':''}</div><h3 title="${esc(m.name)}">${esc(m.name)}</h3><p class="meta">${esc(m.author||'未知作者')} · ${m.downloadCount==null?'下载次数暂不可用':Number(m.downloadCount).toLocaleString('zh-CN')+' 次下载'}${m.uploadedAt?' · 发布 '+esc(formatDate(m.uploadedAt)):''}</p><div class="card-actions"><button type="button" class="link-button source">在 GameBanana 查看</button></div></div>`;
+ el.dataset.sourceId=String(m.id);
+ const installed=state.mods.some(mod=>String(mod.sourceId)===String(m.id));
+ el.innerHTML=`<div class="preview">${imageMarkup(m.preview,m.name,m.nsfw)}${installed?'<span class="installed-check" title="已安装" aria-label="已安装">✓</span>':''}</div><div class="mod-card-body"><div class="eyebrow">${esc(m.characterName||flattenCategories(taxonomy).find(c=>String(c.id)===String(category))?.name||'模组')}${m.nsfw?' · NSFW':''}</div><h3 title="${esc(m.name)}">${esc(m.name)}</h3><p class="meta">${esc(m.author||'未知作者')} · ${m.downloadCount==null?'下载次数暂不可用':Number(m.downloadCount).toLocaleString('zh-CN')+' 次下载'}${m.uploadedAt?' · 发布 '+esc(formatDate(m.uploadedAt)):''}</p><div class="card-actions"><button type="button" class="link-button source">在 GameBanana 查看</button></div></div>`;
  el.onclick=()=>openDetail(m);
  el.onkeydown=event=>{if(event.target!==el||(event.key!=='Enter'&&event.key!==' '))return;event.preventDefault();openDetail(m)};
  // 封面被 NSFW 遮罩盖住时，第一次点击先揭开遮罩；没有遮罩就把这次点击交给卡片本身打开详情。
  $('.preview',el).onclick=event=>{if(!$('.nsfw-cover',el))return;event.stopPropagation();revealNsfw(el)};
  $('.source',el).onclick=event=>{event.stopPropagation();openSourceItem(m)};
  return el}
+function refreshWorkshopInstalledChecks(){
+ const installed=new Set(state.mods.map(mod=>String(mod.sourceId)).filter(id=>id&&id!=='undefined'));
+ for(const card of $$('#browse-grid .mod-card')){
+  const preview=$('.preview',card),check=$('.installed-check',card);
+  if(installed.has(card.dataset.sourceId)){if(!check)preview.insertAdjacentHTML('beforeend','<span class="installed-check" title="已安装" aria-label="已安装">✓</span>')}
+  else check?.remove();
+ }
+}
 const dialogStack=new DialogStack(['modal','dependency-modal','image-modal']);
 function modal(title,_subtitle,body,actions){
  const dialog=dialogStack.open('modal');
@@ -1160,7 +1170,7 @@ $('#import-button').onclick=async()=>{
   finally{importRunning=false;$('#import-button').disabled=false}
 };
 $('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods',{gameId:activeGame});$('#choose-program').onclick=()=>mutate('chooseProgram',{gameId:activeGame});$('#choose-background').onclick=()=>mutate('chooseBackground',{gameId:activeGame});$('#reset-background').onclick=()=>mutate('resetBackground',{gameId:activeGame});$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#open-logs').onclick=()=>call('openLogs',{}, {foreground:false}).catch(()=>{});$('#check-updates-library').onclick=checkUpdatesButton;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
-$('#blur-nsfw').onchange=async e=>{await mutate('settings',{blurNsfw:e.target.checked});refreshWorkshopBlur()};$('#use-links').onchange=e=>mutate('settings',{useLinks:e.target.checked});$('#material-select').onchange=e=>mutate('settings',{material:e.target.value});$('#proxy-mode').onchange=e=>{if(e.target.value==='manual'){ $('#proxy-url-row').hidden=false;if(state.settings.proxyUrl)mutate('settings',{proxyMode:'manual'});}else mutate('settings',{proxyMode:'system'})};$('#save-proxy').onclick=()=>mutate('settings',{proxyMode:$('#proxy-mode').value,proxyUrl:$('#proxy-url').value.trim()});$('#test-proxy').onclick=async()=>{try{const r=await call('proxyDiagnostics');$('#proxy-result').textContent=[r.message,r.route,r.apiRoute].filter(Boolean).join(' · ')}catch(e){$('#proxy-result').textContent=e.message}};for(const id of ['sort-select','sfw-filter','nsfw-filter'])$('#'+id).onchange=()=>{page=1;browse()};
+$('#blur-nsfw').onchange=async e=>{await mutate('settings',{blurNsfw:e.target.checked});refreshWorkshopBlur()};$('#use-links').onchange=e=>mutate('settings',{useLinks:e.target.checked});$('#material-select').onchange=e=>mutate('settings',{material:e.target.value});$('#proxy-mode').onchange=e=>{if(e.target.value==='manual'){ $('#proxy-url-row').hidden=false;if(state.settings.proxyUrl)mutate('settings',{proxyMode:'manual'});}else mutate('settings',{proxyMode:'system'})};$('#save-proxy').onclick=()=>mutate('settings',{proxyMode:$('#proxy-mode').value,proxyUrl:$('#proxy-url').value.trim()});for(const id of ['sort-select','sfw-filter','nsfw-filter'])$('#'+id).onchange=()=>{page=1;browse()};
 api?.onDownloads?.(payload=>{if(payload?.gameId&&payload.gameId!==activeGame)return;downloads=Array.isArray(payload)?payload:payload?.rows||[];renderDownloads()});
 // 全局进度条取消了：长任务只在它自己打开的弹窗里报告进度，下载进度看「下载列表」的每一行。
 api?.onProgress?.(p=>{
@@ -1387,8 +1397,42 @@ document.addEventListener('contextmenu',event=>{
 // 点菜单以外的任何地方都收起右键菜单；点在菜单上则不能收——否则按下鼠标的那一刻菜单就没了，
 // click 永远落不到菜单按钮上（命中测试通过也点不动）。
 document.addEventListener('pointerdown',event=>{if(!event.target.closest('.context-menu'))hideContextMenu()});
-// 滚动条只在滑动时显形，停下约 0.7 秒后淡回几乎透明。
-let scrollIdleTimer;document.addEventListener('scroll',()=>{document.documentElement.dataset.scrolling='true';clearTimeout(scrollIdleTimer);scrollIdleTimer=setTimeout(()=>{delete document.documentElement.dataset.scrolling},700)},{capture:true,passive:true});
+// 根页面隐藏原生滚动槽，用覆盖式滑块显示滚动位置；停下后只淡出滑块。
+const pageScrollbar=$('#page-scrollbar'),pageScrollbarThumb=$('#page-scrollbar-thumb');
+let scrollIdleTimer,pageScrollIdleTimer,pageScrollbarDrag=null;
+function updatePageScrollbar(){
+ const root=document.scrollingElement,trackHeight=innerHeight-(document.documentElement.dataset.platform==='win32'?40:0);
+ const scrollRange=Math.max(0,root.scrollHeight-root.clientHeight);
+ pageScrollbar.hidden=scrollRange<=1||trackHeight<=0;
+ if(pageScrollbar.hidden){pageScrollbarThumb.classList.remove('visible');return}
+ const thumbHeight=Math.max(32,Math.min(trackHeight,trackHeight*root.clientHeight/root.scrollHeight));
+ pageScrollbarThumb.style.height=thumbHeight+'px';
+ pageScrollbarThumb.style.top=(scrollRange?root.scrollTop/scrollRange*(trackHeight-thumbHeight):0)+'px';
+}
+function showPageScrollbar(){
+ updatePageScrollbar();if(pageScrollbar.hidden)return;
+ pageScrollbarThumb.classList.add('visible');clearTimeout(pageScrollIdleTimer);
+ pageScrollIdleTimer=setTimeout(()=>{if(!pageScrollbarDrag)pageScrollbarThumb.classList.remove('visible')},900);
+}
+document.addEventListener('scroll',event=>{
+ document.documentElement.dataset.scrolling='true';clearTimeout(scrollIdleTimer);
+ scrollIdleTimer=setTimeout(()=>{delete document.documentElement.dataset.scrolling},700);
+ if(event.target===document||event.target===document.documentElement)showPageScrollbar();
+},{capture:true,passive:true});
+pageScrollbarThumb.addEventListener('pointerdown',event=>{
+ if(event.button!==0)return;event.preventDefault();
+ pageScrollbarDrag={startY:event.clientY,startScroll:document.scrollingElement.scrollTop};
+ pageScrollbarThumb.setPointerCapture(event.pointerId);showPageScrollbar();
+});
+pageScrollbarThumb.addEventListener('pointermove',event=>{
+ if(!pageScrollbarDrag)return;
+ const root=document.scrollingElement,travel=pageScrollbar.clientHeight-pageScrollbarThumb.offsetHeight;
+ if(travel>0)root.scrollTop=pageScrollbarDrag.startScroll+(event.clientY-pageScrollbarDrag.startY)*(root.scrollHeight-root.clientHeight)/travel;
+});
+for(const type of ['pointerup','pointercancel'])pageScrollbarThumb.addEventListener(type,()=>{pageScrollbarDrag=null;showPageScrollbar()});
+window.addEventListener('resize',updatePageScrollbar);
+new ResizeObserver(()=>requestAnimationFrame(updatePageScrollbar)).observe(document.body);
+requestAnimationFrame(updatePageScrollbar);
 document.addEventListener('keydown',event=>{if(event.key==='Escape')hideContextMenu();});window.addEventListener('scroll',()=>{const menu=$('#context-menu');if(!menu.hidden&&(Number(menu.dataset.scrollY)!==scrollY||Number(menu.dataset.scrollX)!==scrollX))hideContextMenu();});
 document.documentElement.dataset.mode='launcher';
 document.documentElement.dataset.page='home';
