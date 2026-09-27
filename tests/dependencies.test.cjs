@@ -1,9 +1,9 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-test('base GIMI and 3DMigoto requirements are ignored without hiding add-on mods',()=>{
+test('XXMI and 3DMigoto anywhere in requirement names are ignored without hiding other mods',()=>{
  const {missing}=require('../src/core/dependencies.cjs');
- const base=['3DMigoto','3dmigoto v1.3.16','GIMI','3DMigoto (GIMI)','Genshin Impact Model Importer'].map(name=>({name}));
+ const base=['XXMI','XXMI Launcher','Requires xxmi components','3DMigoto','3dmigoto v1.3.16','GIMI','3DMigoto (GIMI)','Requires 3DMigoto Fix','Genshin Impact Model Importer'].map(name=>({name}));
  base.push({name:'加载器',url:'https://github.com/SilentNightSound/GI-Model-Importer/releases'});
- const addons=[{name:'TexFx',sourceId:485763},{name:'GIMI Addon'},{name:'3DMigoto Fix'}];
+ const addons=[{name:'TexFx',sourceId:485763},{name:'GIMI Addon'}];
  assert.deepEqual(missing([...base,...addons],[]),addons);
  assert.deepEqual(missing([...base,...addons],[],true),addons);
 });
