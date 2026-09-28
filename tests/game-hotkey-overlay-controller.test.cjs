@@ -11,6 +11,7 @@ class FakeWindow extends EventEmitter{
  isFocused(){return this.focused;}
  showInactive(){this.visible=true;}
  show(){this.visible=true;this.focused=true;}
+ click(){if(this.options.focusable!==false)this.focused=true;}
  hide(){this.visible=false;this.focused=false;}
  setBounds(value){this.bounds={...this.bounds,...value};}
  getBounds(){return this.bounds;}
@@ -29,6 +30,27 @@ test('entry appears on a matching role, detail opens on click, and both hide on 
  assert.equal(windows[1].visible,true);
  overlay.show(null);assert.equal(windows[0].visible,false);assert.equal(windows[1].visible,false);
  await overlay.dispose();assert.equal(handlers.size,0);
+});
+
+test('clicking and reopening the overlay keeps the game focused',async()=>{
+ const windows=[],handlers=new Map();
+ const overlay=new GameHotkeyOverlay({BrowserWindow:class extends FakeWindow{constructor(options){super(options);windows.push(this);}},ipcMain:{handle:(name,handler)=>handlers.set(name,handler),removeHandler:name=>handlers.delete(name)},screen:{getPrimaryDisplay:()=>({workArea:{x:0,y:0,width:1920,height:1040}})},settingsStore:{load:async()=>({entrySize:96,fontSize:15,x:null,y:null}),save:async value=>value},preload:'/test/preload.cjs'});
+ await overlay.init();
+ const match={character:'薇斯纳',mods:[{id:'m',name:'示例',bindings:[{keys:['K']}],notes:[]}]};
+ const open=()=>handlers.get('hoyo:overlay')({sender:windows[0].webContents},'open',{});
+ const close=()=>handlers.get('hoyo:overlay')({sender:windows[1].webContents},'close',{});
+ overlay.show(match);
+ windows[0].click();
+ await open();
+ assert.equal(overlay.isFocused(),false);
+ assert.equal(windows[1].visible,true);
+ windows[1].click();
+ assert.equal(overlay.isFocused(),false);
+ await close();
+ await open();
+ assert.equal(windows[1].visible,true);
+ assert.equal(overlay.isFocused(),false);
+ await overlay.dispose();
 });
 
 test('a failed settings write can be retried without leaving the window controller stuck',async()=>{

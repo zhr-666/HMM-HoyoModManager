@@ -26,3 +26,8 @@ test('an unsupported display hides and does not invoke OCR',async()=>{
  const monitor=new GameHotkeyMonitor({capture:async()=>({...frame,displayWidth:2560,displayHeight:1440}),ocr:async()=>{calls++;return '/薇斯纳';},getMods:()=>enabled,getNotes:()=>({})});
  await monitor.sample();assert.equal(calls,0);
 });
+
+test('default scan delay is under one second after a sample completes',()=>{
+ const monitor=new GameHotkeyMonitor({capture:async()=>null,ocr:async()=>'',getMods:()=>[],getNotes:()=>({})});
+ assert.ok(monitor.intervalMs<1000);
+});

@@ -2,7 +2,7 @@
 const {cropRect,matchEnabledMods,StableRole}=require('./game-hotkey-match.cjs');
 
 class GameHotkeyMonitor{
- constructor({capture,ocr,getMods,getNotes,onChange=()=>{},onError=()=>{},intervalMs=2000}){
+ constructor({capture,ocr,getMods,getNotes,onChange=()=>{},onError=()=>{},intervalMs=750}){
   Object.assign(this,{capture,ocr,getMods,getNotes,onChange,onError,intervalMs});
   this.stable=new StableRole(2);this.current=null;this.errorReported=false;this.running=false;this.timer=null;this.inFlight=null;
  }
