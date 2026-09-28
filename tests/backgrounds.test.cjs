@@ -27,3 +27,19 @@ test('MP4 official background keeps its video type and existing WebM records rem
  assert.equal(path.basename(store.file('wuwa',true)),'video.webm','旧背景记录继续按 WebM 路径读取');
  assert.match(await fs.readFile(store.file('wuwa',true),'utf8'),/launcher\.mp4/);
 });
+
+test('Genshin selects the newest dated video with its matching poster',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-genshin-bg-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const store=new Backgrounds(root);
+ const newest='https://launcher-webstatic.mihoyo.com/launcher-public/2026/09/14/d9720c4e6c087c30e910f7122bc934a0_2356469432669950473.webm';
+ const older='https://launcher-webstatic.mihoyo.com/launcher-public/2026/09/02/af043b4c660f9c590032512bf174decb_4201956066732409441.webm';
+ const entry={backgrounds:[
+  {background:{url:'https://launcher-webstatic.mihoyo.com/launcher-public/2026/09/09/static.webp'}},
+  {background:{url:'poster-old'},video:{url:older}},
+  {background:{url:'poster-new'},video:{url:newest}}
+ ]};
+ const downloaded=[];
+ await store.update('genshin',entry,async(url,dest)=>{downloaded.push(url);await fs.writeFile(dest,url)});
+ assert.deepEqual(downloaded,['poster-new',newest]);
+ assert.equal(await fs.readFile(store.file('genshin',true),'utf8'),newest);
+});
