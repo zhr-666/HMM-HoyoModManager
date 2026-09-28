@@ -54,6 +54,19 @@ test('active-only startup reads just the selected game and initializes another g
   assert.equal(restarted.activeGameId,'genshin');
 });
 
+test('target game EXE is saved separately for each game and survives restart',async t=>{
+ const {root,store}=await setup(t);
+ await store.setSettings('genshin',{targetExe:'C:\\Games\\GenshinImpact.exe'});
+ await store.setSettings('zzz',{targetExe:'D:\\Games\\ZenlessZoneZero.exe'});
+ assert.equal(store.get('genshin').lib.effectiveSettings().targetExe,'C:\\Games\\GenshinImpact.exe');
+ assert.equal(store.get('zzz').lib.effectiveSettings().targetExe,'D:\\Games\\ZenlessZoneZero.exe');
+ const restarted=await new Workspaces(root).init();
+ assert.equal(restarted.get('genshin').lib.effectiveSettings().targetExe,'C:\\Games\\GenshinImpact.exe');
+ await restarted.select('zzz');
+ assert.equal(restarted.get('zzz').lib.effectiveSettings().targetExe,'D:\\Games\\ZenlessZoneZero.exe');
+ await assert.rejects(restarted.setSettings('zzz',{targetExe:42}),/设置/);
+});
+
 test('path checks load an inactive game before accepting a conflicting loader',async t=>{
   const {dir,root,store}=await setup(t),otherMods=path.join(dir,'ZZMI','Mods');
   await store.setSettings('zzz',{modsPath:otherMods});

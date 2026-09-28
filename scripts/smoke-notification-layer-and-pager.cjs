@@ -83,7 +83,7 @@ async function main(){
   await waitFor('typeof syncNotificationLayer==="function" && typeof showNotificationPopup==="function"','界面脚本加载');
   await waitFor('initialStateLoaded','初始游戏状态');
 
-  // 主页只列出方案名称；点击名称立即应用，设置页三个配置入口仍可使用。
+  // 主页只列出方案名称；点击名称立即应用，设置页四个配置入口仍可使用。
   await waitFor(`document.querySelectorAll('#home-preset-options .home-preset-button').length===2`,'主页方案快捷按钮');
   assert.equal(await evaluate(`!!document.querySelector('#home-preset-detail,#home-active-mods')`),false,'主页方案卡不显示启用统计和模组清单');
   await fs.mkdir(path.join(root,'test-results'),{recursive:true});
@@ -92,8 +92,8 @@ async function main(){
   await waitFor(`document.querySelector('#home-preset-name').textContent==='探索二'`,'快捷切换方案');
   assert.equal(await evaluate(`document.querySelector('#home-preset-options .home-preset-button[aria-pressed="true"]')?.textContent`),'探索二');
   await evaluate(`showPage('settings')`);
-  const settingsLayout=await evaluate(`(()=>{const panel=document.querySelector('#game-settings-panel');return {cards:['choose-mods','choose-program','choose-background'].filter(id=>panel.querySelector('#'+id)?.closest('.setting-row')).length,maintenance:!!document.querySelector('#check-updates'),library:!!document.querySelector('#check-updates-library')}})()`);
-  assert.equal(settingsLayout.cards,3,'当前游戏设置应分成三个配置项');
+  const settingsLayout=await evaluate(`(()=>{const panel=document.querySelector('#game-settings-panel');return {cards:['choose-mods','choose-program','choose-target-exe','choose-background'].filter(id=>panel.querySelector('#'+id)?.closest('.setting-row')).length,maintenance:!!document.querySelector('#check-updates'),library:!!document.querySelector('#check-updates-library')}})()`);
+  assert.equal(settingsLayout.cards,4,'当前游戏设置应分成四个配置项');
   assert.equal(settingsLayout.maintenance,false,'维护与诊断不再重复放检查更新');
   assert.equal(settingsLayout.library,true,'我的模组保留检查更新入口');
   await fs.writeFile(path.join(root,'test-results','game-settings-card.png'),await screenshot());

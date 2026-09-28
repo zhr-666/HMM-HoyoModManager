@@ -358,10 +358,10 @@ function renderGameValues(root=document){
   const importer=game.importer;
   for(const el of $$('[data-loader-label]',root))el.textContent=importer+' 文件夹';
   $('#choose-mods').textContent='选择 '+importer+' 文件夹';
-  const modsPath=state.settings.modsPath||'尚未选择',launchExe=state.settings.launchExe||'尚未选择';
+  const modsPath=state.settings.modsPath||'尚未选择',launchExe=state.settings.launchExe||'尚未选择',targetExe=state.settings.targetExe||'尚未选择';
   const background=state.backgroundMedia||state.settings.backgroundVersion?'当前游戏已使用本地保存的背景。':'默认使用《'+gameById(activeGame).name+'》背景图；可替换为本地图片';
   for(const el of $$('[data-game-value]',root)){
-    el.textContent={modsPath,launchExe,background}[el.dataset.gameValue]||'';
+    el.textContent={modsPath,launchExe,targetExe,background}[el.dataset.gameValue]||'';
   }
 }
 // snapshot().settings 是「全局 + 当前游戏」的生效设置：加载器 Mods 路径、外部程序、启动器背景
@@ -486,6 +486,7 @@ function openGameSettings(){
     <div class="settings-card">
       <div class="setting-row"><div><strong data-loader-label>${esc(game.importer)} 文件夹</strong><p data-game-value="modsPath">尚未选择</p></div><button class="button secondary" id="game-choose-mods">选择 ${esc(game.importer)} 文件夹</button></div>
       <div class="setting-row"><div><strong>一级程序<span class="hint-mark" data-hint="选择HMM要启动的程序。" role="img" aria-label="选择HMM要启动的程序。" tabindex="0">?</span></strong><p data-game-value="launchExe">尚未选择</p></div><button class="button secondary" id="game-choose-program">选择 EXE</button></div>
+      <div class="setting-row"><div><strong>目标游戏 EXE（画面识别）</strong><p data-game-value="targetExe">尚未选择</p></div><button class="button secondary" id="game-choose-target-exe">选择 EXE</button></div>
       <div class="setting-row"><div><strong>启动器背景</strong><p data-game-value="background">默认使用米哈游官方启动器《原神》背景图；可替换为本地图片</p></div><div class="row-actions"><button class="button secondary" id="game-fetch-background">获取官方最新背景</button><button class="button secondary" id="game-reset-background">恢复默认</button><button class="button secondary" id="game-choose-background">选择图片</button></div></div>
     </div>`;
   const dialog=modal(`${game.name} · 当前游戏设置`,'只影响这个游戏，其他游戏的设置不会被覆盖。',body,'');
@@ -495,6 +496,7 @@ function openGameSettings(){
   const q=selector=>$(selector,dialog);
   q('#game-choose-mods').onclick=()=>call('chooseMods',{gameId:activeGame},{reload:true}).then(onboardingLoaderChosen).catch(error=>notifyError(error));
   q('#game-choose-program').onclick=()=>call('chooseProgram',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
+  q('#game-choose-target-exe').onclick=()=>call('chooseTargetExe',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
   q('#game-choose-background').onclick=()=>call('chooseBackground',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
   q('#game-reset-background').onclick=()=>call('resetBackground',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
   q('#game-fetch-background').onclick=async()=>{try{await call('fetchOfficialBackground',{gameId:activeGame},{reload:true});notify('已更新为官方最新背景。')}catch(error){notifyError(error)}};
@@ -1169,7 +1171,7 @@ $('#import-button').onclick=async()=>{
   }catch(error){notifyError(error)}
   finally{importRunning=false;$('#import-button').disabled=false}
 };
-$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods',{gameId:activeGame});$('#choose-program').onclick=()=>mutate('chooseProgram',{gameId:activeGame});$('#choose-background').onclick=()=>mutate('chooseBackground',{gameId:activeGame});$('#reset-background').onclick=()=>mutate('resetBackground',{gameId:activeGame});$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#open-logs').onclick=()=>call('openLogs',{}, {foreground:false}).catch(()=>{});$('#check-updates-library').onclick=checkUpdatesButton;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
+$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods',{gameId:activeGame});$('#choose-program').onclick=()=>mutate('chooseProgram',{gameId:activeGame});$('#choose-target-exe').onclick=()=>mutate('chooseTargetExe',{gameId:activeGame});$('#choose-background').onclick=()=>mutate('chooseBackground',{gameId:activeGame});$('#reset-background').onclick=()=>mutate('resetBackground',{gameId:activeGame});$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#open-logs').onclick=()=>call('openLogs',{}, {foreground:false}).catch(()=>{});$('#check-updates-library').onclick=checkUpdatesButton;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
 $('#blur-nsfw').onchange=async e=>{await mutate('settings',{blurNsfw:e.target.checked});refreshWorkshopBlur()};$('#use-links').onchange=e=>mutate('settings',{useLinks:e.target.checked});$('#material-select').onchange=e=>mutate('settings',{material:e.target.value});$('#proxy-mode').onchange=e=>{if(e.target.value==='manual'){ $('#proxy-url-row').hidden=false;if(state.settings.proxyUrl)mutate('settings',{proxyMode:'manual'});}else mutate('settings',{proxyMode:'system'})};$('#save-proxy').onclick=()=>mutate('settings',{proxyMode:$('#proxy-mode').value,proxyUrl:$('#proxy-url').value.trim()});for(const id of ['sort-select','sfw-filter','nsfw-filter'])$('#'+id).onchange=()=>{page=1;browse()};
 api?.onDownloads?.(payload=>{if(payload?.gameId&&payload.gameId!==activeGame)return;downloads=Array.isArray(payload)?payload:payload?.rows||[];renderDownloads()});
 // 全局进度条取消了：长任务只在它自己打开的弹窗里报告进度，下载进度看「下载列表」的每一行。
