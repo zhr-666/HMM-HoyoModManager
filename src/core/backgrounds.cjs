@@ -3,6 +3,10 @@ const sync=require('node:fs');
 const path=require('node:path');
 const {randomUUID}=require('node:crypto');
 const {gameRoot}=require('./game-data.cjs');
+const videoDate=url=>{
+  const match=String(url||'').match(/\/launcher-public\/(\d{4})\/(\d{2})\/(\d{2})\//);
+  return match?match.slice(1).join(''):'';
+};
 class Backgrounds{
   constructor(root){this.root=root;this.queues=new Map();}
   folder(game){return path.join(gameRoot(this.root,game),'backgrounds');}
@@ -10,7 +14,9 @@ class Backgrounds{
   file(game,video=false){const m=this.read(game);return m?path.join(this.folder(game),m.version,video?`video.${m.videoFormat||'webm'}`:'poster'):null;}
   run(game,fn){const next=(this.queues.get(game)||Promise.resolve()).then(fn);this.queues.set(game,next.catch(()=>{}));return next;}
   update(game,entry,download){return this.run(game,async()=>{
-    const row=entry?.backgrounds?.find(r=>r?.background?.url);if(!row)throw Error('官方暂未提供可用背景');
+    const rows=entry?.backgrounds?.filter(r=>r?.background?.url)||[];
+    const row=game==='genshin'?(rows.filter(r=>r.video?.url).toSorted((a,b)=>videoDate(b.video.url).localeCompare(videoDate(a.video.url)))[0]||rows[0]):rows[0];
+    if(!row)throw Error('官方暂未提供可用背景');
     const poster=row.background.url,video=row.video?.url||'',source=JSON.stringify([poster,video]),old=this.read(game);
     const videoFormat=video&&/\.mp4(?:\?|$)/i.test(video)?'mp4':'webm';
     if(old?.source===source&&sync.existsSync(this.file(game))&&(!video||sync.existsSync(this.file(game,true))))return old;
