@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self';">
   <title>原神热键</title>
   <link rel="stylesheet" href="hotkey-overlay.css">
 </head>
 <body>
   <main id="entry" class="entry" hidden>
     <div class="drag-handle" title="拖动悬浮窗">⠿</div>
+    <div id="idle-logo" class="idle-logo" title="正在识别游戏画面" hidden><img src="app-icon.png" alt="HMM 正在识别游戏画面"></div>
     <button id="open" type="button" aria-label="打开角色热键"><span id="entry-role"></span><strong>热键</strong></button>
   </main>
   <main id="detail" class="detail" hidden>

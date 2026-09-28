@@ -10,6 +10,10 @@ function render(state){
  const match=state?.match,settings=state?.settings||{};
  document.documentElement.style.setProperty('--font-size',`${settings.fontSize||15}px`);
  document.documentElement.style.setProperty('--entry-font-size',`${Math.min(settings.fontSize||15,Math.max(12,Math.floor((settings.entrySize||96)*.22)))}px`);
+ const idle=!match;
+ $('#entry').classList.toggle('idle',idle);
+ $('#idle-logo').hidden=!idle;
+ $('#open').hidden=idle;
  if(!match)return;
  if(entry){$('#entry-role').textContent=match.character;$('#open').setAttribute('aria-label',`查看${match.character}的热键`);return;}
  $('#detail-role').textContent=match.character;

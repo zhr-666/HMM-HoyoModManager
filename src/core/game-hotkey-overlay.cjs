@@ -29,7 +29,7 @@ class GameHotkeyOverlay{
  persist(){const value={...this.settings};this.saveQueue=this.saveQueue.catch(()=>{}).then(()=>this.settingsStore.save(value)).catch(error=>{this.onError(error);throw error;});return this.saveQueue;}
  async init(){
   this.settings=normalizeSettings(await this.settingsStore.load());
-  const common={icon:this.icon,show:false,frame:false,transparent:true,alwaysOnTop:true,skipTaskbar:true,resizable:false,autoHideMenuBar:true,backgroundColor:'#00000000',webPreferences:{preload:this.preload,contextIsolation:true,nodeIntegration:false,sandbox:true}};
+  const common={icon:this.icon,show:false,frame:false,transparent:true,alwaysOnTop:true,skipTaskbar:true,focusable:false,resizable:false,autoHideMenuBar:true,backgroundColor:'#00000000',webPreferences:{preload:this.preload,contextIsolation:true,nodeIntegration:false,sandbox:true}};
   this.entry=new this.BrowserWindow({...common,width:this.settings.entrySize,height:this.settings.entrySize});
   this.detail=new this.BrowserWindow({...common,width:360,height:420});
   for(const win of [this.entry,this.detail]){
@@ -47,7 +47,7 @@ class GameHotkeyOverlay{
    const fromEntry=event.sender===this.entry?.webContents,fromDetail=event.sender===this.detail?.webContents;
    if(!fromEntry&&!fromDetail||event.senderFrame&&event.senderFrame!==event.sender.mainFrame)throw Error('不允许的悬浮窗调用来源。');
    if(action==='state')return this.state();
-   if(action==='open'&&fromEntry){if(this.match){this.positionWindows();this.detail.show();this.send();}return this.state();}
+   if(action==='open'&&fromEntry){if(this.match){this.positionWindows();this.detail.showInactive();this.send();}return this.state();}
    if(action==='close'&&fromDetail){this.detail.hide();return this.state();}
    if(action==='settings'&&fromDetail){
     this.settings=normalizeSettings({...this.settings,entrySize:payload.entrySize,fontSize:payload.fontSize});
@@ -59,10 +59,11 @@ class GameHotkeyOverlay{
   await Promise.all([this.entry.loadURL(ENTRY_URL),this.detail.loadURL(DETAIL_URL)]);
   this.send();
  }
- show(match){
+ show(match,active=Boolean(match)){
   if(!this.entry||this.entry.isDestroyed())return;
-  this.match=match;
-  if(!match){this.entry.hide();this.detail.hide();this.send();return;}
+  this.match=active?match:null;
+  if(!active){this.entry.hide();this.detail.hide();this.send();return;}
+  if(!match)this.detail.hide();
   this.send();if(!this.entry.isVisible())this.entry.showInactive();
  }
  isFocused(){return Boolean(this.entry?.isFocused()||this.detail?.isFocused());}

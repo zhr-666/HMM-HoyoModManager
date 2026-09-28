@@ -9,7 +9,11 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
 button,input{font:inherit}
 [hidden]{display:none!important}
 .entry{height:100%;width:100%;border-radius:20px;background:rgba(22,30,38,.91);border:1px solid rgba(241,219,157,.65);box-shadow:0 7px 24px #0009;display:flex;flex-direction:column;overflow:hidden}
+.entry.idle{background:transparent;border-color:transparent;box-shadow:none}
+.entry.idle .drag-handle{display:none}
 .drag-handle{height:19px;flex:none;text-align:center;font-size:18px;line-height:17px;color:#dac58c;cursor:grab;-webkit-app-region:drag;user-select:none}
+.idle-logo{flex:1;display:flex;align-items:center;justify-content:center;-webkit-app-region:drag}
+.idle-logo img{width:80%;height:80%;object-fit:contain;opacity:.55;border-radius:24%;pointer-events:none}
 .entry button{flex:1;min-height:0;border:0;background:transparent;color:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;padding:2px;font-size:var(--entry-font-size,15px);-webkit-app-region:no-drag}
 .entry button:hover,.entry button:focus-visible{background:rgba(244,215,150,.16);outline:none}
 .entry strong{font-size:1.1em;color:#f8d789}

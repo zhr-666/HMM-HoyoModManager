@@ -21,6 +21,13 @@ app.whenReady().then(async()=>{
   });
   overlay=new GameHotkeyOverlay({BrowserWindow,ipcMain,screen,settingsStore:new OverlaySettings(root),preload:path.join(__dirname,'..','src','hotkey-overlay-preload.cjs')});
   await overlay.init();
+  overlay.show(null,true);
+  assert.equal(overlay.entry.isVisible(),true);
+  const idle=await overlay.entry.webContents.executeJavaScript("(()=>{const image=document.querySelector('#idle-logo img');return {loaded:image.complete&&image.naturalWidth>0,visible:!image.closest('#idle-logo').hidden,opacity:Number(getComputedStyle(image).opacity),buttonHidden:document.querySelector('#open').hidden}})()");
+  assert.equal(idle.loaded,true);assert.equal(idle.visible,true);assert.ok(idle.opacity>0&&idle.opacity<1);assert.equal(idle.buttonHidden,true);
+  const idleShot=path.join(__dirname,'..','test-results','game-hotkey-idle.png');await fs.mkdir(path.dirname(idleShot),{recursive:true});await fs.writeFile(idleShot,(await overlay.entry.capturePage()).toPNG());
+  await overlay.entry.webContents.executeJavaScript("document.querySelector('#open').click()");
+  assert.equal(overlay.detail.isVisible(),false);
   overlay.show({character:'薇斯纳',mods:[{id:'test',name:'示例模组',bindings:[{section:'KeySkin',keys:['K'],back:['L']}],notes:['按 K 切换形态']}]});
   const entryShot=path.join(__dirname,'..','test-results','game-hotkey-entry.png');await fs.mkdir(path.dirname(entryShot),{recursive:true});await fs.writeFile(entryShot,(await overlay.entry.capturePage()).toPNG());
   await overlay.entry.webContents.executeJavaScript("document.querySelector('#open').click()");
@@ -33,6 +40,7 @@ app.whenReady().then(async()=>{
   overlay.entry.setPosition(200,200);await new Promise(resolve=>setTimeout(resolve,450));
   assert.deepEqual(((value)=>({x:value.x,y:value.y}))(await new OverlaySettings(root).load()),{x:200,y:200});
   const shot=path.join(__dirname,'..','test-results','game-hotkey-overlay.png');await fs.mkdir(path.dirname(shot),{recursive:true});await fs.writeFile(shot,(await overlay.detail.capturePage()).toPNG());
+  overlay.show(null,true);assert.equal(overlay.detail.isVisible(),false);assert.equal(overlay.entry.isVisible(),true);
   overlay.show(null);assert.equal(overlay.detail.isVisible(),false);assert.equal(overlay.entry.isVisible(),false);
   console.log('Game hotkey overlay smoke passed; screenshot: '+shot);
  }finally{await overlay?.dispose();await fs.rm(root,{recursive:true,force:true});app.quit();}
