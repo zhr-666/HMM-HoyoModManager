@@ -59,10 +59,11 @@ class GameHotkeyOverlay{
   await Promise.all([this.entry.loadURL(ENTRY_URL),this.detail.loadURL(DETAIL_URL)]);
   this.send();
  }
- show(match){
+ show(match,active=Boolean(match)){
   if(!this.entry||this.entry.isDestroyed())return;
-  this.match=match;
-  if(!match){this.entry.hide();this.detail.hide();this.send();return;}
+  this.match=active?match:null;
+  if(!active){this.entry.hide();this.detail.hide();this.send();return;}
+  if(!match)this.detail.hide();
   this.send();if(!this.entry.isVisible())this.entry.showInactive();
  }
  isFocused(){return Boolean(this.entry?.isFocused()||this.detail?.isFocused());}

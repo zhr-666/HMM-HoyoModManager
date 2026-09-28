@@ -700,7 +700,7 @@ if(lock)app.whenReady().then(async()=>{
       await hotkeyOverlay.init();
       const capture=new GameScreenCapture({host:programHost,desktopCapturer,screen,overlayFocused:()=>hotkeyOverlay.isFocused()});
       hotkeyOcr=createGameOcr();
-      hotkeyMonitor=new GameHotkeyMonitor({capture:()=>workspaces.activeGameId==='genshin'?capture.capture():null,ocr:(image,rect)=>hotkeyOcr.recognize(image,rect),getMods:()=>workspaces.activeGameId==='genshin'?localizeLibraryState('genshin',workspaces.get('genshin').lib.snapshot()).mods:[],getNotes:()=>workspaces.get('genshin').lib.snapshot().hotkeyNotes,onChange:value=>hotkeyOverlay.show(workspaces.activeGameId==='genshin'?value:null),onError:error=>notifyError(error,{title:'原神热键悬浮窗'})});
+      hotkeyMonitor=new GameHotkeyMonitor({capture:()=>workspaces.activeGameId==='genshin'?capture.capture():null,ocr:(image,rect)=>hotkeyOcr.recognize(image,rect),getMods:()=>workspaces.activeGameId==='genshin'?localizeLibraryState('genshin',workspaces.get('genshin').lib.snapshot()).mods:[],getNotes:()=>workspaces.get('genshin').lib.snapshot().hotkeyNotes,onChange:(value,active)=>hotkeyOverlay.show(workspaces.activeGameId==='genshin'?value:null,workspaces.activeGameId==='genshin'&&active),onError:error=>notifyError(error,{title:'原神热键悬浮窗'})});
       hotkeyMonitor.start();
     }catch(error){notifyError(error,{title:'原神热键悬浮窗'});hotkeyOverlay?.dispose().catch(()=>{});hotkeyOverlay=null;}
   }

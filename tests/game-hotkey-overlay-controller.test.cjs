@@ -53,6 +53,21 @@ test('clicking and reopening the overlay keeps the game focused',async()=>{
  await overlay.dispose();
 });
 
+test('idle status keeps the entry visible without opening an empty detail',async()=>{
+ const windows=[],handlers=new Map();
+ const overlay=new GameHotkeyOverlay({BrowserWindow:class extends FakeWindow{constructor(options){super(options);windows.push(this);}},ipcMain:{handle:(name,handler)=>handlers.set(name,handler),removeHandler:name=>handlers.delete(name)},screen:{getPrimaryDisplay:()=>({workArea:{x:0,y:0,width:1920,height:1040}})},settingsStore:{load:async()=>({entrySize:96,fontSize:15,x:null,y:null}),save:async value=>value},preload:'/test/preload.cjs'});
+ await overlay.init();
+ const open=()=>handlers.get('hoyo:overlay')({sender:windows[0].webContents},'open',{});
+ overlay.show(null,true);
+ assert.equal(windows[0].visible,true);
+ await open();assert.equal(windows[1].visible,false);
+ const match={character:'薇斯纳',mods:[{id:'m',name:'示例',bindings:[{keys:['K']}],notes:[]}]};
+ overlay.show(match,true);await open();assert.equal(windows[1].visible,true);
+ overlay.show(null,true);assert.equal(windows[0].visible,true);assert.equal(windows[1].visible,false);
+ overlay.show(null,false);assert.equal(windows[0].visible,false);
+ await overlay.dispose();
+});
+
 test('a failed settings write can be retried without leaving the window controller stuck',async()=>{
  const windows=[],handlers=new Map();let saves=0;
  const store={load:async()=>({entrySize:96,fontSize:15,x:null,y:null}),save:async value=>{if(++saves===1)throw Error('disk full');return value;}};
