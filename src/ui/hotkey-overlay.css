@@ -8,17 +8,15 @@
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;color:#f8f5ee;font-size:var(--font-size)}
 button,input{font:inherit}
 [hidden]{display:none!important}
-.entry{height:100%;width:100%;border-radius:20px;background:rgba(22,30,38,.91);border:1px solid rgba(241,219,157,.65);box-shadow:0 7px 24px #0009;display:flex;flex-direction:column;overflow:hidden}
-.entry.idle{background:transparent;border-color:transparent;box-shadow:none}
-.entry.idle .drag-handle{display:none}
-.drag-handle{height:19px;flex:none;text-align:center;font-size:18px;line-height:17px;color:#dac58c;cursor:grab;-webkit-app-region:drag;user-select:none}
-.idle-logo{flex:1;display:flex;align-items:center;justify-content:center;-webkit-app-region:drag}
-.idle-logo img{width:80%;height:80%;object-fit:contain;opacity:.55;border-radius:24%;pointer-events:none}
-.entry button{flex:1;min-height:0;border:0;background:transparent;color:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;padding:2px;font-size:var(--entry-font-size,15px);-webkit-app-region:no-drag}
-.entry button:hover,.entry button:focus-visible{background:rgba(244,215,150,.16);outline:none}
-.entry strong{font-size:1.1em;color:#f8d789}
-.entry span{max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.detail{width:100%;height:100%;display:flex;flex-direction:column;border-radius:16px;background:rgba(22,29,36,.96);border:1px solid rgba(238,207,139,.55);box-shadow:0 12px 36px #000b;overflow:hidden}
+.entry{height:100%;width:100%;border-radius:50%;background:#161e26;border:1px solid #a9966b;display:flex;align-items:stretch;overflow:hidden;user-select:none;touch-action:none;cursor:pointer}
+.entry.idle{background:transparent;border-color:transparent;cursor:grab}
+.entry.dragging,.entry.dragging button{cursor:grabbing}
+.idle-logo{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+.idle-logo img{width:100%;height:100%;object-fit:contain;opacity:.55;border-radius:50%;pointer-events:none}
+.entry button{width:100%;height:100%;border:0;background:transparent;color:#f8d789;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:12%;font-size:var(--entry-font-size,15px);font-weight:700;touch-action:none}
+.entry button:focus-visible{outline:2px solid #f8d789;outline-offset:-5px;border-radius:50%}
+.entry span{max-width:100%;overflow-wrap:anywhere;line-height:1.3;text-align:center;pointer-events:none}
+.detail{position:absolute;left:0;top:0;width:100%;height:100%;display:flex;flex-direction:column;border-radius:16px;background:rgba(22,29,36,.96);border:1px solid rgba(238,207,139,.55);box-shadow:0 12px 36px #000b;overflow:hidden}
 .detail-head{display:flex;align-items:flex-start;justify-content:space-between;padding:17px 18px 12px;border-bottom:1px solid #ffffff29}
 .detail-head small{font-size:.75em;color:#c9c6ba}
 h1{font-size:1.35em;margin:4px 0 0}
@@ -39,3 +37,6 @@ kbd{border:1px solid #d7c79b77;border-radius:5px;background:#f2e5bf1c;padding:2p
 .settings input{grid-column:1 / -1;width:100%;accent-color:#e4c77f}
 .settings p{font-size:.72em;color:#b7b5ad;margin:8px 0 0}
 .settings .settings-error{color:#ffc3b8}
+
+.detail.animating>*{opacity:0;pointer-events:none}
+.empty{padding:12px 0;color:#c9c6ba;line-height:1.6}

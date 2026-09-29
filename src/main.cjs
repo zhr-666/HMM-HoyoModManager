@@ -704,7 +704,7 @@ if(lock)app.whenReady().then(async()=>{
     try{
       hotkeyOverlay=new GameHotkeyOverlay({BrowserWindow,ipcMain,screen,settingsStore:new OverlaySettings(workspaces.get('genshin').root),preload:path.join(__dirname,'hotkey-overlay-preload.cjs'),icon:appIcon(),onError:error=>notifyError(error,{title:'保存热键悬浮窗设置'})});
       await hotkeyOverlay.init();
-      const capture=new GameScreenCapture({host:programHost,desktopCapturer,screen,overlayFocused:()=>hotkeyOverlay.isFocused()});
+      const capture=new GameScreenCapture({host:programHost,desktopCapturer,screen});
       hotkeyOcr=createGameOcr();
       hotkeyMonitor=new GameHotkeyMonitor({capture:()=>workspaces.activeGameId==='genshin'?capture.capture(workspaces.get('genshin').lib.effectiveSettings().targetExe):null,ocr:(image,rect)=>hotkeyOcr.recognize(image,rect),getMods:()=>workspaces.activeGameId==='genshin'?localizeLibraryState('genshin',workspaces.get('genshin').lib.snapshot()).mods:[],getNotes:()=>workspaces.get('genshin').lib.snapshot().hotkeyNotes,onChange:(value,active)=>hotkeyOverlay.show(workspaces.activeGameId==='genshin'?value:null,workspaces.activeGameId==='genshin'&&active),onError:error=>notifyError(error,{title:'原神热键悬浮窗'})});
       hotkeyMonitor.start();

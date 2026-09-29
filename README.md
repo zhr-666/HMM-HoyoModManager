@@ -37,6 +37,6 @@ pnpm check
 pnpm pack:win
 ```
 
-详见 [开发指南](docs/development.md) 与 [Windows 验收说明](docs/acceptance.md)。项目代码采用 [MIT 许可证](LICENSE)，第三方资源见 [版权说明](THIRD-PARTY-NOTICES.md)。本项目与米哈游、GameBanana、XXMI 无官方关联。
+详见 [开发指南](docs/development.md)、[游戏画面识别优化工具](docs/game-screen-optimization.md) 与 [Windows 验收说明](docs/acceptance.md)。项目代码采用 [MIT 许可证](LICENSE)，第三方资源见 [版权说明](THIRD-PARTY-NOTICES.md)。本项目与米哈游、GameBanana、XXMI 无官方关联。
 
 ## 本项目由Codex开发
