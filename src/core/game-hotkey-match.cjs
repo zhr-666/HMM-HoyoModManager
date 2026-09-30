@@ -14,9 +14,13 @@ function matchEnabledMods(text,mods,hotkeyNotes={}){
  const names=[...new Set(rows.map(mod=>String(mod.localizedCharacterName||mod.characterName||'').replace(/\s+/gu,'')))].filter(Boolean).sort((a,b)=>b.length-a.length);
  const character=names.find(name=>recognized.startsWith(name));
  if(!character)return null;
+ const nameOf=mod=>String(mod.localizedCharacterName||mod.characterName||'').replace(/\s+/gu,'');
+ const groups=new Set(rows.filter(mod=>nameOf(mod)===character&&mod.characterGroupId!=null&&String(mod.characterGroupId).trim()).map(mod=>String(mod.characterGroupId)));
  const matched=[];
  for(const mod of rows){
-  if(mod.active!==true||String(mod.localizedCharacterName||mod.characterName||'').replace(/\s+/gu,'')!==character)continue;
+  const sameName=nameOf(mod)===character;
+  const sameGroup=mod.isSkinMod===true&&mod.characterGroupId!=null&&groups.has(String(mod.characterGroupId));
+  if(mod.active!==true||!sameName&&!sameGroup)continue;
   const bindings=(mod.hotkeys?.bindings||[]).filter(row=>!row.disabled&&(row.keys?.length||row.back?.length));
   const notes=(Array.isArray(hotkeyNotes?.[mod.id])?hotkeyNotes[mod.id]:[]).map(note=>typeof note==='string'?note:note?.text).filter(Boolean);
   if(bindings.length||notes.length)matched.push({id:mod.id,name:mod.name,bindings,notes});

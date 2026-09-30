@@ -7,7 +7,7 @@ const DETAIL_URL='hoyo://app/hotkey-overlay.html?mode=detail';
 class GameHotkeyOverlay{
  constructor({BrowserWindow,ipcMain,screen,settingsStore,preload,icon,onError=()=>{}}){
   Object.assign(this,{BrowserWindow,ipcMain,screen,settingsStore,preload,icon,onError});
-  this.settings=null;this.match=null;this.entry=null;this.detail=null;this.moving=false;this.saveTimer=null;this.saveQueue=Promise.resolve();
+  this.settings=null;this.match=null;this.visible=false;this.matchRevision=0;this.entry=null;this.detail=null;this.moving=false;this.saveTimer=null;this.saveQueue=Promise.resolve();
  }
  area(){return this.screen.getPrimaryDisplay().workArea;}
  entryPosition(){
@@ -19,12 +19,21 @@ class GameHotkeyOverlay{
   const size=this.settings.entrySize,position=this.entryPosition(),area=this.area();
   this.moving=true;
   this.entry.setBounds({...position,width:size,height:size});
-  const x=position.x>=area.x+area.width/2?position.x-372:position.x+size+12;
-  const detail=clampEntry({x,y:position.y},360,area);
-  this.detail.setBounds({x:detail.x,y:Math.max(area.y,Math.min(area.y+area.height-420,detail.y)),width:360,height:420});
+  this.positionDetail(position,size,area);
   this.moving=false;
  }
- state(){return {match:this.match,settings:this.settings};}
+ detailHeight(){
+  let longest=0;
+  for(const mod of this.match?.mods||[])for(const note of mod.notes||[])longest=Math.max(longest,String(note).length);
+  return Math.min(620,420+Math.ceil(Math.max(0,longest-120)/100)*50);
+ }
+ positionDetail(position=this.entry.getBounds(),size=this.settings.entrySize,area=this.area()){
+  const height=Math.min(this.detailHeight(),area.height);
+  const x=position.x>=area.x+area.width/2?position.x-372:position.x+size+12;
+  const detail=clampEntry({x,y:position.y},360,area);
+  this.detail.setBounds({x:detail.x,y:Math.max(area.y,Math.min(area.y+area.height-height,detail.y)),width:360,height});
+ }
+ state(){return {match:this.match,visible:this.visible,matchRevision:this.matchRevision,settings:this.settings};}
  send(){for(const win of [this.entry,this.detail])if(win&&!win.isDestroyed())win.webContents.send('hoyo:overlay-state',this.state());}
  persist(){const value={...this.settings};this.saveQueue=this.saveQueue.catch(()=>{}).then(()=>this.settingsStore.save(value)).catch(error=>{this.onError(error);throw error;});return this.saveQueue;}
  async init(){
@@ -41,13 +50,20 @@ class GameHotkeyOverlay{
   this.entry.on('move',()=>{
    if(this.moving)return;
    clearTimeout(this.saveTimer);
-   this.saveTimer=setTimeout(()=>{if(!this.entry||this.entry.isDestroyed())return;const bounds=this.entry.getBounds();this.settings={...this.settings,...clampEntry(bounds,this.settings.entrySize,this.area())};this.positionWindows();this.persist().catch(()=>{});},250);
+   this.saveTimer=setTimeout(()=>{
+    if(!this.entry||this.entry.isDestroyed())return;
+    const bounds=this.entry.getBounds(),position=clampEntry(bounds,this.settings.entrySize,this.area());
+    this.settings={...this.settings,...position};
+    if(bounds.x!==position.x||bounds.y!==position.y){this.moving=true;try{this.entry.setBounds({...bounds,...position});}finally{this.moving=false;}}
+    if(this.detail.isVisible())this.positionDetail({...bounds,...position});
+    this.persist().catch(()=>{});
+   },250);
   });
   this.ipcMain.handle('hoyo:overlay',async(event,action,payload={})=>{
    const fromEntry=event.sender===this.entry?.webContents,fromDetail=event.sender===this.detail?.webContents;
    if(!fromEntry&&!fromDetail||event.senderFrame&&event.senderFrame!==event.sender.mainFrame)throw Error('不允许的悬浮窗调用来源。');
    if(action==='state')return this.state();
-   if(action==='open'&&fromEntry){if(this.match){this.positionWindows();this.detail.show();this.send();}return this.state();}
+   if(action==='open'&&fromEntry){if(this.match){this.positionDetail();this.detail.show();this.send();}return this.state();}
    if(action==='close'&&fromDetail){this.detail.hide();return this.state();}
    if(action==='settings'&&fromDetail){
     this.settings=normalizeSettings({...this.settings,entrySize:payload.entrySize,fontSize:payload.fontSize});
@@ -59,10 +75,14 @@ class GameHotkeyOverlay{
   await Promise.all([this.entry.loadURL(ENTRY_URL),this.detail.loadURL(DETAIL_URL)]);
   this.send();
  }
- show(match){
+ show(match,visible=Boolean(match)){
   if(!this.entry||this.entry.isDestroyed())return;
-  this.match=match;
-  if(!match){this.entry.hide();this.detail.hide();this.send();return;}
+  const changed=JSON.stringify(this.match)!==JSON.stringify(match);
+  if(changed)this.matchRevision++;
+  this.match=match;this.visible=visible;
+  if(!visible){this.entry.hide();this.detail.hide();this.send();return;}
+  if(!match)this.detail.hide();
+  else if(changed&&this.detail.isVisible())this.positionDetail();
   this.send();if(!this.entry.isVisible())this.entry.showInactive();
  }
  isFocused(){return Boolean(this.entry?.isFocused()||this.detail?.isFocused());}

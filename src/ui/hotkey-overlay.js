@@ -4,14 +4,19 @@ const mode=new URLSearchParams(location.search).get('mode');
 const entry=mode==='entry';
 $('#entry').hidden=!entry;$('#detail').hidden=entry;
 let current=null;
+let lastMatchRevision=-1;
 function node(tag,className,text){const item=document.createElement(tag);if(className)item.className=className;if(text!=null)item.textContent=String(text);return item;}
 function render(state){
  current=state;
  const match=state?.match,settings=state?.settings||{};
  document.documentElement.style.setProperty('--font-size',`${settings.fontSize||15}px`);
  document.documentElement.style.setProperty('--entry-font-size',`${Math.min(settings.fontSize||15,Math.max(12,Math.floor((settings.entrySize||96)*.22)))}px`);
- if(!match)return;
- if(entry){$('#entry-role').textContent=match.character;$('#open').setAttribute('aria-label',`查看${match.character}的热键`);return;}
+ if(entry){$('#entry-role').textContent=match?.character||'';$('#open').setAttribute('aria-label',match?`查看${match.character}的热键`:'HMM 悬浮窗');return;}
+ $('#entry-size').value=settings.entrySize;$('#font-size').value=settings.fontSize;
+ $('#entry-size-value').textContent=`${settings.entrySize}px`;
+ $('#font-size-value').textContent=`${settings.fontSize}px`;
+ if(!match||lastMatchRevision===state.matchRevision)return;
+ lastMatchRevision=state.matchRevision;
  $('#detail-role').textContent=match.character;
  const list=$('#hotkey-list');list.replaceChildren();
  for(const mod of match.mods){
@@ -25,14 +30,16 @@ function render(state){
   }
   list.append(card);
  }
- $('#entry-size').value=settings.entrySize;$('#font-size').value=settings.fontSize;
- $('#entry-size-value').textContent=`${settings.entrySize}px`;
- $('#font-size-value').textContent=`${settings.fontSize}px`;
 }
 window.hoyoOverlay.onState(render);
 window.hoyoOverlay.call('state').then(render).catch(()=>{});
 $('#open').onclick=()=>window.hoyoOverlay.call('open').catch(()=>{});
 $('#close').onclick=()=>window.hoyoOverlay.call('close').catch(()=>{});
+$('#settings-toggle').onclick=()=>{
+ const showing=$('#settings').hidden;
+ $('#settings').hidden=!showing;$('#hotkey-list').hidden=showing;
+ $('#settings-toggle').setAttribute('aria-pressed',String(showing));
+};
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!entry)window.hoyoOverlay.call('close').catch(()=>{});});
 for(const id of ['entry-size','font-size']){
  const input=$(`#${id}`),output=$(`#${id}-value`);

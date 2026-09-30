@@ -52,7 +52,7 @@ const lock=app.requestSingleInstanceLock();
 if(!lock)app.quit();
 let appUpdater,updateHandoff=false,pendingActions=0;
 let programTabs,programHost,programTimer,programClosing=false,programExitAllowed=false;
-let hotkeyOverlay,hotkeyMonitor,hotkeyOcr;
+let hotkeyOverlay,hotkeyMonitor,hotkeyOcr,hotkeyCapture;
 const externalLaunches=new Set();
 let win,updateTimer,notifications,tasks;let nativeMaterial=materialSupported();
 const workspaces=new Workspaces(root);
@@ -672,7 +672,7 @@ if(lock)app.whenReady().then(async()=>{
   applyAppearance();
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',(event,url)=>{if(url!=='hoyo://app/index.html')event.preventDefault();});
-  win.on('closed',()=>{dependencyPrompts.cancelAll();hotkeyMonitor?.stop().catch(()=>{});hotkeyOverlay?.dispose().catch(()=>{});hotkeyOcr?.close().catch(()=>{});});
+  win.on('closed',()=>{dependencyPrompts.cancelAll();hotkeyMonitor?.stop().catch(()=>{});hotkeyOverlay?.dispose().catch(()=>{});hotkeyOcr?.close().catch(()=>{});hotkeyCapture?.host.dispose();});
   win.webContents.on('render-process-gone',(_event,details)=>{dependencyPrompts.cancelAll();logError('界面进程退出',JSON.stringify(details));});
   win.webContents.on('console-message',details=>{if(details.level==='error')logError('界面控制台',`${details.message} (${details.sourceId}:${details.lineNumber})`);});
   win.webContents.on('preload-error',(_event,preloadPath,error)=>logError('预加载脚本 · '+path.basename(preloadPath),error));
@@ -696,13 +696,22 @@ if(lock)app.whenReady().then(async()=>{
   if(workspaces.addedGameIds.length)await startWorkspace(workspaces.get(workspaces.activeGameId));
   if(process.platform==='win32'){
     try{
+      if(workspaces.isAdded('genshin'))await workspaces.ensure('genshin');
       hotkeyOverlay=new GameHotkeyOverlay({BrowserWindow,ipcMain,screen,settingsStore:new OverlaySettings(workspaces.get('genshin').root),preload:path.join(__dirname,'hotkey-overlay-preload.cjs'),icon:appIcon(),onError:error=>notifyError(error,{title:'保存热键悬浮窗设置'})});
       await hotkeyOverlay.init();
-      const capture=new GameScreenCapture({host:programHost,desktopCapturer,screen,overlayFocused:()=>hotkeyOverlay.isFocused()});
+      const captureHost=()=>new (require('./core/program-window-host.cjs').ProgramWindowHost)(win);
+      hotkeyCapture=new GameScreenCapture({host:captureHost(),hostFactory:captureHost,desktopCapturer,screen,overlayFocused:()=>hotkeyOverlay.isFocused()});
       hotkeyOcr=createGameOcr();
-      hotkeyMonitor=new GameHotkeyMonitor({capture:()=>workspaces.activeGameId==='genshin'?capture.capture():null,ocr:(image,rect)=>hotkeyOcr.recognize(image,rect),getMods:()=>workspaces.activeGameId==='genshin'?localizeLibraryState('genshin',workspaces.get('genshin').lib.snapshot()).mods:[],getNotes:()=>workspaces.get('genshin').lib.snapshot().hotkeyNotes,onChange:value=>hotkeyOverlay.show(workspaces.activeGameId==='genshin'?value:null),onError:error=>notifyError(error,{title:'原神热键悬浮窗'})});
+      let cachedHotkeyState,cachedHotkeyMods=[];
+      const hotkeyState=()=>{
+        const context=workspaces.get('genshin');if(!context.initialized)return null;
+        const state=context.lib.state;
+        if(state!==cachedHotkeyState){cachedHotkeyState=state;cachedHotkeyMods=localizeLibraryState('genshin',{mods:state.mods.filter(mod=>mod.active)}).mods;}
+        return state;
+      };
+      hotkeyMonitor=new GameHotkeyMonitor({capture:()=>hotkeyCapture.capture(),ocr:(image,rect)=>hotkeyOcr.recognize(image,rect),getMods:()=>{hotkeyState();return cachedHotkeyMods;},getNotes:()=>hotkeyState()?.hotkeyNotes||{},onChange:(value,visible)=>hotkeyOverlay.show(value,visible),onError:error=>notifyError(error,{title:'原神热键悬浮窗'})});
       hotkeyMonitor.start();
-    }catch(error){notifyError(error,{title:'原神热键悬浮窗'});hotkeyOverlay?.dispose().catch(()=>{});hotkeyOverlay=null;}
+    }catch(error){notifyError(error,{title:'原神热键悬浮窗'});hotkeyCapture?.host.dispose();hotkeyCapture=null;hotkeyOverlay?.dispose().catch(()=>{});hotkeyOverlay=null;}
   }
   // 自动检查的新版本通知由 syncAppUpdateTask 在状态落到 available 时统一发出，这里不再重复发。
   setTimeout(()=>{if(lib.snapshot().settings.autoCheckAppUpdates&&!updateHandoff)appUpdater.check({automatic:true}).catch(()=>{});},8000).unref();
@@ -713,5 +722,5 @@ process.on('uncaughtException',e=>{logError('主进程未捕获异常',e);notify
 process.on('unhandledRejection',reason=>{logError('主进程 Promise 拒绝',reason);notify('后台任务失败：'+describeError(reason).message,'error')});
 app.on('second-instance',()=>{if(win){if(showWithoutFocus){win.showInactive();return;}if(win.isMinimized())win.restore();win.focus();}});
 app.on('before-quit',event=>{if((programTabs?.hasWork||externalLaunches.size)&&!programExitAllowed){event.preventDefault();win?.close();}});
-app.on('will-quit',()=>{clearInterval(programTimer);hotkeyMonitor?.stop().catch(()=>{});hotkeyOcr?.close().catch(()=>{});hotkeyOverlay?.dispose().catch(()=>{});programHost?.dispose();});
+app.on('will-quit',()=>{clearInterval(programTimer);hotkeyMonitor?.stop().catch(()=>{});hotkeyOcr?.close().catch(()=>{});hotkeyOverlay?.dispose().catch(()=>{});hotkeyCapture?.host.dispose();programHost?.dispose();});
 app.on('window-all-closed',()=>app.quit());

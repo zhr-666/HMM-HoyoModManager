@@ -44,3 +44,21 @@ test('two consistent frames show, switch, and hide the overlay',()=>{
  state.observe('薇斯纳');state.observe('薇斯纳');
  assert.equal(state.reset(),null);
 });
+
+test('all enabled mods of a role including a skin contribute hotkeys',()=>{
+ const mods=[
+  {id:'base',name:'常规模组',active:true,characterName:'胡桃',hotkeys:{bindings:[{section:'KeyBase',keys:['K']}]}},
+  {id:'skin',name:'皮肤模组',active:true,isSkinMod:true,characterName:'胡桃',hotkeys:{bindings:[{section:'KeySkin',keys:['L']}]}},
+  {id:'other',name:'其他角色',active:true,isSkinMod:true,characterName:'钟离',hotkeys:{bindings:[{section:'KeyOther',keys:['M']}]}}
+ ];
+ assert.deepEqual(matchEnabledMods('/胡桃',mods,{}).mods.map(mod=>mod.id),['base','skin']);
+});
+
+test('a skin with a different display name joins the recognized role by character group',()=>{
+ const mods=[
+  {id:'base',active:true,characterName:'胡桃',characterGroupId:'19513',hotkeys:{bindings:[{section:'KeyBase',keys:['K']}]}},
+  {id:'skin',active:true,isSkinMod:true,characterName:'胡桃新装',characterGroupId:'19513',hotkeys:{bindings:[{section:'KeySkin',keys:['L']}]}},
+  {id:'other',active:true,isSkinMod:true,characterName:'钟离新装',characterGroupId:'10000',hotkeys:{bindings:[{section:'KeyOther',keys:['M']}]}}
+ ];
+ assert.deepEqual(matchEnabledMods('/胡桃',mods,{}).mods.map(mod=>mod.id),['base','skin']);
+});

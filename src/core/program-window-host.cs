@@ -80,6 +80,18 @@ public static class ProgramWindowHost {
         var name=new StringBuilder(256);GetClassNameW(h,name,256);if(name.ToString()=="#32770")return false;
         RECT rect;return GetWindowRect(h,out rect)&&rect.Right>rect.Left&&rect.Bottom>rect.Top;
     }
+    static object GameStatus() {
+        uint foregroundPid;GetWindowThreadProcessId(GetForegroundWindow(),out foregroundPid);
+        bool running=false,foreground=false;IntPtr h=CreateToolhelp32Snapshot(2,0);
+        if(h.ToInt64()==-1)throw new Win32Exception();
+        try { var e=new PROCESSENTRY32();e.Size=(uint)Marshal.SizeOf(e);
+            if(Process32FirstW(h,ref e))do {
+                if(!String.Equals(e.File,"GenshinImpact.exe",StringComparison.OrdinalIgnoreCase)&&!String.Equals(e.File,"YuanShen.exe",StringComparison.OrdinalIgnoreCase))continue;
+                running=true;if(e.Id==foregroundPid)foreground=true;
+            } while(Process32NextW(h,ref e));
+        } finally {CloseHandle(h);}
+        return new {running=running,foreground=foreground};
+    }
     static object Scan() {
         var processes=Processes();var byPid=new Dictionary<uint,ProcessInfo>();foreach(var p in processes)byPid[p.pid]=p;
         var windows=new List<object>();var seen=new HashSet<long>();
@@ -127,6 +139,7 @@ public static class ProgramWindowHost {
         finally {if(attached)AttachThreadInput(current,thread,false);}
     }
     static object Command(string action,Dictionary<string,object> p) {
+        if(action=="game-status")return GameStatus();
         if(action=="scan")return Scan();
         if(action=="launch") {
             if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))throw new Exception("请以管理员身份运行 HMM。");
