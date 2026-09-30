@@ -319,8 +319,11 @@ async function main(){
   assert.equal((await session.evaluate(`api.call('state',{gameId:'zzz'})`)).settings.hotkeyOverlayEnabled,false,'重启后保留绝区零的悬浮窗设置');
   if(process.env.HOYO_TEST_VIDEO)await session.waitFor(`document.querySelector('#background-video').currentTime>0`,'重启后离线视频播放');
   for(const ctx of ws.contexts.values())assert.ok((await fs.stat(path.join(ctx.lib.effectiveSettings().modsPath,'HoYoModManaged',installed[ctx.game.id],'mod.ini'))).isFile());
+  console.log('首页停用前状态',await session.evaluate(`({busyCount,disabled:document.querySelector('#home-disable-all').disabled,active:state.mods.filter(mod=>mod.active).length})`));
+  await session.waitFor(`busyCount===0&&!document.querySelector('#home-disable-all').disabled`,'重启后首页操作就绪');
   await session.evaluate(`document.querySelector('#home-disable-all').click()`);
-  await session.waitFor(`state.mods.every(mod=>!mod.active)&&document.querySelector('#home-disable-all').disabled&&busyCount===0`,'首页停用当前游戏模组');
+  try{await session.waitFor(`state.mods.every(mod=>!mod.active)&&document.querySelector('#home-disable-all').disabled&&busyCount===0`,'首页停用当前游戏模组');}
+  catch(error){console.error('首页停用失败状态',await session.evaluate(`({busyCount,disabled:document.querySelector('#home-disable-all').disabled,mods:state.mods.map(mod=>({id:mod.id,active:mod.active})),notifications:notificationEntries.slice(0,5)})`));console.error(await fs.readFile(path.join(data,'logs','errors.log'),'utf8').catch(()=>''));throw error;}
   assert.deepEqual(await session.evaluate(`(()=>{const button=document.querySelector('#home-disable-all');return [button.disabled,!!button.getClientRects().length,document.querySelector('#home-preset-name').textContent]})()`),[true,true,'自定义搭配']);
   console.log('✓ 四游戏资源、玻璃侧栏、独立模组/设置、共享偏好、异步结果隔离、通知跳转和重启恢复');
  }finally{session.client.close();await stop();}
