@@ -314,6 +314,8 @@ async function main(){
   await evaluate(`openNotificationTarget('downloads:zzz')`);assert.equal(await evaluate('activeGame'),'zzz',JSON.stringify(await evaluate(`({activeGame,busyCount,layers:dialogStack.layers.map(x=>({id:x.id,open:x.open})),gameSwitch:!!gameSwitch,notices:notificationEntries.slice(0,3)})`)));
   await evaluate(`releaseNotice({entries:[],unread:0});api.call=originalMultiCall`);
   const last=await evaluate(`selectGame('hsr')`);assert.equal(last,true,JSON.stringify(await evaluate(`({activeGame,busyCount,layers:dialogStack.layers.length})`)));assert.equal(JSON.parse(await fs.readFile(path.join(data,'workspaces.json'),'utf8')).activeGameId,'hsr');
+  // 自动背景开关已在上面验证；离线重启用例关闭它，避免网络更新占用操作锁。
+  await evaluate(`api.call('settings',{gameId:'hsr',autoBackground:false})`);
   session.client.close();await stop();session=await launch(data);await session.waitFor(`initialStateLoaded&&activeGame==='hsr'`,'重启恢复游戏');
   assert.deepEqual(await session.evaluate('state.mods.map(m=>m.id)'),[installed.hsr]);
   assert.equal((await session.evaluate(`api.call('state',{gameId:'zzz'})`)).settings.hotkeyOverlayEnabled,false,'重启后保留绝区零的悬浮窗设置');
