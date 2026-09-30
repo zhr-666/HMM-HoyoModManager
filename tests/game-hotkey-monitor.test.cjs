@@ -46,3 +46,18 @@ test('game loss hides the logo and a later game frame restores it',async()=>{
  await monitor.sample();current=null;await monitor.sample();current=frame;await monitor.sample();
  assert.deepEqual(changes,[{match:null,visible:true},{match:null,visible:false},{match:null,visible:true}]);
 });
+
+test('stopping the overlay monitor stops capture and restarting resumes it',async()=>{
+ let captures=0;
+ const monitor=new GameHotkeyMonitor({capture:async()=>{captures++;return null},ocr:async()=>'',getMods:()=>[],getNotes:()=>({})});
+ monitor.start();
+ for(let i=0;i<20&&!captures;i++)await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(captures,1);
+ await monitor.stop();
+ await new Promise(resolve=>setTimeout(resolve,20));
+ assert.equal(captures,1);
+ monitor.start();
+ for(let i=0;i<20&&captures===1;i++)await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(captures,2);
+ await monitor.stop();
+});

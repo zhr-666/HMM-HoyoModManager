@@ -100,6 +100,17 @@ test('automatic background updates are opt-in, isolated and persist across resta
  assert.equal(next.get('zzz').lib.effectiveSettings().autoBackground,false);
 });
 
+test('hotkey overlay switch is stored per game and rejects invalid values',async t=>{
+ const {store,root}=await setup(t);
+ await store.setSettings('genshin',{hotkeyOverlayEnabled:false});
+ const next=await new Workspaces(root).init();
+ assert.equal(next.get('genshin').lib.effectiveSettings().hotkeyOverlayEnabled,false);
+ assert.notEqual(next.get('zzz').lib.effectiveSettings().hotkeyOverlayEnabled,false);
+ await assert.rejects(next.setSettings('genshin',{hotkeyOverlayEnabled:'false'}),/无效/);
+ await next.setSettings('genshin',{hotkeyOverlayEnabled:true});
+ assert.equal(next.get('genshin').lib.effectiveSettings().hotkeyOverlayEnabled,true);
+});
+
 test('paths reject cross-game aliases, nesting, data and case variants; failed writes keep selection',async t=>{
   const {dir,root,store}=await setup(t),mods=path.join(dir,'GIMI','Mods');
   await store.setSettings('genshin',{modsPath:mods});

@@ -67,6 +67,7 @@
     ],
     "win": {
       "icon": "build/icon.ico",
+      "electronLanguages": ["zh-CN", "en-US"],
       "target": [
         "zip"
       ],

@@ -230,6 +230,7 @@ async function main(){
    await waitFor(`activeGame==='${gameId}'&&state.activeGame==='${gameId}'`,'游戏切换');
    assert.deepEqual(await evaluate('state.mods.map(m=>m.id)'),[installed[gameId]]);
    assert.equal(await evaluate('state.mods[0].active'),true);
+   assert.deepEqual(await evaluate(`(()=>{showPage('home');const button=document.querySelector('#home-disable-all');return [button.textContent.trim(),button.disabled,!!button.getClientRects().length]})()`),['不启用 Mod',false,true],`${gameId} 首页常驻停用按钮`);
    assert.equal(await evaluate(`document.querySelector('#game-logo').hidden`),false,'每款游戏的独立 Logo 始终可见');
    assert.equal(await evaluate(`document.querySelector('#app-background').dataset.game`),gameId,'背景与选中游戏一致');
    assert.equal(await evaluate(`document.querySelector('#game-logo').dataset.game`),gameId,'Logo 与选中游戏一致');
@@ -244,6 +245,15 @@ async function main(){
    const assets=await evaluate(`Promise.all([gameById(activeGame).icon,gameById(activeGame).background].map(async name=>{const r=await fetch(name);return {status:r.status,cache:r.headers.get('cache-control'),size:(await r.arrayBuffer()).byteLength}}))`);
    for(const asset of assets){assert.equal(asset.status,200);assert.equal(asset.cache,'no-store');assert.ok(asset.size>1000);}
   }
+  for(const gameId of ['genshin','zzz','hsr','wuwa']){
+   await evaluate(`selectGame('${gameId}')`);await evaluate(`showPage('settings')`);
+   assert.deepEqual(await evaluate(`(()=>{const input=document.querySelector('#game-settings-panel [data-hotkey-overlay]');return [input.checked,!!input.getClientRects().length]})()`),[true,true],`${gameId} 的悬浮窗开关`);
+  }
+  await evaluate(`selectGame('zzz')`);await evaluate(`showPage('settings');document.querySelector('#game-settings-panel [data-hotkey-overlay]').click()`);
+  await waitFor(`state.settings.hotkeyOverlayEnabled===false&&busyCount===0`,'绝区零悬浮窗设置保存');
+  assert.deepEqual(await evaluate(`(()=>{openGameSettings();const input=document.querySelector('#modal [data-hotkey-overlay]');const result=[input.checked,document.querySelector('#modal [data-overlay-description]').textContent.includes('尚未支持')];closeModal();return result})()`),[false,true],'首页当前游戏设置同步悬浮窗选项');
+  await evaluate(`selectGame('genshin')`);
+  assert.equal(await evaluate(`document.querySelector('#game-settings-panel [data-hotkey-overlay]').checked`),true,'绝区零设置不影响原神');
   await evaluate(`Promise.all([selectGame('zzz'),selectGame('hsr')])`);
   assert.equal(await evaluate(`document.querySelector('#app-background').dataset.game`),'hsr','快速切换最终只显示目标游戏背景');
   assert.equal(await evaluate(`document.querySelector('#game-logo').dataset.game`),'hsr');
@@ -301,8 +311,12 @@ async function main(){
   const last=await evaluate(`selectGame('hsr')`);assert.equal(last,true,JSON.stringify(await evaluate(`({activeGame,busyCount,layers:dialogStack.layers.length})`)));assert.equal(JSON.parse(await fs.readFile(path.join(data,'workspaces.json'),'utf8')).activeGameId,'hsr');
   session.client.close();await stop();session=await launch(data);await session.waitFor(`initialStateLoaded&&activeGame==='hsr'`,'重启恢复游戏');
   assert.deepEqual(await session.evaluate('state.mods.map(m=>m.id)'),[installed.hsr]);
+  assert.equal((await session.evaluate(`api.call('state',{gameId:'zzz'})`)).settings.hotkeyOverlayEnabled,false,'重启后保留绝区零的悬浮窗设置');
   if(process.env.HOYO_TEST_VIDEO)await session.waitFor(`document.querySelector('#background-video').currentTime>0`,'重启后离线视频播放');
   for(const ctx of ws.contexts.values())assert.ok((await fs.stat(path.join(ctx.lib.effectiveSettings().modsPath,'HoYoModManaged',installed[ctx.game.id],'mod.ini'))).isFile());
+  await session.evaluate(`document.querySelector('#home-disable-all').click()`);
+  await session.waitFor(`state.mods.every(mod=>!mod.active)&&document.querySelector('#home-disable-all').disabled&&busyCount===0`,'首页停用当前游戏模组');
+  assert.deepEqual(await session.evaluate(`(()=>{const button=document.querySelector('#home-disable-all');return [button.disabled,!!button.getClientRects().length,document.querySelector('#home-preset-name').textContent]})()`),[true,true,'自定义搭配']);
   console.log('✓ 四游戏资源、玻璃侧栏、独立模组/设置、共享偏好、异步结果隔离、通知跳转和重启恢复');
  }finally{session.client.close();await stop();}
 }

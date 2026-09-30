@@ -310,6 +310,7 @@ function renderHome(){
   const matches=preset&&preset.modIds.length===ids.size&&preset.modIds.every(id=>ids.has(id));
   $('#home-preset-name').textContent=matches?preset.name:'自定义搭配';
   $('#home-preset-detail').textContent=active.length?`已启用 ${active.length} 个模组`:'当前没有启用模组';
+  $('#home-disable-all').disabled=!active.length;
   $('#home-mod-count').textContent=state.mods.length;$('#home-active-count').textContent=active.length;
   $('#home-active-mods').innerHTML=active.slice(0,4).map(mod=>`<span class="active-mod-chip" title="${esc(mod.name)}">${esc(mod.characterName)} · ${esc(mod.name)}</span>`).join('')+(active.length>4?`<span class="active-mod-chip">还有 ${active.length-4} 个模组</span>`:'');
   const configured=!!state.settings.modsPath;
@@ -335,20 +336,22 @@ async function setLibraryView(view){
   try{await call('settings',{libraryView:view},{foreground:false})}
   catch{state.settings.libraryView=previous;renderLibrary()}
 }
-function setBusy(value){busyCount=Math.max(0,busyCount+(value?1:-1));if(value&&busyCount===1){$$('button').filter(el=>!el.closest('.sidebar')&&!el.closest('#notification-center')&&!el.closest('.dialog-head')&&!el.closest('[data-layer-kind="dependency-modal"]')&&!el.classList.contains('category')&&!el.closest('.pager')&&!el.closest('.library-navigation')).forEach(el=>{busyButtons.set(el,el.disabled);el.disabled=true})}else if(!busyCount){for(const [el,disabled] of busyButtons)if(el.isConnected)el.disabled=disabled;busyButtons.clear();refreshInstallAvailability()}}
+function setBusy(value){busyCount=Math.max(0,busyCount+(value?1:-1));if(value&&busyCount===1){$$('button').filter(el=>!el.closest('.sidebar')&&!el.closest('#notification-center')&&!el.closest('.dialog-head')&&!el.closest('[data-layer-kind="dependency-modal"]')&&!el.classList.contains('category')&&!el.closest('.pager')&&!el.closest('.library-navigation')).forEach(el=>{busyButtons.set(el,el.disabled);el.disabled=true})}else if(!busyCount){for(const [el,disabled] of busyButtons)if(el.isConnected)el.disabled=disabled;busyButtons.clear();$('#home-disable-all').disabled=!state.mods?.some(mod=>mod.active);refreshInstallAvailability()}}
 async function call(action,payload,opts={}){if(!api?.call)throw new Error('本地服务不可用，请重新启动应用。');if(opts.foreground!==false)setBusy(true);try{const result=await api.call(action,payload);if(opts.reload)await loadState();return result}catch(e){if(!opts.silent)notifyError(e);throw e}finally{if(opts.foreground!==false)setBusy(false)}}
 // 下载入队失败不再插页面上方的横条，统一走右下角通知中心（需求 14）。
 async function enqueue(action,payload){try{const result=await call(action,payload,{foreground:false,silent:true});if(result?.queued)showToast('已加入下载列表');await loadDownloads()}catch(e){notifyError(e);showPage('downloads')}}
 let initialStateLoaded=false;
 async function loadState(){const requested=activeGame,next=await (initialStateLoaded?api:bridge).call('state');if(initialStateLoaded&&requested!==activeGame)return;if(!initialStateLoaded){activeGame=next.activeGame||'genshin';initialStateLoaded=true;}state=next;if(next.availableGames)GAMES=next.availableGames;addedGameIds=next.addedGameIds||[activeGame];renderGameRails();renderState();scheduleOnboardingTip();}
-// 当前游戏设置的三项（GIMI / ZZMI / SRMI 文件夹、外部程序、启动器背景）：首页弹出的设置窗口与
-// 「设置」页里的同一组设置都读这里，切游戏后两边一起变。
+// 当前游戏设置：首页弹出的设置窗口与「设置」页里的同一组设置都读这里，
+// 切游戏后两边一起变。
 function renderGameValues(root=document){
   for(const input of $$('[data-program-tabs]',root))input.checked=state.settings.programTabs===true;
   for(const el of $$('[data-secondary-program]',root))el.textContent=state.settings.secondaryExe||'尚未选择';
   const game=gameById(activeGame);
   const supportsOfficialBackground=!!(game.officialBackgroundId||game.officialBackgroundProvider);
   for(const input of $$('[data-auto-background]',root)){input.checked=state.settings.autoBackground===true;input.disabled=!supportsOfficialBackground;input.closest('.setting-row').hidden=!supportsOfficialBackground;}
+  for(const input of $$('[data-hotkey-overlay]',root))input.checked=state.settings.hotkeyOverlayEnabled!==false;
+  for(const description of $$('[data-overlay-description]',root))description.textContent=activeGame==='genshin'?'开启时识别《原神》画面并显示热键提示；关闭后停止识别。':'当前游戏尚未支持热键悬浮窗；此设置会单独保存。';
   for(const button of $$('#fetch-background, #game-fetch-background',root)){button.disabled=!supportsOfficialBackground;button.title=supportsOfficialBackground?'':'当前游戏暂无官方启动器背景接口';}
   const importer=game.importer;
   for(const el of $$('[data-loader-label]',root))el.textContent=importer+' 文件夹';
@@ -472,8 +475,18 @@ function addBackgroundSwitch(root){
   const input=row.querySelector('input');input.checked=state.settings.autoBackground===true;
   input.onchange=async()=>{const game=activeGame,value=input.checked;input.disabled=true;try{await call('settings',{gameId:game,autoBackground:value},{reload:true});}catch{input.checked=!value;}finally{input.disabled=false;}};
 }
-// 当前游戏设置窗口：首页 Logo 右下角的齿轮打开，只放随游戏变化的项
-// （GIMI / ZZMI / SRMI 文件夹、外部程序、启动器背景），每个游戏各存一份，互不影响。
+function bindHotkeyOverlaySwitch(root){
+  const input=root.querySelector('[data-hotkey-overlay]');
+  if(!input)return;
+  input.onchange=async()=>{
+    const game=activeGame,value=input.checked;input.disabled=true;
+    try{await call('settings',{gameId:game,hotkeyOverlayEnabled:value},{reload:true});}
+    catch{input.checked=!value;}
+    finally{input.disabled=false;}
+  };
+}
+// 当前游戏设置窗口：首页 Logo 右下角的齿轮打开，只放随游戏变化的项，
+// 每个游戏各存一份，互不影响。
 function openGameSettings(){
   const game=gameById(activeGame);
   const body=`<p class="meta">这一组设置只对「${esc(game.name)}」生效：换到别的游戏时显示并保存该游戏自己的值。</p>
@@ -481,11 +494,13 @@ function openGameSettings(){
       <div class="setting-row"><div><strong data-loader-label>${esc(game.importer)} 文件夹</strong><p data-game-value="modsPath">尚未选择</p></div><button class="button secondary" id="game-choose-mods">选择 ${esc(game.importer)} 文件夹</button></div>
       <div class="setting-row"><div><strong>一级程序<span class="hint-mark" data-hint="选择HMM要启动的程序。" role="img" aria-label="选择HMM要启动的程序。" tabindex="0">?</span></strong><p data-game-value="launchExe">尚未选择</p></div><button class="button secondary" id="game-choose-program">选择 EXE</button></div>
       <div class="setting-row"><div><strong>启动器背景</strong><p data-game-value="background">默认使用米哈游官方启动器《原神》背景图；可替换为本地图片</p></div><div class="row-actions"><button class="button secondary" id="game-fetch-background">获取官方最新背景</button><button class="button secondary" id="game-reset-background">恢复默认</button><button class="button secondary" id="game-choose-background">选择图片</button></div></div>
+      <div class="setting-row"><div><strong>热键悬浮窗</strong><p data-overlay-description>开启时识别游戏画面并显示热键提示。</p></div><label class="switch"><input data-hotkey-overlay type="checkbox" aria-label="热键悬浮窗"><span></span></label></div>
     </div>`;
   const dialog=modal(`${game.name} · 当前游戏设置`,'只影响这个游戏，其他游戏的设置不会被覆盖。',body,'');
   window.hoyoProgramSettings?.(dialog);
   renderGameValues(dialog);
   addBackgroundSwitch(dialog);
+  bindHotkeyOverlaySwitch(dialog);
   const q=selector=>$(selector,dialog);
   q('#game-choose-mods').onclick=()=>call('chooseMods',{gameId:activeGame},{reload:true}).then(onboardingLoaderChosen).catch(error=>notifyError(error));
   q('#game-choose-program').onclick=()=>call('chooseProgram',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
@@ -1110,6 +1125,8 @@ function renderAppearance(){const s=state.settings;document.documentElement.data
 function refreshWorkshopBlur(){for(const card of $$('#browse-grid .mod-card[data-nsfw="true"]')){const preview=$('.preview',card),img=$('img',preview);if(!img)continue;$('.nsfw-cover',preview)?.remove();const blur=state.settings.blurNsfw!==false;img.classList.toggle('nsfw-image',blur);if(blur){const cover=document.createElement('span');cover.className='nsfw-cover';cover.textContent='NSFW · 点击查看';preview.append(cover)}}}
 
 $('#home-open-library').onclick=()=>enterWorkspace(activeGame,$(`.rail-launcher .game-tile[data-game="${activeGame}"]`),'library');$('#home-open-presets').onclick=()=>enterWorkspace(activeGame,$(`.rail-launcher .game-tile[data-game="${activeGame}"]`),'presets');
+$('#home-disable-all').onclick=()=>mutate('disableAll');
+bindHotkeyOverlaySwitch($('#game-settings-panel'));
 // 游戏 Logo 右下角的齿轮 = 当前游戏设置（需求 27）：点开就在原地弹出这个游戏自己的设置，
 // 不切换页面；左下角侧栏的设置仍然是全局设置。
 $('#home-game-settings').onclick=()=>openGameSettings();

@@ -4,7 +4,7 @@ const path=require('node:path');
 const os=require('node:os');
 const assert=require('node:assert/strict');
 (async()=>{
-  const appRoot=path.resolve(__dirname,'../dist/win-unpacked');
+  const appRoot=path.resolve(process.env.HOYOMOD_PACKAGE_ROOT||path.join(__dirname,'../dist/win-unpacked'));
   const exe=await fs.readFile(path.join(appRoot,'HoYoMod.exe'));
   assert.equal(exe.toString('ascii',0,2),'MZ');
   const pe=exe.readUInt32LE(0x3c);

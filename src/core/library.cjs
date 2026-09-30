@@ -19,7 +19,7 @@ const DEFAULT_STATE = Object.freeze({
 });
 // 随游戏变化的本机路径/背景：按游戏各存一份，互不影响（需求 27）。
 // 其余设置是全局的：软件更新、自动检查、外观、代理等。
-const validGameSetting=(key,value)=>typeof value===(['autoBackground','programTabs'].includes(key)?'boolean':'string');
+const validGameSetting=(key,value)=>typeof value===(['autoBackground','programTabs','hotkeyOverlayEnabled'].includes(key)?'boolean':'string');
 // 当前只有《原神》接入；games 里出现未知编号时按损坏记录丢弃。
 const KNOWN_GAMES = ['genshin'];
 const DEFAULT_GAME = 'genshin';
@@ -158,7 +158,7 @@ class Library {
         const games = this.gameId ? { [this.gameId]: Object.fromEntries(GAME_SETTING_KEYS.map(key=>{
           const own=saved.games?.[this.gameId]?.[key];
           const legacy=saved.activeGame===this.gameId?saved.settings?.[key]:'';
-          return [key,validGameSetting(key,own)?own:validGameSetting(key,legacy)?legacy:key==='autoBackground'?false:''];
+          return [key,validGameSetting(key,own)?own:validGameSetting(key,legacy)?legacy:key==='autoBackground'?false:key==='hotkeyOverlayEnabled'?true:''];
         })) } : normalizeGames(saved.games);
         const activeGame = this.gameId || (KNOWN_GAMES.includes(saved.activeGame) ? saved.activeGame : DEFAULT_GAME);
         const migrated = migrateGames({ games, savedSettings: saved.settings });

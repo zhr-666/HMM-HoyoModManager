@@ -432,15 +432,19 @@ const actions={
     // 左下角设置页写全局设置；游戏设置（加载器 Mods 路径、外部程序、启动器背景）带 gameId，
     // 只改当前游戏那一份（需求 27）。
     const globalKeys=['autoEnable','autoCheckUpdates','blurNsfw','material','proxyMode','proxyUrl','libraryView','autoCheckAppUpdates','useLinks'];
-    const gameKeys=['modsPath','launchExe','secondaryExe','programTabs','backgroundVersion','autoBackground'];
+    const gameKeys=['modsPath','launchExe','secondaryExe','programTabs','backgroundVersion','autoBackground','hotkeyOverlayEnabled'];
     const patch={},gamePatch={};for(const k of globalKeys)if(k in p)patch[k]=p[k];
     for(const k of gameKeys)if(k in p)gamePatch[k]=p[k];
     if(Object.keys(patch).length||Object.keys(gamePatch).length)await workspaces.setSettings(workspace().game.id,{...patch,...gamePatch});
+    if('hotkeyOverlayEnabled' in gamePatch&&workspace().game.id==='genshin'&&hotkeyMonitor){
+      if(gamePatch.hotkeyOverlayEnabled)hotkeyMonitor.start();
+      else await hotkeyMonitor.stop();
+    }
     applyAppearance();
     if('proxyMode' in patch||'proxyUrl' in patch)await session.defaultSession.setProxy(proxyConfig(lib.snapshot().settings));
     return snapshot();
   }),
-  setActiveGame:async p=>{await workspaces.select(p.gameId);hotkeyMonitor?.hide();await startWorkspace(workspaces.get(p.gameId)).catch(error=>notifyError(error,{title:'加载游戏任务'}));return snapshot();},
+  setActiveGame:async p=>{await workspaces.select(p.gameId);hotkeyMonitor?.hide();if(p.gameId==='genshin'&&workspaces.get('genshin').lib.effectiveSettings().hotkeyOverlayEnabled!==false)hotkeyMonitor?.start();await startWorkspace(workspaces.get(p.gameId)).catch(error=>notifyError(error,{title:'加载游戏任务'}));return snapshot();},
   removeGame:async p=>{
     const ctx=workspaces.get(p.gameId);
     if(ctx.removing||ctx.busy||ctx.downloadQueue?.worker||ctx.downloadQueue?.snapshot().some(row=>['queued','downloading','installing'].includes(row.status)))throw Error('请等待当前游戏的下载和操作结束后再移除。');
@@ -450,6 +454,7 @@ const actions={
       while(ctx.pendingCalls>1){if(Date.now()>deadline)throw Error('当前游戏还有任务未完成，请稍后重试移除。');await new Promise(resolve=>setTimeout(resolve,100));}
       if(ctx.previewTask){let timer;try{await Promise.race([ctx.previewTask,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('预览图缓存仍在处理，请稍后重试移除。')),30000);})]);}finally{clearTimeout(timer);}}
       const next=await workspaces.remove(p.gameId);
+      if(p.gameId==='genshin')await hotkeyMonitor?.stop();
       ctx.downloadQueue.rows=[];ctx.downloadQueue.hiddenKeys=[];ctx.downloadQueueInitialized=false;ctx.downloadBatchIds=[];ctx.downloadReporter.active=0;ctx.downloadReporter.armed=false;
       ctx.api.taxonomyCache=null;ctx.api.categoryRoots.clear();ctx.lastUpdateSummary=null;ctx.legacyDownloads=[];ctx.previewTask=null;
       return workspaces.run(next,()=>snapshot());
@@ -710,7 +715,7 @@ if(lock)app.whenReady().then(async()=>{
         return state;
       };
       hotkeyMonitor=new GameHotkeyMonitor({capture:()=>hotkeyCapture.capture(),ocr:(image,rect)=>hotkeyOcr.recognize(image,rect),getMods:()=>{hotkeyState();return cachedHotkeyMods;},getNotes:()=>hotkeyState()?.hotkeyNotes||{},onChange:(value,visible)=>hotkeyOverlay.show(value,visible),onError:error=>notifyError(error,{title:'原神热键悬浮窗'})});
-      hotkeyMonitor.start();
+      if(workspaces.get('genshin').lib.effectiveSettings().hotkeyOverlayEnabled!==false)hotkeyMonitor.start();
     }catch(error){notifyError(error,{title:'原神热键悬浮窗'});hotkeyCapture?.host.dispose();hotkeyCapture=null;hotkeyOverlay?.dispose().catch(()=>{});hotkeyOverlay=null;}
   }
   // 自动检查的新版本通知由 syncAppUpdateTask 在状态落到 available 时统一发出，这里不再重复发。

@@ -19,6 +19,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
     if(action==='launch')return {message:'已发送启动请求'};
     if(action==='settings'){Object.assign(state.settings,p);return structuredClone(state)}
     if(action==='enable'||action==='disable'){state.mods.find(m=>m.id===p.id).active=action==='enable';state.currentPresetId=null;return structuredClone(state)}
+    if(action==='disableAll'){state.mods.forEach(mod=>{mod.active=false});state.currentPresetId=null;return structuredClone(state)}
     throw Error('Unexpected action '+action);
    },onState(){},onDownloads(){},onProgress(){},onNotifications(){},onNotificationPopups(){}};
   });
@@ -43,6 +44,12 @@ const path=require('node:path'),assert=require('node:assert/strict');
   await page.waitForFunction(()=>document.querySelector('#home-total-size').textContent.includes('GB'));
   assert.match(await page.locator('#home-total-size').textContent(),/^5(?:\.0)? GB$/);
   assert.equal(await page.locator('#home-preset-name').textContent(),'日常探索');
+  assert.equal(await page.locator('#home-disable-all').isEnabled(),true);
+  await page.locator('#home-disable-all').click();
+  assert.ok(await page.evaluate(()=>calls.some(c=>c.action==='disableAll'&&c.p.gameId==='genshin')));
+  assert.equal(await page.locator('#home-preset-detail').textContent(),'当前没有启用模组');
+  assert.equal(await page.locator('#home-disable-all').isVisible(),true);
+  assert.equal(await page.locator('#home-disable-all').isDisabled(),true);
   assert.equal(await page.locator('#game-card-state').textContent(),'模组工作空间已就绪');
   await page.locator('#launch-button').click();assert.ok(await page.evaluate(()=>calls.some(c=>c.action==='launch')));
   await require('node:fs/promises').mkdir(path.resolve(__dirname,'../test-results'),{recursive:true});
