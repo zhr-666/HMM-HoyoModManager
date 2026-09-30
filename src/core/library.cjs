@@ -369,6 +369,13 @@ class Library {
       const next = clone(this.state);
       const index = next.mods.findIndex((item) => item.id === id);
       if (index < 0) next.mods.push(mod); else next.mods[index] = mod;
+      const sourceNoteKey=mod.sourceId?`source:${mod.sourceId}`:'';
+      const pendingNotes=next.hotkeyNotes?.[sourceNoteKey];
+      if(Array.isArray(pendingNotes)&&pendingNotes.length){
+        const seen=new Set();
+        next.hotkeyNotes[id]=[...pendingNotes,...(next.hotkeyNotes[id]||[])].filter(note=>{if(seen.has(note.text))return false;seen.add(note.text);return true}).slice(0,MAX_HOTKEY_NOTES);
+        delete next.hotkeyNotes[sourceNoteKey];
+      }
       let committed = false;
       try {
         await shaderFixes.install(this,shaders.files,metadata,folder);
@@ -554,16 +561,21 @@ class Library {
   }
 
   // 热键提示：详情页里用户自己选中的文字，按 Mod 分开保存（需求 18/19）。
-  addHotkeyNote(modId, text) {
+  addHotkeyNote(modId, text, sourceId) {
     return this._enqueue(async () => {
       const content = String(text ?? '').replace(/\r\n?/g, '\n').trim();
       if (!content) throw new Error('请先选中要保存的文字。');
       if (content.length > MAX_NOTE_LENGTH) throw new Error(`热键提示请控制在 ${MAX_NOTE_LENGTH} 个字符以内。`);
       const next = clone(this.state);
-      this._find(next.mods, modId, 'mod');
-      const notes = Array.isArray(next.hotkeyNotes?.[modId]) ? next.hotkeyNotes[modId] : [];
+      let key=modId;
+      if(sourceId!==undefined){
+        const source=String(sourceId);
+        if(!/^[1-9]\d*$/.test(source)||!Number.isSafeInteger(Number(source)))throw new Error('无效的模组来源编号。');
+        key=next.mods.find(mod=>String(mod.sourceId)===source)?.id||`source:${source}`;
+      }else this._find(next.mods, modId, 'mod');
+      const notes = Array.isArray(next.hotkeyNotes?.[key]) ? next.hotkeyNotes[key] : [];
       if (notes.some(note => note.text === content)) return this.snapshot();
-      next.hotkeyNotes = { ...(next.hotkeyNotes || {}), [modId]: [{ id: randomUUID(), text: content, at: Date.now() }, ...notes].slice(0, MAX_HOTKEY_NOTES) };
+      next.hotkeyNotes = { ...(next.hotkeyNotes || {}), [key]: [{ id: randomUUID(), text: content, at: Date.now() }, ...notes].slice(0, MAX_HOTKEY_NOTES) };
       await this._writeState(next);this.state = next;
       return this.snapshot();
     });

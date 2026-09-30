@@ -53,7 +53,7 @@ async function main(){
   await store.setSettings('genshin',{proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false});
   await fs.writeFile(path.join(data,'games','genshin','state.json'),JSON.stringify({
     settings:{modsPath:'',proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',autoCheckAppUpdates:false,autoCheckUpdates:false},
-    mods:[],folders:[],presets:[],
+    mods:[],folders:[],presets:[{id:'quick-a',name:'日常探索',modIds:[]},{id:'quick-b',name:'探索二',modIds:[]}],
   }));
   await fs.writeFile(path.join(data,'games','genshin','taxonomy.json'),JSON.stringify([{id:17510,name:'Skins',icon:'',children:[]}]));
   const env={...process.env,HOYOMOD_DATA:data};
@@ -81,6 +81,24 @@ async function main(){
   await client.send('Page.enable');
   await waitFor('!!window.hoyo && !!window.hoyo.call','桥接就绪');
   await waitFor('typeof syncNotificationLayer==="function" && typeof showNotificationPopup==="function"','界面脚本加载');
+  await waitFor('initialStateLoaded','初始游戏状态');
+
+  // 主页只列出方案名称；点击名称立即应用，设置页四个配置入口仍可使用。
+  await waitFor(`document.querySelectorAll('#home-preset-options .home-preset-button').length===2`,'主页方案快捷按钮');
+  assert.equal(await evaluate(`!!document.querySelector('#home-preset-detail,#home-active-mods')`),false,'主页方案卡不显示启用统计和模组清单');
+  await fs.mkdir(path.join(root,'test-results'),{recursive:true});
+  await fs.writeFile(path.join(root,'test-results','home-preset-shortcuts.png'),await screenshot());
+  await evaluate(`document.querySelectorAll('#home-preset-options .home-preset-button')[1].click()`);
+  await waitFor(`document.querySelector('#home-preset-name').textContent==='探索二'`,'快捷切换方案');
+  assert.equal(await evaluate(`document.querySelector('#home-preset-options .home-preset-button[aria-pressed="true"]')?.textContent`),'探索二');
+  await evaluate(`showPage('settings')`);
+  const settingsLayout=await evaluate(`(()=>{const panel=document.querySelector('#game-settings-panel');return {cards:['choose-mods','choose-program','choose-target-exe','choose-background'].filter(id=>panel.querySelector('#'+id)?.closest('.setting-row')).length,maintenance:!!document.querySelector('#check-updates'),library:!!document.querySelector('#check-updates-library')}})()`);
+  assert.equal(settingsLayout.cards,4,'当前游戏设置应分成四个配置项');
+  assert.equal(settingsLayout.maintenance,false,'维护与诊断不再重复放检查更新');
+  assert.equal(settingsLayout.library,true,'我的模组保留检查更新入口');
+  await fs.writeFile(path.join(root,'test-results','game-settings-card.png'),await screenshot());
+  await evaluate(`showPage('home')`);
+  console.log('✓ 主页方案名称可快捷切换，设置页配置项与更新入口符合要求');
 
   // ——— 需求 5①：完成 / 错误提示卡在对话框与遮罩之上，且不被 dialog::backdrop 的模糊影响 ———
   await evaluate(`window.hoyo.call('addNotification',{text:'冒泡测试：提示卡在最上层',target:'downloads'})`);
@@ -150,6 +168,16 @@ async function main(){
   assert.equal(await evaluate('document.querySelector("#notification-center").matches(":popover-open")'),true,'通知按钮始终可点击');
   console.log('✓ 通知全部收完后按钮仍可点击，透明区域不阻挡页面点击');
 
+  // 两层弹窗：点内容不关闭，点遮罩一次回到底层页面。
+  await evaluate(`modal('第一层','','','');modal('第二层','','','')`);
+  const dialogPoints=await evaluate(`(()=>{const r=dialogStack.layers.at(-1).dialog.getBoundingClientRect();return {inside:{x:r.left+r.width/2,y:r.top+24},outside:{x:r.left-24,y:r.top+24}}})()`);
+  const clickAt=async({x,y})=>{await client.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});await client.send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1})};
+  await clickAt(dialogPoints.inside);
+  assert.equal(await evaluate('dialogStack.layers.length'),2,'点击弹窗内部应保留两层');
+  await clickAt(dialogPoints.outside);
+  await waitFor('dialogStack.layers.length===0','点击遮罩返回底层页面');
+  console.log('✓ 点击多层弹窗外侧一次返回底层页面');
+
   // ——— 需求 3：翻页后回到页面最上方 ———
   // 这里没有可用的 GameBanana 连接，工坊会停在「加载失败」；但翻页本身（上一页 / 下一页 →
   // 回到页面最上方）不依赖网络结果，所以照样能在这里验：页面用临时占位块撑高，滚到底之后
@@ -166,7 +194,7 @@ async function main(){
   assert.ok(expanded.menuLeft>=expanded.railRight&&expanded.resultsLeft>=expanded.menuRight,'筛选菜单应在游戏栏和模组卡片之间：'+JSON.stringify(expanded));
   assert.ok(expanded.menuLeft-expanded.railRight<=1,'筛选菜单应紧贴游戏栏：'+JSON.stringify(expanded));
   assert.equal(expanded.menuBottom,expanded.viewportHeight,'筛选菜单应延伸到窗口底部');
-  assert.ok(expanded.menuTop===0||expanded.menuTop===40,'筛选菜单应从内容顶部开始');
+  assert.equal(expanded.menuTop,0,'筛选菜单应从窗口顶部开始');
   assert.ok(expanded.resultsWidth>300,'卡片区域应有独立宽度：'+JSON.stringify(expanded));
   const categoryVisible=await evaluate(`(()=>{const item=document.querySelector('#category-list .category');if(!item)return true;const box=item.getBoundingClientRect(),menu=document.querySelector('#workshop-menu').getBoundingClientRect();const x=box.left+box.width/2,y=box.top+box.height/2;return y<menu.bottom&&document.elementFromPoint(x,y)?.closest('.category')===item})()`);
   assert.equal(categoryVisible,true,'翻页区不应遮住分类列表');
@@ -177,10 +205,15 @@ async function main(){
   assert.ok(badgeCenter<=1,'分类数量应在标签上下居中：'+badgeCenter);
   await fs.mkdir(path.join(root,'test-results'),{recursive:true});
   await fs.writeFile(path.join(root,'test-results','workshop-sidebar.png'),await screenshot());
-  const scrollbarStyle=await evaluate(`(()=>{const body=document.querySelector('#workshop-menu-body'),probe=document.createElement('div');probe.id='scrollbar-probe';probe.style.height='1600px';body.append(probe);return {scrollbarWidth:getComputedStyle(body).scrollbarWidth,scrollbarColor:getComputedStyle(body).scrollbarColor,buttonDisplay:getComputedStyle(body,'::-webkit-scrollbar-button').display,scrollHeight:body.scrollHeight,clientHeight:body.clientHeight}})()`);
+  await evaluate(`(()=>{const probe=document.createElement('div');probe.id='scrollbar-probe';probe.style.height='1600px';document.querySelector('#workshop-menu-body').append(probe)})()`);
+  await sleep(800);
+  const scrollbarStyle=await evaluate(`(()=>{const body=document.querySelector('#workshop-menu-body');return {scrollbarWidth:getComputedStyle(body).scrollbarWidth,scrollbarColor:getComputedStyle(body).scrollbarColor,buttonDisplay:getComputedStyle(body,'::-webkit-scrollbar-button').display,scrollHeight:body.scrollHeight,clientHeight:body.clientHeight}})()`);
   assert.ok(scrollbarStyle.scrollHeight>scrollbarStyle.clientHeight,'菜单内容应产生纵向滚动条');
-  assert.equal(scrollbarStyle.scrollbarWidth,'auto','滚动条不使用自动隐藏的细线样式');
+  assert.equal(scrollbarStyle.scrollbarWidth,'thin','滚动条应为细线');
+  assert.match(scrollbarStyle.scrollbarColor,/^(?:transparent|rgba\(0, 0, 0, 0\)) (?:transparent|rgba\(0, 0, 0, 0\))$/,'静止时滚动条应隐藏');
   assert.equal(scrollbarStyle.buttonDisplay,'none','滚动条不显示上下箭头');
+  const scrollingStyle=await evaluate(`(()=>{const body=document.querySelector('#workshop-menu-body');body.dispatchEvent(new Event('scroll'));return getComputedStyle(body).scrollbarColor})()`);
+  assert.ok(scrollingStyle.includes('164, 173, 187'),'滚动时细线应显示');
   await sleep(1000);
   await fs.writeFile(path.join(root,'test-results','workshop-scrollbar.png'),await screenshot());
   await evaluate('document.querySelector("#scrollbar-probe").remove()');
@@ -202,8 +235,37 @@ async function main(){
   await fs.writeFile(path.join(root,'test-results','workshop-sidebar-collapsed.png'),await screenshot());
   await evaluate('document.querySelector("#workshop-menu-toggle").click()');
   assert.equal(await evaluate('document.querySelector("#workshop-menu-body").hidden'),false,'菜单可重新展开');
+  await evaluate('document.querySelector("#workshop-menu-toggle").click()');
+  await evaluate('document.querySelector("#workshop-menu-status .workshop-status-item").click()');
+  assert.equal(await evaluate('document.querySelector("#workshop-menu-body").hidden'),false,'点击收起菜单的状态区域可展开');
+  await evaluate('document.querySelector("#workshop-menu-toggle").click()');
+  await evaluate(`document.documentElement.dataset.platform='win32'`);
+  const collapsedTopHit=await evaluate(`(()=>{const menu=document.querySelector('#workshop-menu'),point=document.elementFromPoint(108,20);return {left:getComputedStyle(document.querySelector('.window-titlebar')).left,hit:point?.closest('#workshop-menu')===menu}})()`);
+  assert.equal(collapsedTopHit.left,'144px','Windows 收起状态标题栏应让出窄栏顶端');
+  assert.equal(collapsedTopHit.hit,true,'窄栏最上方应可点到菜单');
+  assert.equal(await evaluate(`getComputedStyle(document.elementFromPoint(400,20)).webkitAppRegion`),'drag','右侧标题栏横带仍可拖动');
+  await evaluate(`document.elementFromPoint(108,20).click()`);
+  assert.equal(await evaluate('document.querySelector("#workshop-menu-body").hidden'),false,'点击收起菜单最上方可展开');
+  const toggleSpacing=await evaluate(`(()=>{const top=document.querySelector('.workshop-menu-top').getBoundingClientRect(),button=document.querySelector('#workshop-menu-toggle').getBoundingClientRect();return {above:button.top-40,below:top.bottom-button.bottom}})()`);
+  assert.ok(Math.abs(toggleSpacing.above-toggleSpacing.below)<=1,'展开按钮在标题栏下方应上下对称：'+JSON.stringify(toggleSpacing));
+  await evaluate(`document.documentElement.dataset.platform='darwin'`);
   console.log('✓ 工坊筛选菜单位于游戏栏与卡片之间，收起后卡片区域扩展，展开可恢复');
+  const installedCard=await evaluate(`(()=>{const original=state.mods,grid=document.querySelector('#browse-grid');state.mods=[{id:'installed-local',sourceId:710045}];const yes=workshopCard({id:710045,name:'已安装'}),no=workshopCard({id:710046,name:'未安装'});const result={yes:!!yes.querySelector('.installed-check'),no:!!no.querySelector('.installed-check')};grid.append(yes);state.mods=[];refreshWorkshopInstalledChecks();result.removed=!yes.querySelector('.installed-check');yes.remove();state.mods=original;return result})()`);
+  assert.deepEqual(installedCard,{yes:true,no:false,removed:true},'工坊对勾只标记当前游戏安装库里的同来源模组，移除后消失');
   await evaluate("(()=>{const s=document.createElement('div');s.id='pager-probe';s.style.height='1600px';document.body.append(s)})()");
+  await evaluate('window.scrollTo(0,350)');
+  await waitFor(`document.querySelector('#page-scrollbar-thumb').classList.contains('visible')`,'页面覆盖式滚动条显示');
+  const thumbBefore=await evaluate(`(()=>{const thumb=document.querySelector('#page-scrollbar-thumb'),track=document.querySelector('#page-scrollbar'),rect=thumb.getBoundingClientRect();return {x:rect.x+rect.width/2,y:rect.y+rect.height/2,top:rect.top,trackTop:track.getBoundingClientRect().top,opacity:getComputedStyle(thumb).opacity,scrollY}})()`);
+  assert.ok(thumbBefore.top>thumbBefore.trackTop,'滑块位置应随页面滚动');
+  assert.ok(Number(thumbBefore.opacity)>0,'滚动时滑块应可见');
+  await client.send('Input.dispatchMouseEvent',{type:'mousePressed',x:thumbBefore.x,y:thumbBefore.y,button:'left',clickCount:1});
+  await client.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:thumbBefore.x,y:thumbBefore.y+120,button:'left',buttons:1});
+  await client.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:thumbBefore.x,y:thumbBefore.y+120,button:'left',clickCount:1});
+  assert.ok(Number(await evaluate('scrollY'))>thumbBefore.scrollY+100,'拖动覆盖式滑块应滚动页面');
+  await sleep(1600);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#page-scrollbar-thumb')).opacity`),'0','停止滚动后滑块应淡出');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#page-scrollbar')).backgroundColor`),'rgba(0, 0, 0, 0)','滑块下方不能留实色轨道');
+  await fs.writeFile(path.join(root,'test-results','page-scrollbar-faded.png'),await screenshot());
   // 注意：离线时下一页会被置灰（没有可翻的页），这里先手动恢复可用再点，验证的是翻页动作本身。
   const scrollReset=async label=>{
     await evaluate('window.scrollTo(0,document.body.scrollHeight)');

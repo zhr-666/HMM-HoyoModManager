@@ -26,7 +26,6 @@ const assert=require('node:assert/strict');
           if(action==='enable'||action==='disable'){snapshot.mods[0].active=action==='enable';return {ok:true};}
           if(action==='detail')return {id:2,name:'详情',rootCategoryId:20,rootCategoryName:'Audio',characterId:22,characterName:'Battle',nsfw:true,images:['https://images.gamebanana.com/img/ss/mods/test.jpg'],files:[{id:99,name:'Complete_Battle_Music_Pack_with_a_very_long_filename_v2.zip',size:10485760,uploadedAt:1789089446},{id:100,name:'Lite.zip',size:1024000,uploadedAt:1789089400}]};
           if(action==='install'||action==='retryDownload'){window.pushDownloads([{id:'q1',name:'正在下载的模组',status:'downloading',progress:{label:'下载文件',received:30,total:100,speed:10}}]);return {queued:true,id:'q1'};}
-          if(action==='proxyDiagnostics')return {route:'DIRECT',message:'连接正常'};
           if(action==='checkUpdates')return {checked:2,total:2,updates:[{id:'one',name:'可更新模组',sourceId:123,baselineAt:1700000000,latestAt:1789089446,files:[{id:1,name:'方案 A.zip',uploadedAt:1789089446},{id:2,name:'方案 B.zip',uploadedAt:1789089446}]}],unknown:[],failures:[{id:'two',name:'离线模组',error:'连接超时'}]};
           if(action==='categories')return [{id:1,name:'角色 A',icon:''},{id:2,name:'角色 B',icon:''}];
           if(action==='browse'){

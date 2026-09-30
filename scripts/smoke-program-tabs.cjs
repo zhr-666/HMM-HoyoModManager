@@ -82,7 +82,7 @@ async function stop(){
 
 async function main(){
  dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'hoyo-program-ui-'));const data=path.join(dataDir,'data');
- const {Workspaces}=require('../src/core/workspaces.cjs');const ws=await new Workspaces(data).init();
+ const {Workspaces}=require('../src/core/workspaces.cjs');const ws=await new Workspaces(data).init();await ws.select('genshin');
  await ws.setSettings('genshin',{autoCheckAppUpdates:false,autoCheckUpdates:false,proxyMode:'manual',proxyUrl:'http://127.0.0.1:9',launchExe:'C:\\Tools\\First.exe',secondaryExe:'C:\\Tools\\Second.exe',programTabs:true});
  const {client,evaluate,waitFor}=await launch(data);
  try{

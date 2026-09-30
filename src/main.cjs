@@ -327,7 +327,7 @@ const actions={
     await lib.updateMetadata(mod.id,{ignoredUpdates:ignoredUpdates.restoreVersion(mod,p.uploadedAt)});
     return snapshot();
   },
-  addHotkeyNote:async p=>lib.addHotkeyNote(String(p?.id||''),p?.text),
+  addHotkeyNote:async p=>lib.addHotkeyNote(String(p?.id||''),p?.text,p?.sourceId),
   removeHotkeyNote:async p=>lib.removeHotkeyNote(String(p?.id||''),p?.noteId),
   addNotification:p=>{
     const text=typeof p?.text==='string'?p.text.slice(0,600):'';if(!text.trim())return notifications.snapshot();
@@ -432,7 +432,7 @@ const actions={
     // 左下角设置页写全局设置；游戏设置（加载器 Mods 路径、外部程序、启动器背景）带 gameId，
     // 只改当前游戏那一份（需求 27）。
     const globalKeys=['autoEnable','autoCheckUpdates','blurNsfw','material','proxyMode','proxyUrl','libraryView','autoCheckAppUpdates','useLinks'];
-    const gameKeys=['modsPath','launchExe','secondaryExe','programTabs','backgroundVersion','autoBackground','hotkeyOverlayEnabled'];
+    const gameKeys=['modsPath','launchExe','secondaryExe','targetExe','programTabs','backgroundVersion','autoBackground','hotkeyOverlayEnabled'];
     const patch={},gamePatch={};for(const k of globalKeys)if(k in p)patch[k]=p[k];
     for(const k of gameKeys)if(k in p)gamePatch[k]=p[k];
     if(Object.keys(patch).length||Object.keys(gamePatch).length)await workspaces.setSettings(workspace().game.id,{...patch,...gamePatch});
@@ -460,11 +460,6 @@ const actions={
       return workspaces.run(next,()=>snapshot());
     }finally{ctx.removing=false;}
   },
-  proxyDiagnostics:async()=>{
-    const route=await session.defaultSession.resolveProxy('https://files.gamebanana.com/'),apiRoute=await session.defaultSession.resolveProxy('https://gamebanana.com/apiv11/Mod/710045/ProfilePage');
-    let message;try{const response=await network.request('https://gamebanana.com/apiv11/Mod/710045/ProfilePage');await response.body?.cancel();message='GameBanana 接口可连接。此检测不代表大文件传输稳定；DIRECT 也可能由 TUN 模式接管。';}catch(e){message='连接检测失败：'+e.message;}
-    return {route,apiRoute,message};
-  },
   chooseMods:p=>exclusive(async()=>{
     const importer=workspace().game.importer;
     const r=await dialog.showOpenDialog(win,{title:'选择 '+importer+' 文件夹（包含 d3dx.ini）',properties:['openDirectory']});
@@ -479,6 +474,17 @@ const actions={
   chooseProgram:p=>exclusive(async()=>{
     const r=await dialog.showOpenDialog(win,{title:p.level===2?'选择二级程序':'选择一级程序',properties:['openFile'],filters:[{name:'程序',extensions:['exe']}]});
     if(!r.canceled){const file=r.filePaths[0];await validateExternalProgram(file);await lib.settings({[p.level===2?'secondaryExe':'launchExe']:file},{gameId:gameScope(p)});}
+    return snapshot();
+  }),
+  chooseTargetExe:p=>exclusive(async()=>{
+    const game=gameScope(p);
+    const r=await dialog.showOpenDialog(win,{title:'选择目标游戏 EXE',properties:['openFile'],filters:[{name:'Windows 程序',extensions:['exe']}]});
+    if(!r.canceled){
+      const file=r.filePaths[0];
+      if(path.extname(file).toLowerCase()!=='.exe'||!(await fs.stat(file)).isFile())throw Error('请选择目标游戏的 EXE 文件。');
+      await workspaces.setSettings(game,{targetExe:file});
+      hotkeyMonitor?.hide();
+    }
     return snapshot();
   }),
   chooseBackground:p=>exclusive(async()=>{
@@ -714,7 +720,7 @@ if(lock)app.whenReady().then(async()=>{
         if(state!==cachedHotkeyState){cachedHotkeyState=state;cachedHotkeyMods=localizeLibraryState('genshin',{mods:state.mods.filter(mod=>mod.active)}).mods;}
         return state;
       };
-      hotkeyMonitor=new GameHotkeyMonitor({capture:()=>hotkeyCapture.capture(),ocr:(image,rect)=>hotkeyOcr.recognize(image,rect),getMods:()=>{hotkeyState();return cachedHotkeyMods;},getNotes:()=>hotkeyState()?.hotkeyNotes||{},onChange:(value,visible)=>hotkeyOverlay.show(value,visible),onError:error=>notifyError(error,{title:'原神热键悬浮窗'})});
+      hotkeyMonitor=new GameHotkeyMonitor({capture:()=>workspaces.activeGameId==='genshin'?hotkeyCapture.capture(workspaces.get('genshin').lib.effectiveSettings().targetExe):null,ocr:(image,rect)=>hotkeyOcr.recognize(image,rect),getMods:()=>{hotkeyState();return cachedHotkeyMods;},getNotes:()=>hotkeyState()?.hotkeyNotes||{},onChange:(value,visible)=>hotkeyOverlay.show(value,visible),onError:error=>notifyError(error,{title:'原神热键悬浮窗'})});
       if(workspaces.get('genshin').lib.effectiveSettings().hotkeyOverlayEnabled!==false)hotkeyMonitor.start();
     }catch(error){notifyError(error,{title:'原神热键悬浮窗'});hotkeyCapture?.host.dispose();hotkeyCapture=null;hotkeyOverlay?.dispose().catch(()=>{});hotkeyOverlay=null;}
   }

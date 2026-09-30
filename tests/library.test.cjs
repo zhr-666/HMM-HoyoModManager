@@ -120,7 +120,7 @@ test('known roles cannot bypass an unresolved active skin in another subcategory
 test('initializes defaults and snapshot is a deep clone', async (t) => {
   const { library } = await fixture(t);
   const snapshot = library.snapshot();
-  assert.deepEqual(snapshot, { currentPresetId:null, settings: { autoCheckAppUpdates:true, launchExe:'', secondaryExe:'', programTabs:false, backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], folders: [], presets: [], activeGame:'genshin', games:{}, hotkeyNotes:{}, gameSettings:{} });
+  assert.deepEqual(snapshot, { currentPresetId:null, settings: { autoCheckAppUpdates:true, launchExe:'', secondaryExe:'', targetExe:'', programTabs:false, backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: '' }, mods: [], folders: [], presets: [], activeGame:'genshin', games:{}, hotkeyNotes:{}, gameSettings:{} });
   snapshot.settings.autoEnable = true;
   assert.equal(library.snapshot().settings.autoEnable, false);
 });
@@ -830,6 +830,32 @@ test('hotkey notes are stored per mod, deduplicated and survive a restart',async
  assert.deepEqual(reopened.snapshot().hotkeyNotes[first.id].map(note=>note.text),['Ctrl + 1 切换形态']);
  await assert.rejects(reopened.addHotkeyNote(first.id,'   '),/选中/);
  await assert.rejects(reopened.addHotkeyNote('missing','x'),/找不到/);
+});
+
+test('工坊来源热键提示先暂存，安装成功后自动关联且重启后保留',async t=>{
+ const {library,modFolder}=await fixture(t);
+ await library.addHotkeyNote('','Ctrl + 1 切换形态',12345);
+ await library.addHotkeyNote('','Ctrl + 1 切换形态',12345);
+ assert.deepEqual(library.snapshot().hotkeyNotes['source:12345'].map(note=>note.text),['Ctrl + 1 切换形态']);
+ const reopened=new Library(library.root);await reopened.init();
+ assert.equal(reopened.snapshot().hotkeyNotes['source:12345'].length,1);
+ const installed=await reopened.install(await modFolder('source-note'),{...meta('Source Note','101'),sourceId:12345});
+ assert.deepEqual(reopened.snapshot().hotkeyNotes[installed.id].map(note=>note.text),['Ctrl + 1 切换形态']);
+ assert.equal(reopened.snapshot().hotkeyNotes['source:12345'],undefined);
+ await reopened.addHotkeyNote('','Ctrl + 2 隐藏武器',12345);
+ assert.deepEqual(reopened.snapshot().hotkeyNotes[installed.id].map(note=>note.text),['Ctrl + 2 隐藏武器','Ctrl + 1 切换形态']);
+});
+
+test('工坊来源安装失败时保留暂存热键提示，其他来源不会串入',async t=>{
+ const {library,root,modFolder}=await fixture(t);
+ await library.addHotkeyNote('','原来源提示',12345);
+ await assert.rejects(library.install(path.join(root,'missing-package'),{...meta('Missing','101'),sourceId:12345}));
+ assert.equal(library.snapshot().hotkeyNotes['source:12345'][0].text,'原来源提示');
+ const other=await library.install(await modFolder('other-source'),{...meta('Other','102'),sourceId:67890});
+ assert.equal(library.snapshot().hotkeyNotes[other.id],undefined);
+ const installed=await library.install(await modFolder('retry-source'),{...meta('Retry','101'),sourceId:12345});
+ assert.equal(library.snapshot().hotkeyNotes[installed.id][0].text,'原来源提示');
+ await assert.rejects(library.addHotkeyNote('','x','not-a-source'),/来源编号/);
 });
 
 test('ignored update versions are recorded on the mod and survive a restart',async t=>{

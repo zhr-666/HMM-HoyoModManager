@@ -1,10 +1,12 @@
 'use strict';
 const path=require('node:path');
 const {createWorker,PSM}=require('tesseract.js');
+const {ROLE_NAMES}=require('./game-hotkey-match.cjs');
 
 const unpacked=file=>file.replace(/app\.asar([\\/])/,'app.asar.unpacked$1');
 
-function createGameOcr(){
+function createGameOcr({names=ROLE_NAMES}={}){
+ const roleCharacters=[...new Set('/／'+names.join(''))].join('');
  let workerPromise=null;
  const sourceRoot=path.dirname(require.resolve('tesseract.js'));
  const coreRoot=path.dirname(require.resolve('tesseract.js-core',{paths:[sourceRoot]}));
@@ -17,7 +19,7 @@ function createGameOcr(){
   cacheMethod:'none'
  };
  async function worker(){
-  if(!workerPromise)workerPromise=createWorker('chi_sim',1,options).then(async value=>{await value.setParameters({tessedit_pageseg_mode:PSM.SINGLE_LINE});return value;}).catch(error=>{workerPromise=null;throw error;});
+  if(!workerPromise)workerPromise=createWorker('chi_sim',1,options).then(async value=>{await value.setParameters({tessedit_pageseg_mode:PSM.SINGLE_LINE,tessedit_char_whitelist:roleCharacters});return value;}).catch(error=>{workerPromise=null;throw error;});
   return workerPromise;
  }
  return {

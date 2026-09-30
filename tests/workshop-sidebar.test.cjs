@@ -36,3 +36,25 @@ test('工坊菜单全高贴边并收成可展开的状态窄栏',()=>{
   assert.match(css,/\.workshop-menu\{[^}]*bottom:0/);
   assert.match(css,/--workshop-menu-width:72px/);
 });
+
+test('Windows 工坊菜单贴齐窗口上下边缘，顶部空白可拖动且展开按钮可点击',()=>{
+  const css=read('src/ui/style.css');
+  const rule=selector=>[...css.matchAll(new RegExp(`${selector}\\{([^}]*)\\}`,'g'))].at(-1)?.[1]||'';
+  const menu=rule('html\\[data-platform="win32"\\] \\.workshop-menu');
+  const top=rule('html\\[data-platform="win32"\\] \\.workshop-menu-top');
+  const toggle=rule('#workshop-menu-toggle');
+  assert.match(menu,/(?:^|;)top:0(?:;|$)/,'菜单背景应从窗口最上方开始');
+  assert.match(css,/\.workshop-menu\{[^}]*bottom:0/,'菜单背景应延伸到窗口底部');
+  assert.match(top,/-webkit-app-region:drag/,'菜单顶块应能拖动窗口');
+  assert.match(toggle,/-webkit-app-region:no-drag/,'展开按钮应保持可点击');
+  assert.match(top,/padding:40px 12px 0/,'按钮位于系统标题栏下方');
+  assert.match(top,/height:94px/,'按钮上下留白应相等');
+  assert.match(css,/html\[data-platform="win32"\] \.window-titlebar\{[^}]*z-index:80/,'标题栏须高于工坊菜单');
+});
+
+test('工坊菜单收起后窄栏可点开，顶部仍可拖动',()=>{
+  const app=read('src/ui/app.js'),css=read('src/ui/style.css');
+  assert.match(app,/#workshop-menu'\)\.addEventListener\('click'/);
+  assert.match(css,/html\[data-page="workshop"\]\[data-workshop-menu="collapsed"\] \.window-titlebar:has\(#program-tabs\[hidden\]\)\{left:calc\(var\(--rail-width\) \+ var\(--workshop-menu-width\)\)\}/);
+  assert.doesNotMatch(css,/#page-workshop\.menu-collapsed \.workshop-menu-top\{[^}]*-webkit-app-region:no-drag/);
+});

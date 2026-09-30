@@ -1,13 +1,14 @@
 'use strict';
 // This file follows app.js and shares the application's game-scoped settings helpers.
 window.hoyoProgramSettings=function(root){
- const primary=root.querySelector('[data-game-value="launchExe"]')?.closest('.setting-row');
+ const primary=root.querySelector('[data-game-value="launchExe"]')?.closest('.setting-row,.game-setting-item');
  if(!primary||root.querySelector('[data-program-tabs]'))return;
- const secondary=document.createElement('div');secondary.className='setting-row';
+ const card=primary.classList.contains('game-setting-item');
+ const secondary=document.createElement('div');secondary.className=card?'game-setting-extra':'setting-row';
  secondary.innerHTML='<div><strong>二级程序</strong><p data-secondary-program>尚未选择</p></div><div class="row-actions"><button type="button" class="button secondary" data-choose-secondary>选择 EXE</button><button type="button" class="button secondary" data-clear-secondary>清除</button></div>';
- const toggle=document.createElement('div');toggle.className='setting-row';
+ const toggle=document.createElement('div');toggle.className=card?'game-setting-extra':'setting-row';
  toggle.innerHTML='<div><strong>窗口标签页</strong><p>需要以管理员身份运行 HMM</p></div><label class="switch"><input type="checkbox" data-program-tabs aria-label="窗口标签页"><span></span></label>';
- primary.after(secondary,toggle);
+ if(card)primary.append(secondary,toggle);else primary.after(secondary,toggle);
  secondary.querySelector('[data-choose-secondary]').onclick=()=>call('chooseProgram',{gameId:activeGame,level:2},{reload:true}).catch(()=>{});
  secondary.querySelector('[data-clear-secondary]').onclick=()=>call('settings',{gameId:activeGame,secondaryExe:''},{reload:true}).catch(()=>{});
  toggle.querySelector('input').onchange=async event=>{const input=event.target,value=input.checked;input.disabled=true;try{await call('settings',{gameId:activeGame,programTabs:value},{reload:true});}catch{input.checked=!value;}finally{input.disabled=false;}};

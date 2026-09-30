@@ -13,9 +13,12 @@ const disk=require('original-fs').promises,fs=require('node:fs/promises');
   await disk.writeFile(path.join(data,'state.json'),'preserve configuration exactly');await disk.writeFile(path.join(gimi,'mod.ini'),'preserve mod exactly');
   const existing=path.join(appDir,'resources','app.asar');await disk.copyFile(path.join(project,'dist/win-unpacked/resources/app.asar'),existing);
   const physicalDigest=async file=>require('node:crypto').createHash('sha256').update(await disk.readFile(file)).digest('hex');const oldDigest=await physicalDigest(existing);assert.equal((await fs.stat(existing)).isDirectory(),true,'Electron exposes a real ASAR as a virtual directory');assert.equal((await disk.stat(existing)).isFile(),true);
-  const name=path.basename(zip),v=name.match(/^HoYoMod-(\d+\.\d+\.\d+)-Windows-x64.zip$/)[1],digest=await sha256(zip),size=(await disk.stat(zip)).size;
-  const service=new AppUpdate({appDir,version:'0.9.0',protectedPaths:()=>[data,gimi],json:async()=>({tag_name:'v'+v,assets:[{name,size,digest,browser_download_url:`https://github.com/zhr-666/HMM-HoyoModManager/releases/download/v${v}/${name}`}]}),download:async(_url,out)=>disk.copyFile(zip,out),extract});
-  await service.check();assert.equal((await service.prepare()).status,'ready');
+  const name=path.basename(zip),match=name.match(/^HoYoMod-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)-Windows-x64\.zip$/);assert.ok(match,'Unexpected Windows package name: '+name);const v=match[1],digest=await sha256(zip),size=(await disk.stat(zip)).size;
+  const row={tag_name:'v'+v,prerelease:v.includes('-'),assets:[{name,size,digest,browser_download_url:'https://github.com/zhr-666/HMM-HoyoModManager/releases/download/v'+v+'/'+name}]};
+  const service=new AppUpdate({appDir,version:'0.9.0',protectedPaths:()=>[data,gimi],json:async()=>row,download:async(_url,out)=>disk.copyFile(zip,out),extract});
+  await service.check();
+  if(row.prerelease){assert.equal(service.snapshot().status,'current','the internal updater must not offer this beta');service.state.update={version:v,name,url:row.assets[0].browser_download_url,digest,size};}
+  assert.equal((await service.prepare()).status,'ready');
   const plan=JSON.parse(await disk.readFile(path.join(service.job,'plan.json'),'utf8'));
   await replacementPlan(appDir,plan.staging,[data,gimi]);
   assert.equal(await disk.readFile(path.join(data,'state.json'),'utf8'),'preserve configuration exactly');assert.equal(await disk.readFile(path.join(gimi,'mod.ini'),'utf8'),'preserve mod exactly');assert.equal(await physicalDigest(existing),oldDigest);

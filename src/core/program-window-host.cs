@@ -141,6 +141,7 @@ public static class ProgramWindowHost {
     static object Command(string action,Dictionary<string,object> p) {
         if(action=="game-status")return GameStatus();
         if(action=="scan")return Scan();
+        if(action=="foreground") {uint pid;GetWindowThreadProcessId(GetForegroundWindow(),out pid);return Info(pid,0);}
         if(action=="launch") {
             if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))throw new Exception("请以管理员身份运行 HMM。");
             string file=Text(p,"file");if(!Path.IsPathRooted(file)||!file.EndsWith(".exe",StringComparison.OrdinalIgnoreCase)||!File.Exists(file))throw new Exception("请选择有效的 EXE 程序。");

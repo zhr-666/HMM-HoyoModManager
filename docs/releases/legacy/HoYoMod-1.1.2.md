@@ -1,0 +1,139 @@
+# HoYoMod 1.1.2
+
+日期：2026-09-19。状态：已发布，待 Windows 实机验收。源码标识：`a626647`（发布提交），标签 `v1.1.2`。
+
+## 变更
+
+### 检查更新改成后台任务，结果等你主动打开
+
+- 点「检查更新」（「我的模组」与「设置 → 维护与诊断」两个入口）不再冒出页面上方的全局进度条，检查结束时也不再直接弹出结果窗口。开始时只在右下角弹一条**瞬时提示**「开始检查更新」：不进历史、不计未读、窗口未就绪即丢弃（重启不补弹）。
+- 检查完成后只做两件事：右下角发一条「检查完成」通知（`target: modUpdates`），并点亮「检查更新」按钮右上角的红点。**手动**检查一定有回音（没有更新也报「全部模组已是最新」）；**自动/周期**检查保持安静，只有确实查到更新才通知；一个更新都没有却全线失败时用错误语气，有更新时的个别失败只当杂音。
+- 打扰规则抽到新模块 `src/core/update-summary.cjs`（`summarizeUpdateCheck`、`summarizeFromLibrary`），与 `download-summary.cjs` 同一套「纯函数 + 可单测」的做法。
+- 结果缓存在主进程内存（`lastUpdateSummary`），新动作 `updateSummary` 供界面取回。重启后内存为空时用 `summarizeFromLibrary(mods)` 按模组库里已落盘的 `updateStatus` 重建，所以历史里那条「检查完成」通知重启后仍然点得开，且打开结果窗口**不会**重跑一次网络检查。
+- 界面侧：`applyUpdateSummary` 只把未查看标记置真、从不清除；`checkUpdatesButton` 有未查看结果就直接开窗、否则发起后台检查（`updateCheckRunning` 防连点）；`openNotificationTarget` 按 `target` 分流（`modUpdates` 开结果窗口，`appUpdate` 回到设置里的软件更新卡片），两处红点都在看过之后熄灭。
+- 页面上方的全局进度条整体删除（`index.html` / `style.css` / `app.js` 三处）；弹窗内的长任务改用 `#modal` 里的 `#inline-progress` 就地报告进度，`hoyo:progress` 通道保留。
+
+### 界面资源不再被缓存（更新后不会看到旧界面）
+
+- `hoyo://` 下发的每个界面文件统一带 `cache-control: no-store`，启动时清掉 `data/session` 下的 Chromium 缓存目录；白名单抽到 `src/core/ui-assets.cjs`，新增界面文件必须同时进 `UI_ASSETS`。规则写进 `AGENTS.md` 与发布清单，由 `tests/ui-assets.test.cjs` 守住。
+
+### 启动器外壳与消息中心的界面细节
+
+- 背景图改为 `object-position:left center`，从侧栏右边线起向右、向上下扩展；侧栏宽度抽成 `--rail-width`，背景左边界与侧栏共用同一个变量。
+- 左栏游戏图标改由游戏数据渲染到 `#game-list`，从栏顶往下按加入顺序排列；进入工作区时图标从当前位置飞向左栏最顶端；横杠移到「全部游戏」正上方并加亮。
+- 通知中心去掉铃铛 emoji，改用线性消息 / 警示图标；悬浮窗与面板收小、只留线条。
+- 打包前重新生成 `build/icon.ico`（`pack:win`）；Windows 上显式设置 AppUserModelID。
+
+### 左栏顺序与右下角消息区的位置修正（同一版本内追加）
+
+1.1.2 打包前，用户实测指出三处位置不对，本节记录修正内容（**未升版本号**：1.1.2 当时还没有任何产物，符合「同一版本号只对应一份产物」）。
+
+- **左栏游戏图标回到「全部游戏」上方**：上一版把图标渲染在左栏顶端，「全部游戏」在底部，中间隔着一大片空白，与验收文档里「左侧栏最下是设置、上面是全部游戏、再上面是原神图标」的既有设计相反。现在 `#game-list` 移进左栏底部组，顺序固定为「设置 → 全部游戏 → 横杠 → 游戏图标」，游戏列表用 `column-reverse` 让第一个加入的游戏离「全部游戏」最近、后续游戏往上叠；左栏顶端不再放游戏图标。
+- **所有小弹窗都从右下角弹出**：`#download-toast` 与 `#notification-popups` 原先挂在 `<body>` 下、在文档流最前面，实际渲染结果是**窗口右上角**（不是设计里的右下角），下载提示则固定在顶部居中。现在两者都移进 `#notification-center`，和消息面板、消息按钮组成同一个右下角栈（提示条在上、提示卡居中、面板在下、按钮最下），下载提示的进出动画也从「向上淡出」改成「从右侧滑入」。
+- **右下角一排与放大动画**：首页底栏改成「齿轮 → 打开程序 → 消息按钮」一排，`.launcher-actions` 改为固定定位 `right:88px;bottom:32px`（88 = 消息按钮距右 32px + 按钮宽 44px + 间距 12px），`#notification-center` 从 `bottom:96px` 改为 `right:32px;bottom:32px`，两者底边对齐，整排距窗口右侧和下面各 32px。点消息按钮时，面板以右下角为原点（`transform-origin:100% 100%`）用 `notification-zoom` 从按钮大小放大到完整面板，占据右下角一块区域（宽 `min(384px, 100vw-56px)`、最高 `min(64vh,470px)`）。
+- 顺带修掉两个由此暴露的问题：`.launcher-actions` 原本在文档流里、位置随 `main` 的 padding 走，在 805px 高的窗口下整排会超出窗口底边 18px（「打开程序」被裁掉）；改成固定定位后不再受页面高度影响。旧的 `@media(max-width:1200px){.notification-center{bottom:90px;right:26px}}` 会把距下改成 90px、破坏等距，已删除。
+- 新增 `tests/launcher-shell.test.cjs` 守住这三处位置：左栏四段的先后顺序与 `column-reverse`、两个小弹窗必须在 `#notification-center` 内且消息栈距右距下都是 32px、`.launcher-actions` 的固定定位与底对齐、面板的放大动画与原点。`scripts/smoke-renderer.cjs` 里「下载提示 y 在 40~100」的旧断言改成「在窗口下半部且靠右」。
+
+### 进入工作区的图标飞行放慢、改走合成器（同一版本内追加）
+
+用户反馈图标飞上去的动画「太快、不够顺、帧率低」，本节记录调整（同样**未升版本号**，仍在 1.1.2 打包前）。
+
+- 时长 420ms → **720ms**（`FLY_DURATION` 常量定义在 `src/ui/app.js`，CSS 的落地动画用同一个 `--fly-duration`，两边不会再各写一份）。
+- 缓动 `cubic-bezier(.2,.8,.25,1)` → `cubic-bezier(.22,1,.36,1)`（easeOutQuint）：起步快、尾段长而平缓，落点不再「顿一下」。
+- 关键帧前 72% 保持不透明、只留最后一段淡出，避免「还在飞就开始消失」的断裂感。
+- `.game-icon-fly` 增加 `backface-visibility:hidden`，保留 `will-change:transform,opacity`；关键帧只动 `transform` / `opacity`，不含 `left/top/width/height/filter/box-shadow` —— 这样整段飞行能交给合成器逐帧插值，主线程在切页面重排重绘时也不会把动画卡住。
+- 起动画改用两次 `requestAnimationFrame`：先把飞行图层挂上屏（这一帧停在起点、与刚隐藏的图标重合，不会闪），下一帧才起动画，避免与切页面的重排重绘抢同一帧。清理定时器从固定 900ms 改成 `FLY_DURATION+600`。
+- `tests/launcher-shell.test.cjs` 增加第 5 条：飞行关键帧不得出现会引起重排重绘的属性、必须有 `will-change`、必须有中段不透明的关键帧、时长常量不得低于 600ms。
+- 实测（临时 CDP 脚本逐帧采样飞行图标，跑完已删除）：动画总跨度 **748ms**（含起帧等待的 2 帧）、帧间隔中位数 **17ms**（60Hz）、首帧 `y=625`（起点）末帧 `y=22`（落点）；淡出从 598ms 才开始，之前一直 `opacity:1`。测到的最大帧间隔 111ms 出现在切页面那一下，是主线程在重排重绘（采样用的 `requestAnimationFrame` 本身也在主线程，所以会把停顿记进来）；动画只动合成器属性，因此这段时间里飞行本身仍在推进。
+
+### 版本号说明
+
+本次含界面与交互行为变化（新增后台检查更新），按 `docs/development.md` 的语义化版本意图本可升第二位；用户明确要求 1.1.2，故按 1.1.2 记录。1.1.1 与本版之间没有不兼容变化，`data`、GIMI、模组库、搭配方案与已启用状态都不需要迁移。
+
+## 分支与提交
+
+- `feat/ui`（`f2b9ba1`）：界面资源不缓存、启动器细节、消息中心外观。
+- `feat/notification-advance`：`abaa333` 后台检查更新功能、`72afbe0` 冒烟脚本断言、`e16393c` 文档补记。
+- `feat/rail-and-messages`：`0238d71` 左栏顺序与右下角消息区的位置修正（见上一节的追加说明）、`14e2f65` 文档与验收项。
+- `feat/icon-fly`：`abeed40` 图标飞行放慢并改走合成器（见上一节的追加说明）。
+- 四个分支分别以 `2230e27`、`ab4fb19`、`215ccd5` 与本次合并提交进入 `main`（无冲突）。
+- 这次拆分要交代清楚：`4c6ae62` 是另一个会话在 `main` 上做出的单个提交（`git reset --hard origin/main` 后被挪到 `feat/ui`），它**同时装了两个任务的暂存内容**，而 `src/preload.cjs`、`src/core/notification-center.cjs`、两个新测试、冒烟脚本与文档因未暂存被那次 reset 清掉。按仓库「一次提交一个目的」的规则重做：
+
+  - 界面任务按 `4c6ae62` 的原始内容重新拆出（内容与 `4c6ae62` 逐字节一致，用 `git diff 4c6ae62 main` 对 10 个受影响文件验证为空）。
+  - 后台检查更新任务按 `docs/superpowers/specs/2026-09-19-background-notifications.md` 补齐缺口：`preload.cjs` 暴露 `onUpdateSummary`、`NotificationCenter.add()` 支持 `ephemeral`、补三条 ephemeral 回归用例、冒烟脚本补断言、README 与验收文档补齐。
+  - 拆分过程曾用 `git apply --unidiff-zero` 应用零上下文补丁，实测会把纯插入的 hunk 放错行；改为按 hunk 行号精确重建文件内容，并以「两份补丁合起来等于 `4c6ae62`」为验收条件。
+
+## 执行环境
+
+- macOS 26.6（内核 25.6.0，arm64），`/usr/local/bin/node` v24.21.0；electron 44.3.0、electron-builder 26.15.3。
+- 本机 PATH 上的 `node` 是 DSH 提供的 Electron 垫片（v24.18.1），本记录的「本机」命令一律使用 `/usr/local/bin/node`。
+- 本机没有可用的 Playwright（`require.resolve('playwright')` 失败），依赖它的界面脚本未运行；不依赖 Playwright 的 CDP 脚本（`smoke-notifications.cjs`、`smoke-library-folders.cjs`）可以运行。
+
+## 检查命令与结果
+
+- `node scripts/check-syntax.cjs`：72 个 JavaScript 文件语法检查通过。
+- `node --test tests/*.test.cjs`：240 项，239 通过、1 跳过、**0 失败**。跳过的仍是 `tests/app-update.test.cjs` 里需要 Windows 行为的用例。本次新增/补齐的用例：`tests/update-summary.test.cjs`（11 项：手动必有回音、自动无更新静默、自动有更新通知、全失败为 error、有更新时失败不升级、缺字段不抛错、重启后按模组库重建的两条）、`tests/update-check-ui.test.cjs`（4 项界面契约：全局进度条在 HTML/CSS/JS 三处彻底移除、三个入口都带 `.button-dot`、`onUpdateSummary` 链路完整、`checkButton` 的先后顺序）、`tests/notification-center.test.cjs` 的 3 条 `ephemeral` 用例（只弹一次且不落盘、未就绪即丢弃而不补弹、不影响未读计数）、`tests/ui-assets.test.cjs`（3 项）、`tests/launcher-shell.test.cjs`（5 项：左栏四段顺序、小弹窗必须挂在右下角消息栈、底栏一排与等距、面板放大动画、飞行动画只动合成器属性且时长不低于 600ms）。
+- `pnpm check`（按文档的默认命令，PATH 上的 `node` 是 DSH 的 Electron 垫片）：语法检查通过；测试项数与上面一致，其中 `tests/app-update.test.cjs` 的 `successful preparation writes only updater workspace…` **1 项失败**。这一项是垫片造成的既有现象（垫片的 `node:fs` 带 asar 拦截，会把临时目录当压缩包处理），与本次改动无关；把 `/usr/local/bin/node` 放在 PATH 最前时 `pnpm` 自身无法创建临时安装目录（沙箱限制），因此本记录以直接调用真实 Node 的结果为准。
+- 后台检查更新的**真实界面验收**（临时 CDP 脚本，跑完已删除；真实 Electron + 远程调试端口，`HOYOMOD_DATA` 指向临时目录、代理指向空端口、关闭自动检查，离线运行）：5 项全部通过——①`#progress` 元素不存在、`#modal #inline-progress` 存在、三个入口都带 `.button-dot`、`window.hoyo.onUpdateSummary` 是函数、启动时红点全部隐藏；②主进程推来未查看结果后红点亮起且不自动弹窗；③点「检查更新」直接打开缓存结果（标题「更新检查结果」、正文含模组名）并熄灭红点；④再点一次发起后台检查：先弹「开始检查更新」，完成后弹「检查完成」通知并重新亮起红点，`notifications` 历史与磁盘上的 `notifications.json` 里都没有那条瞬时提示；⑤`openNotificationTarget('modUpdates')` 打开结果窗口并熄灭红点。
+- `node scripts/smoke-notifications.cjs`（不依赖 Playwright，真实界面）：通过，9 项——常驻消息条与顶部更新横幅已移除、新消息弹提示卡与角标并落盘、关闭提示卡保留历史、展开面板标记已读并清零角标、`Escape` 收起、主进程消息更新角标且错误样式正确、单条删除与磁盘同步、全部清除回到空状态、重启后历史与未读保留且不重复弹提示卡。这是界面任务与通知任务合并后的回归证据。
+- `node scripts/smoke-library-folders.cjs`（不依赖 Playwright，真实界面）：通过，6 项——空文件夹显示与进入、导入存放位置可在大分类/子分类确认并搜索、大分类文件夹只有一级目录、有模组的文件夹不允许删除、右键删除空文件夹。
+- 左栏与右下角消息区的**真实界面验收**（同一个临时 CDP 脚本，跑完已删除；真实 Electron、离线、窗口 1249×805，改动前后各量一次并截图比对）：
+  - 改前：游戏图标在 `y=8`（左栏顶端）、「全部游戏」在 `y=696`；两张消息提示卡渲染在 `y=0`／`y=52`、右边界贴窗口（`fromRight:0`）——即窗口**右上角**；下载提示在顶部居中（`y=18`）；「打开程序」整排 `bottom=-18`（超出窗口底边被裁）。
+  - 改后：游戏图标 `y=624~676`、横杠 `y=687`、「全部游戏」`y=699~747`、设置 `y=752~800`，即自上而下「设置 → 全部游戏 → 横杠 → 游戏图标」；两张提示卡 `y=678~722`、右边界 `fromRight:32`；下载提示与提示卡同栈、在栈顶；`.launcher-actions` `fromRight:88 / fromBottom:32`，消息按钮 `fromRight:32 / fromBottom:32`，两者底边同为 `y=776`（不再被裁）。
+  - 点消息按钮：`getComputedStyle('#notification-panel').animationName === 'notification-zoom'`、`transformOrigin === '384px 204.5px'`（面板右下角），点开 60ms 的截图里面板处于放大中途，600ms 后面板落在 `x=833~1217, y=389~773`（距右距下各 32px），占据右下角一块区域；面板内展示消息历史。
+- 图标飞行的**逐帧实测**（另一个临时 CDP 脚本，跑完已删除；保留 GPU、不做 `--disable-gpu`）：一次进入工作区共采到 45 帧、跨度 748ms、帧间隔中位数 17ms、首帧 `y=625` 末帧 `y=22`、淡出从 598ms 才开始。
+- 打包与包内容检查：
+  - `node scripts/make-app-icon.cjs`：重新生成 `build/icon.ico`（16/24/32/48/64/128/256，179470 字节），与已提交版本字节一致，`git status` 无改动。
+  - `node node_modules/electron-builder/out/cli/cli.js --win zip --x64`：构建成功，产出 `dist/HoYoMod-1.1.2-Windows-x64.zip`。
+  - `ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron scripts/verify-windows-package.cjs`：`Windows x64 PE, current packaged source, Windows archiver and packaged RAR worker/WASM verified.`
+  - `ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron scripts/smoke-update-package.cjs`：`Real ZIP update preparation passed under Electron: physical ASAR, ready state, revalidation, bundled engine and fallback helper, unchanged configuration and mods; directory impostor rejected.`
+  - `app.asar` 内容抽查：包含 `FLY_DURATION`、`notification-zoom`、`column-reverse`、`summarizeUpdateCheck`、`game-icon-fly`、`1.1.2`。
+  - 随包文件与工作区逐字节一致（`cmp`）：`使用说明.md`（= README.md）、`Windows验收说明.md`（= docs/acceptance.md）、`THIRD-PARTY-NOTICES.md`、`LICENSE-HoYoMod.txt`（= LICENSE）。
+- 未运行：依赖 Playwright 的界面脚本（`smoke-app-update.cjs`、`smoke-queue.cjs`、`smoke-renderer.cjs`、`smoke-home.cjs`、`smoke-desktop.cjs`、`smoke-management.cjs`、`smoke-workshop-navigation.cjs`、`smoke-detail-race.cjs`、`smoke-dependency-queue.cjs`），本机没有可用的 Playwright。本次改动过的 `smoke-app-update.cjs`、`smoke-queue.cjs`、`smoke-renderer.cjs` 属于这一类，改动为逐行审读。
+
+## Windows 实机结果
+
+未执行。需要的实机确认项见 [Windows 实机验收](../acceptance.md) 的 1.1.2 段落，重点是：
+
+- 两处「检查更新」入口的红点、瞬时提示与「检查完成」通知；检查期间界面可继续使用；重启后历史里的通知仍能打开结果窗口。
+- Windows 高 DPI 与多显示器下红点位置、任务栏图标与 AppUserModelID 归组。
+- 覆盖安装或自动更新到 1.1.2 后首次启动界面确实是新版（界面资源不缓存的实机确认）。
+- 既有项：junction 创建与 3DMigoto 加载、更新升级 / 重启 / 失败恢复、`data` 与 GIMI 保留。
+
+## 产物
+
+- 文件名：`HoYoMod-1.1.2-Windows-x64.zip`
+- 大小：160112847 字节
+- SHA256：`ede17553d192418247d1f3729645f6b8f8a0e0c2cc3dd25cd64a3ee9d53b32ed`
+- 校验文件：`dist/HoYoMod-1.1.2-Windows-x64.zip.sha256`
+- 构建方式：与本仓库 `pack:win` 相同的目标与配置，直接调用 electron-builder CLI（`--win zip --x64`），构建前先跑 `scripts/make-app-icon.cjs`（本次重新生成的 `build/icon.ico` 与已提交版本字节一致，工作区无改动）。
+
+## 未验证项与已知问题
+
+- Windows 实机全部未执行（见上）。
+- 依赖 Playwright 的界面脚本未运行，包括本次改动过的三个脚本。
+- 图标飞行的「顺不顺」在本机只能量到帧间隔（中位数 17ms ≈ 60Hz），Windows 上的实际观感、以及高刷屏（120Hz/144Hz）下的表现仍需实机确认。
+- 拆分提交过程中重写了一个从未推送的本地提交（`4c6ae62`，原样保存在本地分支 `backup/pre-split-4c6ae62`）；`origin/main` 未受影响，`main` 与 `4c6ae62` 的内容差异已用 `git diff` 逐文件核对为空（除本次刻意补齐的缺口）。
+- 已知问题（既有，非本次引入）：Windows CI 一直有 1 项失败，来自 1.0.1 的链接用例断言 `tests/library.test.cjs:442`（同盘 Windows 上 `linkType()` 返回 `junction`，断言写死 `dir`）。本次未处理。
+- 通知中心面板已经打开时，若主进程恰好写入新消息，列表要等下一次打开面板才刷出新条目（角标是实时的）。既有行为，本次未改。
+
+## 更新失败时的恢复方法
+
+退出 HoYoMod，把 1.1.2 完整解压覆盖到原程序目录，保留原 `data`、GIMI、Mods 及个人文件；不要删除原目录，也不要只替换 EXE。1.0.0 及更新版本可通过设置中的软件更新升级；0.9.9 及更早版本若自动更新失败过，需按 README 中 1.0.0 的说明手动覆盖更新一次。
+
+## Windows CI
+
+发布提交 `a626647` 的 `Project checks`（推送 `35423601573`、标签 `35423603757`，Windows + macOS 矩阵）：
+
+- macOS：通过。
+- Windows（Microsoft Windows Server 2025）：语法检查通过（72 个文件）；测试 241 项全部执行（0 跳过），240 通过、**1 失败**——`tests/library.test.cjs` 的 `enabling a mod links the library copy instead of copying it, and disabling removes only the link`，`'junction' !== 'dir'`。同一用例在 1.1.0（`ac319d4`）、1.1.1（`ecf20d1`）与 1.0.1 上同样失败，是 1.0.1 引入的既有失败：断言按 macOS 的 `linkType()` 返回值写死 `dir`，而同盘 Windows 返回 `junction`；同一用例中「启用后确实创建了链接目录」在 Windows 上是通过的。
+- 本次新增/改动的用例（`tests/launcher-shell.test.cjs` 5 项、`tests/update-summary.test.cjs` 11 项、`tests/update-check-ui.test.cjs` 4 项、`tests/ui-assets.test.cjs` 3 项、`tests/notification-center.test.cjs` 的 3 条 ephemeral）在 Windows 与 macOS 上都没有失败。
+
+## 发布授权与链接
+
+用户明确要求「修改完成后打包发布到 GitHub」。
+
+- 发布提交：`a626647`（Release HoYoMod 1.1.2 with the background update check, the no-store UI assets and the rail/message fixes）；功能提交 `f2b9ba1`、`abaa333`/`72afbe0`/`e16393c`、`0238d71`/`14e2f65`、`abeed40`；合并提交 `2230e27`、`ab4fb19`、`215ccd5`、`2e872e9`。标签 `v1.1.2`。
+- 发布页：https://github.com/zhr-666/HoYoMod/releases/tag/v1.1.2
+- 发布产物：`HoYoMod-1.1.2-Windows-x64.zip`（160112847 字节）与 `HoYoMod-1.1.2-Windows-x64.zip.sha256`；GitHub 报告的 zip digest `sha256:ede17553d192418247d1f3729645f6b8f8a0e0c2cc3dd25cd64a3ee9d53b32ed` 与本机 SHA256 一致。
+- 本版本在 macOS 上构建、未经 Windows 实机验收即发布（与 1.1.0、1.1.1 同一做法）；发布说明里保留了「待 Windows 实机验收」与未验证项。

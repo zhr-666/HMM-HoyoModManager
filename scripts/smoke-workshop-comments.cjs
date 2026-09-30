@@ -5,7 +5,7 @@ if(process.type==='renderer'){
   contextBridge.exposeInMainWorld('hoyo',{
     call:async(action,p={})=>{
       calls.push({action,p});
-      if(action==='state')return {settings:{modsPath:'C:/GIMI/Mods'},gameSettings:{},mods:[],presets:[],runtime:{platform:'win32'}};
+      if(action==='state'||action==='addHotkeyNote')return {settings:{modsPath:'C:/GIMI/Mods'},gameSettings:{},mods:[],presets:[],runtime:{platform:'win32'}};
       if(action==='downloads'||action==='taxonomy'||action==='categories')return [];
       if(action==='libraryStats')return {totalBytes:0,modCount:0,activeCount:0};
       if(action==='browse')return {records:[],page:1,hasMore:false};
@@ -70,13 +70,18 @@ if(process.type==='renderer'){
         await new Promise(resolve=>setTimeout(resolve,250));
         await require('node:fs/promises').writeFile(process.env.HMM_SMOKE_SCREENSHOT,(await win.webContents.capturePage()).toPNG());
       }
+      await win.webContents.executeJavaScript(`(()=>{const paragraph=document.querySelector('#modal .description'),range=document.createRange();range.selectNodeContents(paragraph);getSelection().removeAllRanges();getSelection().addRange(range);paragraph.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:320,clientY:280}));document.querySelector('#selection-hotkey').click()})()`);
+      await wait(win,"hoyo.call('testCalls').then(rows=>rows.some(row=>row.action==='addHotkeyNote'))");
       const calls=await win.webContents.executeJavaScript("hoyo.call('testCalls')");
+      assert.ok(calls.some(row=>row.action==='addHotkeyNote'&&row.p.sourceId===55),'工坊详情应传来源编号，不能当本地 Mod ID');
+      await wait(win,"document.querySelector('#notification-toast')?.textContent.includes('安装此模组后会自动关联')");
       assert.ok(calls.some(row=>row.action==='comments'&&row.p.id===55&&row.p.page===1));
       assert.ok(calls.some(row=>row.action==='replies'&&row.p.id==='1'&&row.p.page===1));
       assert.equal(calls.some(row=>row.action==='openGameBananaDownload'),false);
       assert.equal(await win.webContents.executeJavaScript("document.querySelector('#modal .dialog-back')!==null && document.querySelector('#modal .dialog-head .icon-button')!==null"),true);
       await win.webContents.executeJavaScript("document.querySelector('#modal .dialog-back').click();confirmRemove({id:'local',name:'Local Mod'})");
       assert.equal(await win.webContents.executeJavaScript("document.querySelector('#modal-actions').textContent.trim()"),'确认移除');
+      assert.equal(await win.webContents.executeJavaScript(`(()=>{const body=document.querySelector('#modal-body'),range=document.createRange();range.selectNodeContents(body);getSelection().removeAllRanges();getSelection().addRange(range);body.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:320,clientY:280}));return !document.querySelector('#selection-hotkey')?.offsetParent})()`),true,'复用弹窗后不应沿用上个工坊模组的来源编号');
       await win.webContents.executeJavaScript("document.querySelector('#modal .dialog-back').click();openHashReplace();document.querySelector('[data-hash-tab=rollback]').click()");
       await wait(win,"document.querySelector('.hash-rollback')!==null");
       await win.webContents.executeJavaScript("document.querySelector('.hash-rollback').click()");

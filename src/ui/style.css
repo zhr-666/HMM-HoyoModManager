@@ -176,7 +176,7 @@ dialog form{margin:0}
 .notice{color:var(--blue)}
 /* A shared, transparent title strip lets Windows material extend to the caption controls. */
 .window-titlebar{display:none}
-html[data-platform="win32"] .window-titlebar{display:flex;align-items:center;position:fixed;inset:0 0 auto;height:40px;padding:0 155px 0 22px;z-index:20;background:transparent;color:var(--muted);font-size:12px;user-select:none;-webkit-app-region:drag}
+html[data-platform="win32"] .window-titlebar{display:flex;align-items:center;position:fixed;inset:0 0 auto;height:40px;padding:0 155px 0 22px;z-index:80;background:transparent;color:var(--muted);font-size:12px;user-select:none;-webkit-app-region:drag}
 html[data-platform="win32"] body{padding-top:40px}
 html[data-platform="win32"] .app-shell{min-height:calc(100vh - 40px)}
 html[data-platform="win32"] .sidebar{top:40px}
@@ -238,8 +238,7 @@ html[data-program-tab="external"] .app-shell{visibility:hidden;pointer-events:no
 .home-card-heading{display:flex;align-items:center;gap:9px}.home-card-heading h2{font-size:14px;margin:0;font-weight:600}.home-card-icon{font-size:20px;color:var(--blue)}
 .storage-value{font-size:36px;letter-spacing:-1px;font-weight:600;line-height:1.2;margin-top:22px}.home-card-note{font-size:12px;color:var(--muted);margin:8px 0 16px;line-height:1.6}
 .home-counts{display:flex;gap:30px;margin:0 0 22px}.home-counts>div{display:flex;align-items:baseline;gap:8px}.home-counts strong{font-size:18px;font-weight:600}.home-counts span{font-size:12px;color:var(--muted)}
-.home-card-link{margin-top:auto;align-self:flex-start;font-size:12px}.home-card-link>span{margin-left:5px}.arrangement-name{font-size:24px;font-weight:600;margin-top:25px;overflow-wrap:anywhere}.home-active-mods{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:22px}.active-mod-chip{max-width:100%;padding:6px 10px;border-radius:6px;background:var(--inset);color:var(--text-secondary);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.home-preset-actions{display:flex;align-items:center;gap:12px;margin-top:auto;flex-wrap:wrap}.home-preset-actions .home-card-link{margin-top:0}.home-preset-actions .button{white-space:nowrap}
+.home-card-link{margin-top:auto;align-self:flex-start;font-size:12px}.home-card-link>span{margin-left:5px}.arrangement-name{font-size:24px;font-weight:600;margin-top:25px;overflow-wrap:anywhere}.home-preset-options{display:flex;align-content:flex-start;flex-wrap:wrap;gap:8px;max-height:102px;overflow-y:auto;margin:15px 0 20px}.home-preset-options p{margin:0;color:var(--muted);font-size:12px}.home-preset-button{max-width:100%;min-height:33px;padding:6px 11px;border:1px solid #ffffff35;border-radius:8px;background:#ffffff14;color:#eef4fa;font:inherit;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}.home-preset-button:hover{border-color:#ffd76a;background:#ffffff24}.home-preset-button[aria-pressed="true"]{border-color:#ffd76a;background:#ffd76a28;color:#ffe496}.home-preset-button:focus-visible{outline:2px solid #ffd76a;outline-offset:2px}
 .library-navigation{gap:12px;flex-wrap:wrap;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .library-navigation .library-back{min-height:34px;padding:4px 11px;font-size:13px}.library-navigation .library-breadcrumb{flex:1;font-size:12px;gap:7px}
 .library-view-switch{display:flex;padding:3px;border:1px solid var(--line);border-radius:8px;background:var(--bg);gap:3px;margin-left:auto}
@@ -340,7 +339,7 @@ html[data-mode="launcher"][data-page="home"] #page-home.active{display:flex;flex
 .hero-copy{padding:20px 0;color:#fff;text-shadow:0 2px 12px #10203080}.hero-copy h2,.hero-copy p,.hero-eyebrow{color:#fff!important}.hero-status{background:#14304a90!important;color:#fff!important;border:1px solid #ffffff38}
 .hero-actions{position:fixed!important;right:32px;bottom:28px;z-index:10;display:flex;gap:10px;align-items:center;padding:0!important}
 .program-settings{height:48px;width:48px;font-size:23px;padding:0}.program-settings .icon{width:20px;height:20px}.home-launch{height:48px;min-width:174px;box-shadow:0 5px 20px #10203035}
-.home-card{padding:22px}.home-summary .home-counts{margin:12px 0}.home-summary .storage-value{font-size:32px}.home-active-mods{max-height:80px;overflow:auto}
+.home-card{padding:22px}.home-summary .home-counts{margin:12px 0}.home-summary .storage-value{font-size:32px}
 .context-menu{position:fixed;z-index:90;width:160px;padding:5px;border:1px solid var(--control-line);border-radius:8px;background:var(--surface);box-shadow:0 6px 25px #0003;animation:page-enter .12s ease-out}
 .context-menu button{width:100%;border:0;border-radius:4px;text-align:left;background:transparent;color:var(--text);padding:9px;font:inherit;cursor:pointer}.context-menu button:hover,.context-menu button:focus{background:var(--blue-soft);outline:0}
 .context-menu button:disabled{opacity:.45;cursor:not-allowed}.context-menu button:disabled:hover{background:transparent}
@@ -432,10 +431,9 @@ html[data-mode="launcher"] .home-card h2,html[data-mode="launcher"] .storage-val
 html[data-mode="launcher"] .home-card-note,html[data-mode="launcher"] .home-counts span{color:#adc0d4}
 html[data-mode="launcher"] .home-counts strong{color:#fff}
 html[data-mode="launcher"] .home-card-icon{color:#ffd76a}
-html[data-mode="launcher"] .active-mod-chip{background:#ffffff1f;color:#dbe7f3}
 html[data-mode="launcher"] .home-card-link{color:#ffd76a}
 html[data-mode="launcher"] .home-card-link:hover{color:#ffe496}
-html[data-mode="launcher"] .home-active-mods{max-height:70px;overflow:auto;margin-bottom:16px}
+html[data-mode="launcher"] .home-preset-options{max-height:100px}
 
 html[data-mode="launcher"] .program-settings{width:46px;height:46px;min-width:46px;padding:0;border-radius:50%;font-size:20px;background:#ffffff24;border:1px solid #ffffff38;color:#fff;backdrop-filter:blur(12px)}
 html[data-mode="launcher"] .program-settings:hover{background:#ffffff38}
@@ -464,14 +462,23 @@ html[data-mode="launcher"] main:has(#page-games.active){max-width:none}
 .game-icon-fly{position:fixed;margin:0;border-radius:11px;object-fit:cover;pointer-events:none;z-index:40;box-shadow:0 10px 26px #00000073;will-change:transform,opacity;backface-visibility:hidden}
 @keyframes game-icon-fly{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(var(--fly-tx,0),var(--fly-ty,0),0) scale(var(--fly-scale,1))}}
 
-/* 所有滚动区使用固定可见的轨道和滑块，不显示两端箭头。 */
-*{scrollbar-width:auto;scrollbar-color:var(--muted) var(--surface)}
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track{background:var(--surface)}
-::-webkit-scrollbar-thumb{background:var(--muted);border:2px solid var(--surface);border-radius:7px}
-::-webkit-scrollbar-thumb:hover{background:var(--blue)}
+/* 页面使用覆盖式滑块：原生根滚动条的保留槽会露出未虚化的底色，且不能可靠淡出。 */
+*{scrollbar-width:thin;scrollbar-color:transparent transparent}
+html[data-scrolling],html[data-scrolling] *{scrollbar-color:var(--muted) transparent}
+html{scrollbar-width:none}
+html::-webkit-scrollbar{display:none}
+.page-scrollbar{position:fixed;z-index:70;top:0;right:0;bottom:0;width:10px;background:transparent;pointer-events:none}
+html[data-platform="win32"] .page-scrollbar{top:40px}
+.page-scrollbar-thumb{position:absolute;right:0;width:10px;min-height:32px;border:3px solid transparent;border-radius:8px;background:var(--muted) padding-box;opacity:0;pointer-events:none;transition:opacity .55s ease;cursor:default}
+.page-scrollbar-thumb.visible{opacity:1;pointer-events:auto}
+@media(prefers-reduced-motion:reduce){.page-scrollbar-thumb{transition:none}}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:transparent;border-radius:4px}
+html[data-scrolling] ::-webkit-scrollbar-thumb{background:var(--muted)}
+html[data-scrolling] ::-webkit-scrollbar-thumb:hover{background:var(--blue)}
 ::-webkit-scrollbar-button{display:none;width:0;height:0}
-::-webkit-scrollbar-corner{background:var(--surface)}
+::-webkit-scrollbar-corner{background:transparent}
 @media(prefers-reduced-motion:reduce){.game-icon-fly{animation-duration:.09s!important}}
 
 /* ===== 1.1.3 界面整理 ===== */
@@ -583,11 +590,12 @@ html[data-mode="launcher"] .launcher-actions .home-launch.button{min-width:174px
 .game-card img{width:104px;height:104px;border-radius:20px;object-fit:cover;box-shadow:0 6px 20px #0000003d}
 .game-card strong{font-size:14px;color:#fff}
 
-/* 当前游戏设置（需求 27）：与全局设置区分开，标出属于哪个游戏 */
-.game-settings-panel{margin-top:18px}
-.game-settings-panel h2{margin-bottom:4px}
-.game-settings-panel .settings-card{margin-bottom:0}
-.game-settings-panel .setting-row strong:after{content:" · 当前游戏";font-size:11px;font-weight:600;color:#adc0d4}
+/* 设置页沿用当前游戏弹窗的横向条目，并在内容区对称居中。 */
+.game-settings-panel{max-width:920px;margin:18px auto 20px;padding:0 20px}
+.game-settings-heading{padding:18px 0 4px}
+.game-settings-heading h2{margin:0;font-size:18px}.game-settings-heading p{margin:7px 0 0;color:var(--muted);font-size:12px}
+.game-settings-panel .setting-row>div:first-child{min-width:0}
+.game-settings-panel .setting-row p{overflow-wrap:anywhere;word-break:normal}
 
 /* Logo 飞行动画：飞行期间目标位置的 Logo 与它所在方块的底色都藏起来（需求 2/3），
    否则落点上会一直立着一块空的深色方块；飞到 88% 时 JS 会撤掉这个标记，目标原位现身。 */
@@ -605,7 +613,7 @@ html[data-icon-flying="true"] .game-tile[data-game].active:before{display:none}
    消息列表、热键卡等）各滚各的，滚到自己的边界就停住，不把滚动传给上一层。
    对话框打开期间锁住页面本身：内容不足一屏时，滚轮原本会直接滚到下面的页面上。 */
 html:has(dialog[open]),html:has(dialog[open]) body{overflow:hidden}
-.dialog-body,.category-list,.detail-gallery-thumbs,.notification-list,.home-active-mods,#software-notes pre{overscroll-behavior:contain}
+.dialog-body,.category-list,.detail-gallery-thumbs,.notification-list,.home-preset-options,#software-notes pre{overscroll-behavior:contain}
 
 /* 详情页大图与「设置为热键提示」菜单不用在这里加规则：大图的尺寸跟在
    .detail-gallery-main img 原位（见上方「详情页」一节）；菜单显示时被 app.js 挂进
@@ -616,6 +624,7 @@ html:has(dialog[open]),html:has(dialog[open]) body{overflow:hidden}
 .mod-card:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .card-grid{gap:13px}
 .mod-card .preview{aspect-ratio:16/9}
+.installed-check{position:absolute;top:8px;right:8px;display:grid;place-items:center;width:24px;height:24px;border:2px solid var(--success);border-radius:50%;background:#12281ee8;color:var(--success);font-size:16px;font-weight:800;line-height:1;pointer-events:none;box-shadow:0 2px 8px #0008}
 /* 占位卡片跟真卡片同高，加载完成时不会跳一下 */
 .mod-skeleton .skeleton-preview{aspect-ratio:16/9}
 .mod-card-body{padding:10px 12px 11px}
@@ -651,11 +660,14 @@ html[data-page="workshop"] main{padding-left:calc(var(--workshop-menu-width) + 1
 #page-workshop.page.active{display:block;animation:none;transform:none}
 .workshop-results{min-width:0}
 .workshop-menu{position:fixed;z-index:14;left:var(--rail-width);top:0;bottom:0;width:var(--workshop-menu-width);display:flex;flex-direction:column;max-height:none;overflow:hidden;background:var(--surface);border-right:1px solid var(--line)}
-html[data-platform="win32"] .workshop-menu{top:40px}
+html[data-platform="win32"] .workshop-menu{top:0}
 .workshop-menu-top{height:60px;flex:none;display:flex;align-items:center;justify-content:flex-end;padding:8px 12px;border-bottom:1px solid var(--line)}
-#workshop-menu-toggle{display:grid;place-items:center;width:38px;height:38px;border:1px solid var(--line);border-radius:8px;background:var(--inset);color:var(--text);cursor:pointer}
+html[data-platform="win32"] .workshop-menu-top{height:94px;padding:40px 12px 0;-webkit-app-region:drag}
+html[data-page="workshop"][data-workshop-menu="collapsed"] .window-titlebar:has(#program-tabs[hidden]){left:calc(var(--rail-width) + var(--workshop-menu-width))}
+#workshop-menu-toggle{display:grid;place-items:center;width:38px;height:38px;border:1px solid var(--line);border-radius:8px;background:var(--inset);color:var(--text);cursor:pointer;-webkit-app-region:no-drag}
 #workshop-menu-toggle:hover{background:var(--hover);border-color:var(--blue)}#workshop-menu-toggle:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 #page-workshop.menu-collapsed .workshop-menu-top{justify-content:center;padding-inline:0}#page-workshop.menu-collapsed #workshop-menu-toggle .icon{transform:rotate(180deg)}
+#page-workshop.menu-collapsed .workshop-menu{cursor:pointer}
 .workshop-menu-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:0 14px 16px}
 .workshop-menu-status{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 4px}
 .workshop-status-item{width:56px;min-height:54px;display:grid;place-items:center;align-content:center;gap:5px;border:1px solid var(--line);border-radius:8px;background:var(--inset);color:var(--text-secondary);text-align:center}
@@ -670,3 +682,5 @@ html[data-platform="win32"] .workshop-menu{top:40px}
 #page-workshop .category.category{width:100%;min-height:51px;padding:7px 9px;background:var(--bg);border-radius:8px;color:var(--text)}#page-workshop .category.category:hover{border-color:var(--blue);background:var(--hover)}#page-workshop .category .category-label{flex:1;min-width:0}
 #page-workshop .pager{margin-top:8px}
 @media(max-width:960px){html[data-page="workshop"]:not([data-workshop-menu="collapsed"]){--workshop-menu-width:226px}.workshop-menu-body{padding-inline:11px}}
+
+.home-preset-actions{display:flex;align-items:center;gap:12px;margin-top:auto;flex-wrap:wrap}.home-preset-actions .home-card-link{margin-top:0}.home-preset-actions .button{white-space:nowrap}

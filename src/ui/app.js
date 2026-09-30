@@ -309,10 +309,15 @@ function renderHome(){
   const preset=state.presets.find(p=>p.id===state.currentPresetId);
   const matches=preset&&preset.modIds.length===ids.size&&preset.modIds.every(id=>ids.has(id));
   $('#home-preset-name').textContent=matches?preset.name:'自定义搭配';
-  $('#home-preset-detail').textContent=active.length?`已启用 ${active.length} 个模组`:'当前没有启用模组';
   $('#home-disable-all').disabled=!active.length;
   $('#home-mod-count').textContent=state.mods.length;$('#home-active-count').textContent=active.length;
-  $('#home-active-mods').innerHTML=active.slice(0,4).map(mod=>`<span class="active-mod-chip" title="${esc(mod.name)}">${esc(mod.characterName)} · ${esc(mod.name)}</span>`).join('')+(active.length>4?`<span class="active-mod-chip">还有 ${active.length-4} 个模组</span>`:'');
+  const options=$('#home-preset-options');options.replaceChildren();
+  if(!state.presets.length){const empty=document.createElement('p');empty.textContent='还没有保存的搭配方案';options.append(empty)}
+  for(const p of state.presets){
+    const button=document.createElement('button');button.type='button';button.className='home-preset-button';button.textContent=p.name;button.setAttribute('aria-pressed',String(!!matches&&preset.id===p.id));
+    button.onclick=async()=>{if(matches&&preset.id===p.id)return;button.disabled=true;if(!await mutate('applyPreset',{id:p.id}))button.disabled=false};
+    options.append(button);
+  }
   const configured=!!state.settings.modsPath;
   // 背景按游戏取（需求 27）：切换游戏后各自显示自己的背景图。
   renderBackground();
@@ -349,22 +354,22 @@ function renderGameValues(root=document){
   for(const el of $$('[data-secondary-program]',root))el.textContent=state.settings.secondaryExe||'尚未选择';
   const game=gameById(activeGame);
   const supportsOfficialBackground=!!(game.officialBackgroundId||game.officialBackgroundProvider);
-  for(const input of $$('[data-auto-background]',root)){input.checked=state.settings.autoBackground===true;input.disabled=!supportsOfficialBackground;input.closest('.setting-row').hidden=!supportsOfficialBackground;}
+  for(const input of $$('[data-auto-background]',root)){input.checked=state.settings.autoBackground===true;input.disabled=!supportsOfficialBackground;input.closest('.setting-row,.game-setting-auto').hidden=!supportsOfficialBackground;}
   for(const input of $$('[data-hotkey-overlay]',root))input.checked=state.settings.hotkeyOverlayEnabled!==false;
   for(const description of $$('[data-overlay-description]',root))description.textContent=activeGame==='genshin'?'开启时识别《原神》画面并显示热键提示；关闭后停止识别。':'当前游戏尚未支持热键悬浮窗；此设置会单独保存。';
   for(const button of $$('#fetch-background, #game-fetch-background',root)){button.disabled=!supportsOfficialBackground;button.title=supportsOfficialBackground?'':'当前游戏暂无官方启动器背景接口';}
   const importer=game.importer;
   for(const el of $$('[data-loader-label]',root))el.textContent=importer+' 文件夹';
   $('#choose-mods').textContent='选择 '+importer+' 文件夹';
-  const modsPath=state.settings.modsPath||'尚未选择',launchExe=state.settings.launchExe||'尚未选择';
+  const modsPath=state.settings.modsPath||'尚未选择',launchExe=state.settings.launchExe||'尚未选择',targetExe=state.settings.targetExe||'尚未选择';
   const background=state.backgroundMedia||state.settings.backgroundVersion?'当前游戏已使用本地保存的背景。':'默认使用《'+gameById(activeGame).name+'》背景图；可替换为本地图片';
   for(const el of $$('[data-game-value]',root)){
-    el.textContent={modsPath,launchExe,background}[el.dataset.gameValue]||'';
+    el.textContent={modsPath,launchExe,targetExe,background}[el.dataset.gameValue]||'';
   }
 }
 // snapshot().settings 是「全局 + 当前游戏」的生效设置：加载器 Mods 路径、外部程序、启动器背景
 // 都来自当前游戏（需求 27），页面显示与读写都按这一份走。
-function renderState(){state.settings??={};state.mods??=[];state.presets??=[];state.gameSettings??={};document.documentElement.dataset.emptyHome=String(!addedGameIds.length);$('#data-root').textContent=state.runtime?.dataRoot?`数据目录：${state.runtime.dataRoot}`:'数据目录不可用';$('#auto-check-app-updates').checked=state.settings.autoCheckAppUpdates!==false;$('#software-version').textContent=state.runtime?.version?'v'+state.runtime.version:'';$('#auto-enable').checked=!!state.settings.autoEnable;$('#auto-check-updates').checked=!!state.settings.autoCheckUpdates;$('#blur-nsfw').checked=state.settings.blurNsfw!==false;$('#use-links').checked=state.settings.useLinks!==false;renderGameValues();renderAppearance();refreshInstallAvailability();renderLibrary();renderCategories();renderPresets();renderHome();renderGamesPage();for(const selector of ['#home-open-library','#home-open-presets','#home-game-settings','#launch-button'])$(selector).disabled=!addedGameIds.length;$('#game-logo').hidden=!addedGameIds.length;}
+function renderState(){state.settings??={};state.mods??=[];state.presets??=[];state.gameSettings??={};document.documentElement.dataset.emptyHome=String(!addedGameIds.length);$('#data-root').textContent=state.runtime?.dataRoot?`数据目录：${state.runtime.dataRoot}`:'数据目录不可用';$('#auto-check-app-updates').checked=state.settings.autoCheckAppUpdates!==false;$('#software-version').textContent=state.runtime?.version?'v'+state.runtime.version:'';$('#auto-enable').checked=!!state.settings.autoEnable;$('#auto-check-updates').checked=!!state.settings.autoCheckUpdates;$('#blur-nsfw').checked=state.settings.blurNsfw!==false;$('#use-links').checked=state.settings.useLinks!==false;renderGameValues();renderAppearance();refreshInstallAvailability();renderLibrary();refreshWorkshopInstalledChecks();renderCategories();renderPresets();renderHome();renderGamesPage();for(const selector of ['#home-open-library','#home-open-presets','#home-game-settings','#launch-button'])$(selector).disabled=!addedGameIds.length;$('#game-logo').hidden=!addedGameIds.length;}
 function imageMarkup(url,alt,nsfw=false){const safe=safeImage(url),blur=nsfw&&state.settings.blurNsfw!==false;return safe?`<img src="${esc(safe)}" alt="${esc(alt)}" loading="lazy" class="${blur?'nsfw-image':''}">${blur?'<span class="nsfw-cover">NSFW · 点击查看</span>':''}`:'<div class="preview-placeholder">暂无预览</div>'}
 function revealNsfw(root){$('.nsfw-image',root)?.classList.remove('nsfw-image');$('.nsfw-cover',root)?.remove()}
 function openSourceItem(item){if(!item?.sourceId&&!item?.id)return;call('openSource',{id:Number(item.sourceId||item.id)}).catch(()=>{})}
@@ -469,9 +474,10 @@ async function mutateGameSettings(patch){return mutate('settings',{...patch,game
 function addBackgroundSwitch(root){
   const button=root.querySelector('#game-fetch-background, #fetch-background');
   if(!button||root.querySelector('[data-auto-background]'))return;
-  const row=document.createElement('div');row.className='setting-row';
+  const card=button.closest('.game-setting-item'),row=document.createElement('div');
+  row.className=card?'game-setting-auto':'setting-row';
   row.innerHTML='<strong>自动更新背景</strong><label class="switch"><input data-auto-background type="checkbox" aria-label="自动更新背景"><span></span></label>';
-  button.closest('.setting-row').after(row);
+  if(card)card.append(row);else button.closest('.setting-row').after(row);
   const input=row.querySelector('input');input.checked=state.settings.autoBackground===true;
   input.onchange=async()=>{const game=activeGame,value=input.checked;input.disabled=true;try{await call('settings',{gameId:game,autoBackground:value},{reload:true});}catch{input.checked=!value;}finally{input.disabled=false;}};
 }
@@ -493,6 +499,7 @@ function openGameSettings(){
     <div class="settings-card">
       <div class="setting-row"><div><strong data-loader-label>${esc(game.importer)} 文件夹</strong><p data-game-value="modsPath">尚未选择</p></div><button class="button secondary" id="game-choose-mods">选择 ${esc(game.importer)} 文件夹</button></div>
       <div class="setting-row"><div><strong>一级程序<span class="hint-mark" data-hint="选择HMM要启动的程序。" role="img" aria-label="选择HMM要启动的程序。" tabindex="0">?</span></strong><p data-game-value="launchExe">尚未选择</p></div><button class="button secondary" id="game-choose-program">选择 EXE</button></div>
+      <div class="setting-row"><div><strong>目标游戏 EXE（画面识别）</strong><p data-game-value="targetExe">尚未选择</p></div><button class="button secondary" id="game-choose-target-exe">选择 EXE</button></div>
       <div class="setting-row"><div><strong>启动器背景</strong><p data-game-value="background">默认使用米哈游官方启动器《原神》背景图；可替换为本地图片</p></div><div class="row-actions"><button class="button secondary" id="game-fetch-background">获取官方最新背景</button><button class="button secondary" id="game-reset-background">恢复默认</button><button class="button secondary" id="game-choose-background">选择图片</button></div></div>
       <div class="setting-row"><div><strong>热键悬浮窗</strong><p data-overlay-description>开启时识别游戏画面并显示热键提示。</p></div><label class="switch"><input data-hotkey-overlay type="checkbox" aria-label="热键悬浮窗"><span></span></label></div>
     </div>`;
@@ -504,6 +511,7 @@ function openGameSettings(){
   const q=selector=>$(selector,dialog);
   q('#game-choose-mods').onclick=()=>call('chooseMods',{gameId:activeGame},{reload:true}).then(onboardingLoaderChosen).catch(error=>notifyError(error));
   q('#game-choose-program').onclick=()=>call('chooseProgram',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
+  q('#game-choose-target-exe').onclick=()=>call('chooseTargetExe',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
   q('#game-choose-background').onclick=()=>call('chooseBackground',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
   q('#game-reset-background').onclick=()=>call('resetBackground',{gameId:activeGame},{reload:true}).catch(error=>notifyError(error));
   q('#game-fetch-background').onclick=async()=>{try{await call('fetchOfficialBackground',{gameId:activeGame},{reload:true});notify('已更新为官方最新背景。')}catch(error){notifyError(error)}};
@@ -834,16 +842,27 @@ async function browse(){
 // 工坊卡片整块就是「查看详情」：不再单独放按钮，点方框（封面或文字）任意处都进详情。
 // 内部的「在 GameBanana 查看」与 NSFW 揭盖要拦下这次点击，避免误开详情。
 function workshopCard(m){const el=document.createElement('article');el.className='mod-card';el.dataset.testid='browse-card';el.dataset.nsfw=String(!!m.nsfw);el.tabIndex=0;el.setAttribute('aria-label',`查看「${m.name}」的详情`);
- el.innerHTML=`<div class="preview">${imageMarkup(m.preview,m.name,m.nsfw)}</div><div class="mod-card-body"><div class="eyebrow">${esc(m.characterName||flattenCategories(taxonomy).find(c=>String(c.id)===String(category))?.name||'模组')}${m.nsfw?' · NSFW':''}</div><h3 title="${esc(m.name)}">${esc(m.name)}</h3><p class="meta">${esc(m.author||'未知作者')} · ${m.downloadCount==null?'下载次数暂不可用':Number(m.downloadCount).toLocaleString('zh-CN')+' 次下载'}${m.uploadedAt?' · 发布 '+esc(formatDate(m.uploadedAt)):''}</p><div class="card-actions"><button type="button" class="link-button source">在 GameBanana 查看</button></div></div>`;
+ el.dataset.sourceId=String(m.id);
+ const installed=state.mods.some(mod=>String(mod.sourceId)===String(m.id));
+ el.innerHTML=`<div class="preview">${imageMarkup(m.preview,m.name,m.nsfw)}${installed?'<span class="installed-check" title="已安装" aria-label="已安装">✓</span>':''}</div><div class="mod-card-body"><div class="eyebrow">${esc(m.characterName||flattenCategories(taxonomy).find(c=>String(c.id)===String(category))?.name||'模组')}${m.nsfw?' · NSFW':''}</div><h3 title="${esc(m.name)}">${esc(m.name)}</h3><p class="meta">${esc(m.author||'未知作者')} · ${m.downloadCount==null?'下载次数暂不可用':Number(m.downloadCount).toLocaleString('zh-CN')+' 次下载'}${m.uploadedAt?' · 发布 '+esc(formatDate(m.uploadedAt)):''}</p><div class="card-actions"><button type="button" class="link-button source">在 GameBanana 查看</button></div></div>`;
  el.onclick=()=>openDetail(m);
  el.onkeydown=event=>{if(event.target!==el||(event.key!=='Enter'&&event.key!==' '))return;event.preventDefault();openDetail(m)};
  // 封面被 NSFW 遮罩盖住时，第一次点击先揭开遮罩；没有遮罩就把这次点击交给卡片本身打开详情。
  $('.preview',el).onclick=event=>{if(!$('.nsfw-cover',el))return;event.stopPropagation();revealNsfw(el)};
  $('.source',el).onclick=event=>{event.stopPropagation();openSourceItem(m)};
  return el}
+function refreshWorkshopInstalledChecks(){
+ const installed=new Set(state.mods.map(mod=>String(mod.sourceId)).filter(id=>id&&id!=='undefined'));
+ for(const card of $$('#browse-grid .mod-card')){
+  const preview=$('.preview',card),check=$('.installed-check',card);
+  if(installed.has(card.dataset.sourceId)){if(!check)preview.insertAdjacentHTML('beforeend','<span class="installed-check" title="已安装" aria-label="已安装">✓</span>')}
+  else check?.remove();
+ }
+}
 const dialogStack=new DialogStack(['modal','dependency-modal','image-modal']);
 function modal(title,_subtitle,body,actions){
  const dialog=dialogStack.open('modal');
+ delete dialog.dataset.sourceId;
  $('#modal-title',dialog).textContent=title;$('#modal-body',dialog).innerHTML=body;$('#modal-actions',dialog).innerHTML=actions;
  const slot=$('#inline-progress',dialog);if(slot){slot.hidden=true;slot.textContent=''}
  return dialog;
@@ -1010,7 +1029,7 @@ async function openDetail(record){
   comments.addEventListener('toggle',()=>{if(comments.open&&commentPage===0)loadComments()});
   more.onclick=()=>{more.textContent='加载更多';loadComments()};
   detailGallery(dialog,d.images||[]);
-  dialog.dataset.modId=d.id;
+  dialog.dataset.sourceId=d.id;
   if(d.nsfw&&state.settings.blurNsfw!==false){const gallery=q('.detail-gallery');if(gallery){gallery.classList.add('nsfw-detail');gallery.title='NSFW · 点击查看';gallery.onclick=()=>gallery.classList.remove('nsfw-detail');}}
   install.onclick=async()=>{const fileId=q('input[type=radio]:checked')?.value;if(!fileId)return notify('请选择一个安装文件。',true);install.disabled=true;try{await enqueue('install',{sourceId:d.id,fileId,rootCategoryId:d.rootCategoryId||record.rootCategoryId,rootCategoryName:d.rootCategoryName||record.rootCategoryName,characterId:d.characterId||record.characterId,characterName:d.characterName||record.characterName})}finally{install.disabled=!state.settings.modsPath;}};
  }catch(e){if(dialog.open&&dialog.dataset.layerRevision===revision)notifyError(e);}
@@ -1036,7 +1055,7 @@ function updateSummaryBody(result){const updates=result.updates||[],failures=res
 let updateSummary=null,updateSummaryUnviewed=false,appUpdateUnviewed=false;
 const updateChecks=new Set();
 function renderUpdateDots(){
-  for(const id of ['#check-updates','#check-updates-library']){const dot=$(`${id} .button-dot`);if(dot)dot.hidden=!updateSummaryUnviewed}
+  for(const id of ['#check-updates-library']){const dot=$(`${id} .button-dot`);if(dot)dot.hidden=!updateSummaryUnviewed}
   const softwareDot=$('#software-check .button-dot');if(softwareDot)softwareDot.hidden=!appUpdateUnviewed;
 }
 function markAppUpdateSeen(){if(!appUpdateUnviewed)return;appUpdateUnviewed=false;renderUpdateDots()}
@@ -1139,7 +1158,7 @@ syncGameTiles();
 $('#library-view-list').onclick=()=>setLibraryView('list');$('#library-view-grid').onclick=()=>setLibraryView('grid');
 $('#clear-downloads').onclick=()=>enqueue('clearDownloads',{});
 $('#cleanup-packages').onclick=async()=>{try{const result=await call('cleanupPackages',{},{foreground:false,silent:true});if(result?.downloads){downloads=result.downloads;renderDownloads()}notify(result?.removed?`已清理 ${result.removed} 个安装包，释放 ${formatSize(result.freed)}。`:'没有可清理的安装包。')}catch(e){notify(e.message,true)}};
-$$('.nav-item').forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==='settings')markAppUpdateSeen()});$('#workshop-menu-toggle').onclick=()=>setWorkshopMenuCollapsed(!$('#page-workshop').classList.contains('menu-collapsed'));try{setWorkshopMenuCollapsed(localStorage.getItem(WORKSHOP_MENU_KEY)==='1')}catch{setWorkshopMenuCollapsed(false)}$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};function showBrowsePage(next){page=Math.max(1,Number(next)||1);browse()}
+$$('.nav-item').forEach(b=>b.onclick=()=>{showPage(b.dataset.page);if(b.dataset.page==='settings')markAppUpdateSeen()});$('#workshop-menu-toggle').onclick=()=>setWorkshopMenuCollapsed(!$('#page-workshop').classList.contains('menu-collapsed'));$('#workshop-menu').addEventListener('click',event=>{if(event.target.closest('#workshop-menu-toggle'))return;if($('#page-workshop').classList.contains('menu-collapsed'))setWorkshopMenuCollapsed(false)});try{setWorkshopMenuCollapsed(localStorage.getItem(WORKSHOP_MENU_KEY)==='1')}catch{setWorkshopMenuCollapsed(false)}$('#character-search').oninput=renderCategories;$('#search-button').onclick=()=>{query=$('#search-input').value.trim();page=1;browse()};$('#search-input').onkeydown=e=>{if(e.key==='Enter')$('#search-button').click()};function showBrowsePage(next){page=Math.max(1,Number(next)||1);browse()}
 $('#prev-page').onclick=()=>{if(page>1)showBrowsePage(page-1)};$('#next-page').onclick=()=>showBrowsePage(page+1);$('#open-library-button').onclick=()=>call('openLibrary').catch(()=>{});$('#open-mods-button').onclick=()=>call('openMods').catch(()=>{});$('#launch-button').onclick=()=>call('launch').catch(()=>{});// 导入本地模组：① 选 Mod 压缩包 → ② 选 GameBanana 分类 → ③ 解压、复制进安装库并登记（需求 4）。
 // 选中的分类决定模组在「我的模组」里的位置，也是安装库里存放模组副本的文件夹；导入后它和
 // 下载来的模组走同一套规则（同角色互斥、启用/停用、检查更新）。
@@ -1169,8 +1188,8 @@ $('#import-button').onclick=async()=>{
   }catch(error){notifyError(error)}
   finally{importRunning=false;$('#import-button').disabled=false}
 };
-$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods',{gameId:activeGame});$('#choose-program').onclick=()=>mutate('chooseProgram',{gameId:activeGame});$('#choose-background').onclick=()=>mutate('chooseBackground',{gameId:activeGame});$('#reset-background').onclick=()=>mutate('resetBackground',{gameId:activeGame});$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#open-logs').onclick=()=>call('openLogs',{}, {foreground:false}).catch(()=>{});$('#check-updates').onclick=checkUpdatesButton;$('#check-updates-library').onclick=checkUpdatesButton;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
-$('#blur-nsfw').onchange=async e=>{await mutate('settings',{blurNsfw:e.target.checked});refreshWorkshopBlur()};$('#use-links').onchange=e=>mutate('settings',{useLinks:e.target.checked});$('#material-select').onchange=e=>mutate('settings',{material:e.target.value});$('#proxy-mode').onchange=e=>{if(e.target.value==='manual'){ $('#proxy-url-row').hidden=false;if(state.settings.proxyUrl)mutate('settings',{proxyMode:'manual'});}else mutate('settings',{proxyMode:'system'})};$('#save-proxy').onclick=()=>mutate('settings',{proxyMode:$('#proxy-mode').value,proxyUrl:$('#proxy-url').value.trim()});$('#test-proxy').onclick=async()=>{try{const r=await call('proxyDiagnostics');$('#proxy-result').textContent=[r.message,r.route,r.apiRoute].filter(Boolean).join(' · ')}catch(e){$('#proxy-result').textContent=e.message}};for(const id of ['sort-select','sfw-filter','nsfw-filter'])$('#'+id).onchange=()=>{page=1;browse()};
+$('#save-preset-button').onclick=savePreset;$('#choose-mods').onclick=()=>mutate('chooseMods',{gameId:activeGame});$('#choose-program').onclick=()=>mutate('chooseProgram',{gameId:activeGame});$('#choose-target-exe').onclick=()=>mutate('chooseTargetExe',{gameId:activeGame});$('#choose-background').onclick=()=>mutate('chooseBackground',{gameId:activeGame});$('#reset-background').onclick=()=>mutate('resetBackground',{gameId:activeGame});$('#open-data').onclick=()=>call('openData').catch(()=>{});$('#open-logs').onclick=()=>call('openLogs',{}, {foreground:false}).catch(()=>{});$('#check-updates-library').onclick=checkUpdatesButton;$('#auto-enable').onchange=e=>mutate('settings',{autoEnable:e.target.checked});$('#auto-check-updates').onchange=e=>mutate('settings',{autoCheckUpdates:e.target.checked});
+$('#blur-nsfw').onchange=async e=>{await mutate('settings',{blurNsfw:e.target.checked});refreshWorkshopBlur()};$('#use-links').onchange=e=>mutate('settings',{useLinks:e.target.checked});$('#material-select').onchange=e=>mutate('settings',{material:e.target.value});$('#proxy-mode').onchange=e=>{if(e.target.value==='manual'){ $('#proxy-url-row').hidden=false;if(state.settings.proxyUrl)mutate('settings',{proxyMode:'manual'});}else mutate('settings',{proxyMode:'system'})};$('#save-proxy').onclick=()=>mutate('settings',{proxyMode:$('#proxy-mode').value,proxyUrl:$('#proxy-url').value.trim()});for(const id of ['sort-select','sfw-filter','nsfw-filter'])$('#'+id).onchange=()=>{page=1;browse()};
 api?.onDownloads?.(payload=>{if(payload?.gameId&&payload.gameId!==activeGame)return;downloads=Array.isArray(payload)?payload:payload?.rows||[];renderDownloads()});
 // 全局进度条取消了：长任务只在它自己打开的弹窗里报告进度，下载进度看「下载列表」的每一行。
 api?.onProgress?.(p=>{
@@ -1376,9 +1395,9 @@ let selectionContext=null;
 document.addEventListener('contextmenu',event=>{
  const dialog=event.target.closest('dialog[open]');if(!dialog)return;
  const text=String(dialog.querySelector('.dialog-body')?.contains(event.target)?window.getSelection()?.toString()||'':'').trim();
- const modId=dialog.dataset.modId;if(!text||!modId)return;
+ const sourceId=Number(dialog.dataset.sourceId);if(!text||!sourceId)return;
  event.preventDefault();event.stopPropagation();
- selectionContext={modId,text};
+ selectionContext={sourceId,text};
  const menu=showSelectionMenu(dialog);if(!menu)return;
  menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-200))+'px';
  menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-menu.offsetHeight-8))+'px';
@@ -1387,7 +1406,7 @@ document.addEventListener('contextmenu',event=>{
 $('#selection-hotkey').onclick=async()=>{
  const context=selectionContext;hideContextMenu();selectionContext=null;
  if(!context)return;
- try{state=await call('addHotkeyNote',{id:context.modId,text:context.text},{silent:true});renderState();notify('已保存为热键提示，可在「我的模组 → 查看热键」顶部看到。')}
+ try{const installed=state.mods.some(mod=>String(mod.sourceId)===String(context.sourceId));state=await call('addHotkeyNote',{sourceId:context.sourceId,text:context.text},{silent:true});renderState();notify(installed?'已保存为热键提示，可在「我的模组 → 查看热键」顶部看到。':'已保存热键提示；安装此模组后会自动关联。')}
  catch(error){notifyError(error)}
 };
 document.addEventListener('contextmenu',event=>{
@@ -1397,8 +1416,42 @@ document.addEventListener('contextmenu',event=>{
 // 点菜单以外的任何地方都收起右键菜单；点在菜单上则不能收——否则按下鼠标的那一刻菜单就没了，
 // click 永远落不到菜单按钮上（命中测试通过也点不动）。
 document.addEventListener('pointerdown',event=>{if(!event.target.closest('.context-menu'))hideContextMenu()});
-// 滚动条只在滑动时显形，停下约 0.7 秒后淡回几乎透明。
-let scrollIdleTimer;document.addEventListener('scroll',()=>{document.documentElement.dataset.scrolling='true';clearTimeout(scrollIdleTimer);scrollIdleTimer=setTimeout(()=>{delete document.documentElement.dataset.scrolling},700)},{capture:true,passive:true});
+// 根页面隐藏原生滚动槽，用覆盖式滑块显示滚动位置；停下后只淡出滑块。
+const pageScrollbar=$('#page-scrollbar'),pageScrollbarThumb=$('#page-scrollbar-thumb');
+let scrollIdleTimer,pageScrollIdleTimer,pageScrollbarDrag=null;
+function updatePageScrollbar(){
+ const root=document.scrollingElement,trackHeight=innerHeight-(document.documentElement.dataset.platform==='win32'?40:0);
+ const scrollRange=Math.max(0,root.scrollHeight-root.clientHeight);
+ pageScrollbar.hidden=scrollRange<=1||trackHeight<=0;
+ if(pageScrollbar.hidden){pageScrollbarThumb.classList.remove('visible');return}
+ const thumbHeight=Math.max(32,Math.min(trackHeight,trackHeight*root.clientHeight/root.scrollHeight));
+ pageScrollbarThumb.style.height=thumbHeight+'px';
+ pageScrollbarThumb.style.top=(scrollRange?root.scrollTop/scrollRange*(trackHeight-thumbHeight):0)+'px';
+}
+function showPageScrollbar(){
+ updatePageScrollbar();if(pageScrollbar.hidden)return;
+ pageScrollbarThumb.classList.add('visible');clearTimeout(pageScrollIdleTimer);
+ pageScrollIdleTimer=setTimeout(()=>{if(!pageScrollbarDrag)pageScrollbarThumb.classList.remove('visible')},900);
+}
+document.addEventListener('scroll',event=>{
+ document.documentElement.dataset.scrolling='true';clearTimeout(scrollIdleTimer);
+ scrollIdleTimer=setTimeout(()=>{delete document.documentElement.dataset.scrolling},700);
+ if(event.target===document||event.target===document.documentElement)showPageScrollbar();
+},{capture:true,passive:true});
+pageScrollbarThumb.addEventListener('pointerdown',event=>{
+ if(event.button!==0)return;event.preventDefault();
+ pageScrollbarDrag={startY:event.clientY,startScroll:document.scrollingElement.scrollTop};
+ pageScrollbarThumb.setPointerCapture(event.pointerId);showPageScrollbar();
+});
+pageScrollbarThumb.addEventListener('pointermove',event=>{
+ if(!pageScrollbarDrag)return;
+ const root=document.scrollingElement,travel=pageScrollbar.clientHeight-pageScrollbarThumb.offsetHeight;
+ if(travel>0)root.scrollTop=pageScrollbarDrag.startScroll+(event.clientY-pageScrollbarDrag.startY)*(root.scrollHeight-root.clientHeight)/travel;
+});
+for(const type of ['pointerup','pointercancel'])pageScrollbarThumb.addEventListener(type,()=>{pageScrollbarDrag=null;showPageScrollbar()});
+window.addEventListener('resize',updatePageScrollbar);
+new ResizeObserver(()=>requestAnimationFrame(updatePageScrollbar)).observe(document.body);
+requestAnimationFrame(updatePageScrollbar);
 document.addEventListener('keydown',event=>{if(event.key==='Escape')hideContextMenu();});window.addEventListener('scroll',()=>{const menu=$('#context-menu');if(!menu.hidden&&(Number(menu.dataset.scrollY)!==scrollY||Number(menu.dataset.scrollX)!==scrollX))hideContextMenu();});
 document.documentElement.dataset.mode='launcher';
 document.documentElement.dataset.page='home';

@@ -3,12 +3,22 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 
-test('程序滚动条常显且不绘制上下箭头',()=>{
-  for(const file of ['src/ui/style.css','src/ui/hotkey-overlay.css']){
-    const css=fs.readFileSync(path.join(__dirname,'..',file),'utf8');
-    assert.match(css,/::-webkit-scrollbar-button\{[^}]*display:none/,`${file} 应隐藏滚动条箭头`);
-    assert.match(css,/::-webkit-scrollbar-track\{[^}]*background:(?!transparent)[^;}]+/,`${file} 应有常显轨道`);
-    assert.match(css,/::-webkit-scrollbar-thumb\{[^}]*background:(?!transparent)[^;}]+/,`${file} 应有常显滑块`);
-    assert.ok(!css.includes('html[data-scrolling] ::-webkit-scrollbar-thumb'),`${file} 不按滚动状态改变滑块显隐`);
-  }
+test('页面右侧滚动条覆盖在完整背景上，并淡出',()=>{
+  const css=fs.readFileSync(path.join(__dirname,'../src/ui/style.css'),'utf8');
+  const html=fs.readFileSync(path.join(__dirname,'../src/ui/index.html'),'utf8');
+  assert.match(html,/id="page-scrollbar"[^>]*><div id="page-scrollbar-thumb"/);
+  assert.match(css,/html\{scrollbar-width:none\}/);
+  assert.match(css,/html::-webkit-scrollbar\{display:none\}/);
+  assert.match(css,/\.page-scrollbar\{[^}]*position:fixed[^}]*background:transparent/);
+  assert.match(css,/\.page-scrollbar-thumb\{[^}]*transition:opacity/);
+  assert.match(css,/\.page-scrollbar-thumb\.visible\{opacity:1/);
+  assert.match(css,/::-webkit-scrollbar\{width:4px;height:4px\}/);
+  assert.match(css,/::-webkit-scrollbar-button\{[^}]*display:none/);
+});
+
+test('独立热键悬浮窗保留常显滚动条',()=>{
+  const css=fs.readFileSync(path.join(__dirname,'../src/ui/hotkey-overlay.css'),'utf8');
+  assert.match(css,/::-webkit-scrollbar-track\{[^}]*background:(?!transparent)[^;}]+/);
+  assert.match(css,/::-webkit-scrollbar-thumb\{[^}]*background:(?!transparent)[^;}]+/);
+  assert.match(css,/::-webkit-scrollbar-button\{[^}]*display:none/);
 });

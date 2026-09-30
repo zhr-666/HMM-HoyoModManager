@@ -1,5 +1,5 @@
-const DEFAULT_SETTINGS=Object.freeze({ autoCheckAppUpdates:true, launchExe:'', secondaryExe:'', programTabs:false, backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: ''});
-const GAME_SETTING_KEYS=['modsPath','launchExe','secondaryExe','programTabs','backgroundVersion','xxmiPath','autoBackground','hotkeyOverlayEnabled'];
+const DEFAULT_SETTINGS=Object.freeze({ autoCheckAppUpdates:true, launchExe:'', secondaryExe:'', targetExe:'', programTabs:false, backgroundVersion:'', libraryView:'list', autoEnable: false, autoUpdate: false, autoCheckUpdates: false, blurNsfw: true, useLinks: true, material:'mica', proxyMode:'system', proxyUrl:'', xxmiPath: '', modsPath: ''});
+const GAME_SETTING_KEYS=['modsPath','launchExe','secondaryExe','targetExe','programTabs','backgroundVersion','xxmiPath','autoBackground','hotkeyOverlayEnabled'];
 function validateSettingsPatch(patch,{gameOnly=false}={}){
  if(!patch||typeof patch!=='object'||Array.isArray(patch))throw new Error('设置内容不能为空');
  patch={...patch};delete patch.theme;
@@ -7,7 +7,7 @@ function validateSettingsPatch(patch,{gameOnly=false}={}){
  allowed.add('autoBackground');
  allowed.add('hotkeyOverlayEnabled');
  for (const key of Object.keys(patch)) if (!allowed.has(key)) throw new Error(`未知设置项：${key}`);
- for(const k of ['launchExe','secondaryExe','backgroundVersion','modsPath','xxmiPath'])if(k in patch&&typeof patch[k]!=='string')throw Error('无效设置值');
+ for(const k of ['launchExe','secondaryExe','targetExe','backgroundVersion','modsPath','xxmiPath'])if(k in patch&&typeof patch[k]!=='string')throw Error('无效设置值');
  if('programTabs' in patch&&typeof patch.programTabs!=='boolean')throw Error('窗口标签页设置无效');
  if('autoBackground' in patch&&typeof patch.autoBackground!=='boolean')throw Error('自动更新背景设置无效');
  if('hotkeyOverlayEnabled' in patch&&typeof patch.hotkeyOverlayEnabled!=='boolean')throw Error('热键悬浮窗设置无效');
